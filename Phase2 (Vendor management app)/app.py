@@ -70,9 +70,64 @@ def main():
     db.close_connection()
 
 def display_dashboard(db):
-    """Simple dashboard: select source -> select item -> show item details and vendors"""
+    """Display the simplified dashboard page"""
     st.header("Dashboard")
     
+    # Choose dashboard mode
+    mode = st.radio("View by", ["Item", "Vendor"], horizontal=True, key="dashboard_mode")
+    
+    if mode == "Vendor":
+        # Vendor-centric view
+        vendors = db.get_all_vendors() or []
+        if not vendors:
+            st.info("No vendors found.")
+            return
+        vendor_options = {v['vendor_name']: v['vendor_id'] for v in vendors}
+        selected_vendor_name = st.selectbox("Select vendor", sorted(vendor_options.keys()))
+        if not selected_vendor_name:
+            return
+        vendor_id = vendor_options[selected_vendor_name]
+        items_for_vendor = db.get_vendor_items(vendor_id) or []
+        if not items_for_vendor:
+            st.info("This vendor does not supply any items yet.")
+            return
+        
+        # Helper to format dimension values nicely (strip trailing zeros)
+        def fmt_dim(val):
+            if val is None:
+                return '—'
+            try:
+                f = float(val)
+                if f.is_integer():
+                    return str(int(f))
+                s = f"{f:.3f}".rstrip('0').rstrip('.')
+                return s
+            except Exception:
+                return str(val)
+        
+        st.subheader(f"Items supplied by {selected_vendor_name}")
+        # Sort items by source then name
+        items_sorted = sorted(items_for_vendor, key=lambda i: (i.get('source_sheet') or '', i.get('item_name') or ''))
+        for it in items_sorted:
+            # Build header with cost
+            cost = it.get('vendor_cost')
+            cost_text = format_currency(cost) if cost is not None else "N/A"
+            if (it.get('source_sheet') == 'BoxHero'):
+                sub = f"SKU: {it.get('sku') or '—'} • Barcode: {it.get('barcode') or '—'}"
+            else:
+                sub = f"{fmt_dim(it.get('height'))}H × {fmt_dim(it.get('width'))}W × {fmt_dim(it.get('thickness'))}T"
+            header = f"{it.get('item_name')} — {cost_text}"
+            with st.expander(header, expanded=False):
+                left, right = st.columns(2)
+                with left:
+                    st.markdown(f"**Type:** {it.get('item_type') or '—'}")
+                    st.markdown(f"**Source:** {it.get('source_sheet') or '—'}")
+                    st.markdown(f"**Details:** {sub}")
+                # We intentionally hide technical IDs in the dashboard; map_id omitted.
+        st.write(f"Total items: {len(items_sorted)}")
+        return
+    
+    # Item-centric view (existing)
     # Step 1: Select source
     source = st.radio("Select source", ["BoxHero", "Raw Materials"], horizontal=True)
     
