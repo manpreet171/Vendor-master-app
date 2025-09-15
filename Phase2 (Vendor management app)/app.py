@@ -64,7 +64,11 @@ def main():
         st.session_state.active_tab = "Dashboard"
     
     # Initialize database connection
-    db = DatabaseConnector()
+    try:
+        db = DatabaseConnector()
+    except Exception as e:
+        st.error(f"Failed to initialize database connector: {str(e)}")
+        st.stop()
     
     # Create sidebar for navigation
     with st.sidebar:
@@ -82,13 +86,41 @@ def main():
         
         
         
-        # Display current database connection (simple status only)
+        # Database connection status with detailed diagnostics
         st.markdown("---")
         st.subheader("Database Connection")
-        if getattr(db, 'conn', None):
-            st.success("Connected")
+        
+        # Check database connection with detailed error info
+        is_connected, message, connection_details, error_info = db.check_db_connection()
+        
+        if is_connected:
+            st.success("✅ Connected to database")
+            if st.checkbox("Show connection details"):
+                st.json(connection_details)
         else:
-            st.error("Not connected")
+            st.error(f"❌ {message.split(':')[0]}")
+            
+            # Display helpful error information
+            if error_info:
+                if "firewall_issue" in error_info:
+                    st.warning(f"⚠️ **Firewall Issue Detected**")
+                    st.info(f"The IP address **{error_info['client_ip']}** is being blocked by the Azure SQL Database firewall.")
+                    st.info("**Solution:** Add this IP to your Azure SQL Database firewall rules:")
+                    st.code(f"1. Go to Azure Portal\n2. Navigate to your SQL server\n3. Go to 'Security' > 'Networking'\n4. Add rule with IP: {error_info['client_ip']}")
+                
+                elif "driver_issue" in error_info:
+                    st.warning("⚠️ **ODBC Driver Issue Detected**")
+                    st.info("The required ODBC driver is not installed or not found on the server.")
+                    st.info("**Solution:** Make sure the packages.txt file includes unixodbc and unixodbc-dev.")
+                
+                elif "credential_issue" in error_info:
+                    st.warning("⚠️ **Login Credentials Issue**")
+                    st.info("The username or password provided is incorrect.")
+                    st.info("**Solution:** Verify your database credentials in Streamlit secrets.")
+                
+                # Show full error details if needed
+                if st.button("Show Full Error Details"):
+                    st.error(message)
         
         # Logout
         st.markdown("---")

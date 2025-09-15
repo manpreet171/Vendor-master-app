@@ -12,32 +12,21 @@ class DatabaseConnector:
         # Load .env for local dev; in Streamlit Cloud we'll prefer st.secrets
         load_dotenv()
         
-        # Prefer Streamlit secrets if present (support both flat and nested structures)
-        secrets = getattr(st, 'secrets', None)
-        if secrets:
-            if 'DB_SERVER' in secrets:
-                # Flat structure
-                self.server = secrets.get('DB_SERVER')
-                self.database = secrets.get('DB_NAME')
-                self.username = secrets.get('DB_USERNAME')
-                self.password = secrets.get('DB_PASSWORD')
-                self.driver = secrets.get('DB_DRIVER', "{ODBC Driver 17 for SQL Server}")
-            elif 'azure_sql' in secrets:
-                # Nested structure [azure_sql]
-                azure = secrets['azure_sql']
-                self.server = azure.get('AZURE_DB_SERVER')
-                self.database = azure.get('AZURE_DB_NAME')
-                self.username = azure.get('AZURE_DB_USERNAME')
-                self.password = azure.get('AZURE_DB_PASSWORD')
-                self.driver = azure.get('AZURE_DB_DRIVER', "{ODBC Driver 17 for SQL Server}")
-            else:
-                secrets = None
-        else:
-            self.server = os.getenv("DB_SERVER")
-            self.database = os.getenv("DB_NAME")
-            self.username = os.getenv("DB_USERNAME")
-            self.password = os.getenv("DB_PASSWORD")
-            self.driver = os.getenv("DB_DRIVER", "{ODBC Driver 17 for SQL Server}")
+        # Database Configuration - Try to get from Streamlit secrets first, then environment variables
+        try:
+            # For Streamlit Cloud deployment
+            self.server = st.secrets["azure_sql"]["AZURE_DB_SERVER"]
+            self.database = st.secrets["azure_sql"]["AZURE_DB_NAME"]
+            self.username = st.secrets["azure_sql"]["AZURE_DB_USERNAME"]
+            self.password = st.secrets["azure_sql"]["AZURE_DB_PASSWORD"]
+            self.driver = st.secrets["azure_sql"]["AZURE_DB_DRIVER"]
+        except Exception:
+            # Fallback to environment variables (local development)
+            self.server = os.getenv('AZURE_DB_SERVER', 'dw-sqlsvr.database.windows.net')
+            self.database = os.getenv('AZURE_DB_NAME', 'dw-sqldb')
+            self.username = os.getenv('AZURE_DB_USERNAME', 'manpreet')
+            self.password = os.getenv('AZURE_DB_PASSWORD', 'xxxx')
+            self.driver = os.getenv('AZURE_DB_DRIVER', '{ODBC Driver 17 for SQL Server}')
         
         self.conn = None
         self.cursor = None
@@ -51,8 +40,58 @@ class DatabaseConnector:
             self.cursor = self.conn.cursor()
             return True
         except Exception as e:
-            print(f"Error connecting to database: {str(e)}")
+            error_msg = str(e)
+            print(f"Error connecting to database: {error_msg}")
+            # Store error for display in UI
+            self.connection_error = error_msg
             return False
+    
+    def check_db_connection(self):
+        """Check database connection and return detailed status"""
+        try:
+            conn = pyodbc.connect(f"DRIVER={self.driver};SERVER={self.server};DATABASE={self.database};UID={self.username};PWD={self.password}")
+            if conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT @@version")
+                version = cursor.fetchone()[0]
+                conn.close()
+                
+                connection_details = {
+                    "server": self.server,
+                    "database": self.database,
+                    "username": self.username,
+                    "driver": self.driver
+                }
+                
+                return True, "Successfully connected to the database", connection_details, None
+            else:
+                return False, "Failed to connect to the database", None, None
+        except Exception as e:
+            error_message = str(e)
+            
+            error_info = {}
+            
+            # Check for common Azure SQL firewall error patterns
+            if "Client with IP address" in error_message and "is not allowed to access the server" in error_message:
+                import re
+                ip_match = re.search(r"Client with IP address '([\d\.]+)'.*", error_message)
+                if ip_match:
+                    client_ip = ip_match.group(1)
+                    error_info["client_ip"] = client_ip
+                    error_info["firewall_issue"] = True
+                    error_info["solution"] = f"Add IP address {client_ip} to Azure SQL Database firewall rules"
+            
+            # Check for driver-related errors
+            if "Driver" in error_message and "not found" in error_message:
+                error_info["driver_issue"] = True
+                error_info["solution"] = "Install the required ODBC driver on the server"
+            
+            # Check for login failures
+            if "Login failed" in error_message:
+                error_info["credential_issue"] = True
+                error_info["solution"] = "Verify username and password are correct"
+                
+            return False, f"Error connecting to database: {error_message}", None, error_info
     
     def close_connection(self):
         """Close the database connection"""
