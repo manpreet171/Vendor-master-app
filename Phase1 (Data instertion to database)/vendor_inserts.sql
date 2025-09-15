@@ -1,0 +1,76 @@
+-- SDGNY Vendor Management System - Complete Vendor Insert Statements
+-- Generated from provided vendor data
+
+-- Make sure we're using the correct database
+USE [dw-sqldb];
+GO
+
+-- Insert all vendors from the provided data
+INSERT INTO Vendors (vendor_name, contact_name, vendor_email, vendor_phone) VALUES
+('AJ Visual', NULL, NULL, NULL),
+('Albert Kemperle', 'Robert Commisso', 'Robert.Commisso@kemperle.com', '(800) 236-0112'),
+('All American Print Supply', 'ORDER ONLINE - WEBSITE', 'purchasing@sdgny.com', '(714) 576-2900'),
+('Allendale Machinery Systems', 'Judy Shepard', 'tooling@allendalemachinery.com', '201 327 5215'),
+('Amazon', 'ORDER ONLINE - WEBSITE', 'purchasing@sdgny.com', NULL),
+('Artazn', 'ORDER ONLINE - WEBSITE', 'purchasing@sdgny.com', '(423) 639-811'),
+('Assemblyonics', 'Angela Cirilli', 'angelac@assemblyonics.com', '631 231 4440'),
+('Awisco', NULL, NULL, NULL),
+('Beacon Adhesives', 'Marrylen Santiago', 'info@beaconadhesives.com', '914-699-3400'),
+('Black Hawk Industrial', NULL, NULL, NULL),
+('Canal Plastics Center', NULL, NULL, NULL),
+('Chemical Concepts', NULL, NULL, NULL),
+('Corian Design', NULL, NULL, NULL),
+('Digital Print Supplies', 'ORDER ONLINE - WEBSITE', 'purchasing@sdgny.com', '(704) 628-7679'),
+('Direct Color System', NULL, NULL, NULL),
+('Displays2go', 'ORDER ONLINE - WEBSITE', 'purchasing@sdgny.com', '800 572 2194'),
+('E & T Plastic', 'John Demasi', 'jdemasi@e-tplastics.com', '(718) 729-6226'),
+('Efi Inkjet', NULL, NULL, NULL),
+('Fellers', NULL, NULL, NULL),
+('Glantz', 'Rose Warren', 'rwarren@nglantz.com', '866-645-2689'),
+('Grainger Industrial Supply', 'ORDER ONLINE - WEBSITE', 'purchasing@sdgny.com', '800 472 4643'),
+('Grimco', 'Nicholas Mariani', 'Nicholas.Mariani@grimco.com', '800-542-9941'),
+('Haas', 'Todd Newhouse', 'sales@selwaytool.com', '253-850-8900'),
+('Hadco', NULL, NULL, NULL),
+('HallSigns', NULL, NULL, NULL),
+('Hilas Packaging', NULL, NULL, NULL),
+('Home Depot', 'ORDER ONLINE - WEBSITE', 'purchasing@sdgny.com', NULL),
+('Jessup Manufacturing Company', 'Daphne Smith', 'jmc@jessupmfg.com; dsmith@jessupmfg.com', '815 385 6650'),
+('Johnson Plastics', 'ORDER ONLINE - WEBSITE', 'purchasing@sdgny.com', '800 869 7800'),
+('Laird Plastics', 'Michael Hollander', 'mhollander@lairdplastics.com', '516 334 1124'),
+('Laminators Inc', NULL, NULL, NULL),
+('Lowe''s Home Improvement', NULL, NULL, NULL),
+('Master NY', 'Alex Beroukhim', 'sab@masterny.com', '718-358-1234'),
+('MBS Sign Supply', NULL, NULL, NULL),
+('McMASTER-CARR', 'Alliyah/ Brian/ Lindsey', 'nj.sales@mcmaster.com; la.sales@mcmaster.com; atl.sales@mcmaster.com', '609 259 8900'),
+('Mutual Screw & Supply', NULL, NULL, NULL),
+('Nazdar Company', 'Robin Killion', 'orders@nazdar.com', '888 578 5713'),
+('O Reilly Auto Parts', NULL, NULL, NULL),
+('On Time Supply', 'Tim Tefft', 'tim@ontimesupply.com', '845 352 8600'),
+('Packaging Supply Depot', 'Brandon Saez', 'brandon@packagingsupplydepot.com; sales@packagingsupplydepot.com', '631-524-5444'),
+('Public Metals', NULL, NULL, NULL),
+('R.S Hughes', 'ORDER ONLINE - WEBSITE', 'purchasing@sdgny.com', '877-774-8443'),
+('Remington Laminations, Inc', 'ORDER ONLINE - WEBSITE', 'purchasing@sdgny.com', '817-488-8700'),
+('Rotax Metal Supply', NULL, NULL, NULL),
+('S & F Supplies Inc.', 'Joe Graus, Long Island Sales', 'joeg@sfsupplies.com, lisales@sfsupplies.com', '718 399 3333 x 105'),
+('SDGNY', 'Mariztel Rosales', 'cityparking@sdgny.com', NULL),
+('Siffron', NULL, NULL, NULL),
+('Southern Sign Supply', NULL, NULL, NULL),
+('Sunbelt Sign Supply', NULL, NULL, NULL),
+('Tanner Bolt & Nut', 'Rocky Williams/ Eric Fishkind', 'rwilliams@tannerbolt.com; efishkind@tannerbolt.com', '631 694 4935'),
+('Tape Systems, Inc', 'Matt Scotti, Denise Dorkin', 'matt@tsitapes.com, denise@tsitapes.com', '(914) 668-3700'),
+('Tape-Rite Company, INC.', 'Andrew Machover', 'sales@taperite.com, andy@taperite.com', '1(800) 882-7348'),
+('Tools Today', 'ORDER ONLINE - WEBSITE', 'purchasing@sdgny.com', '888-699-3939'),
+('Total Plastics', NULL, NULL, NULL),
+('Traffic and Parking Control Inc.', 'Nichole Spalla', 'blinkersales@tapconet.com', '(800) 236-0112'),
+('Tubelite', 'Steve', 'dependable@tubeliteusa.com; cgamble@tubelite.com', '800-866-2227'),
+('Uline Shipping Supply', 'Kendra Lalley', 'mnquotes@uline.com; customer.service@uline.com', '800 295 5510'),
+('VTX Tools', 'ORDER ONLINE - WEBSITE', 'purchasing@sdgny.com', '+1 (414) 939-3277'),
+('Yarde Metals', NULL, NULL, NULL),
+('Zund', 'ORDER ONLINE - WEBSITE', 'infous@zund.com', '+1 414 433-0700'),
+('Dedoes', NULL, NULL, NULL),
+('Sherwin-Williams', NULL, NULL, NULL),
+('Flatbed Tools', NULL, NULL, NULL);
+
+-- Verify the inserts
+SELECT COUNT(*) as 'Total Vendors Inserted' FROM Vendors;
+SELECT * FROM Vendors ORDER BY vendor_name;

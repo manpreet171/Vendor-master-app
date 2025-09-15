@@ -1,0 +1,101 @@
+-- SDGNY Vendor Management System - BoxHero Item-Vendor Mappings (Part 3)
+-- This script creates the relationships between items and vendors with costs
+
+-- Make sure we're using the correct database
+USE [dw-sqldb];
+GO
+
+-- Insert BoxHero item-vendor mappings (Part 3)
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Maroon Satin Mixing Base, N 912SP', 'Paint', 'BoxHero', 'Grimco', 184.81;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Maroon Satin Mixing Base, N 912SP', 'Paint', 'BoxHero', 'Glantz', 184.81;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Maroon Satin Mixing Base, N 912SP', 'Paint', 'BoxHero', 'Tubelite', 184.81;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Matte Clear, 42 900SP', 'Paint', 'BoxHero', 'Glantz', 166.69;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Matte Clear, 42 900SP', 'Paint', 'BoxHero', 'Tubelite', 166.69;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Matte Clear, 42 900SP', 'Paint', 'BoxHero', 'Grimco', 166.69;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Medium Silver Satin Mixing Base, N 951SP', 'Paint', 'BoxHero', 'Tubelite', 224.23;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Medium Silver Satin Mixing Base, N 951SP', 'Paint', 'BoxHero', 'Glantz', 224.23;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Medium Silver Satin Mixing Base, N 951SP', 'Paint', 'BoxHero', 'Grimco', 224.23;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - New Blue Satin Mixing Base, N 925SP', 'Paint', 'BoxHero', 'Glantz', 180.70;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - New Blue Satin Mixing Base, N 925SP', 'Paint', 'BoxHero', 'Grimco', 180.70;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - New Blue Satin Mixing Base, N 925SP', 'Paint', 'BoxHero', 'Tubelite', 180.70;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Non-Chrome Etch Primer, 74350SP', 'Paint', 'BoxHero', 'Grimco', 110.77;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Non-Chrome Etch Primer, 74350SP', 'Paint', 'BoxHero', 'Glantz', 110.77;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Non-Chrome Etch Primer, 74350SP', 'Paint', 'BoxHero', 'Tubelite', 110.77;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Polished Pewter, SVOC1956SP/01', 'Paint', 'BoxHero', 'Glantz', 315.25;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Polished Pewter, SVOC1956SP/01', 'Paint', 'BoxHero', 'Grimco', 315.25;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Polished Pewter, SVOC1956SP/01', 'Paint', 'BoxHero', 'Tubelite', 315.25;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Red Oxide Satin Mixing Base, N 915SP', 'Paint', 'BoxHero', 'Grimco', 218.05;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Red Oxide Satin Mixing Base, N 915SP', 'Paint', 'BoxHero', 'Tubelite', 218.05;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Red Oxide Satin Mixing Base, N 915SP', 'Paint', 'BoxHero', 'Glantz', 218.05;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Red Oxide Satin Mixing Base, SV 915SP', 'Paint', 'BoxHero', 'Tubelite', 223.68;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Red Oxide Satin Mixing Base, SV 915SP', 'Paint', 'BoxHero', 'Glantz', 223.68;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Red Oxide Satin Mixing Base, SV 915SP', 'Paint', 'BoxHero', 'Grimco', 223.68;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Red Yellow Satin Mixing Base, N 940SP', 'Paint', 'BoxHero', 'Grimco', 203.53;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Red Yellow Satin Mixing Base, N 940SP', 'Paint', 'BoxHero', 'Tubelite', 203.53;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Red Yellow Satin Mixing Base, N 940SP', 'Paint', 'BoxHero', 'Glantz', 203.53;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Rust Inhibiting White Epoxy, 274 908SP', 'Paint', 'BoxHero', 'Tubelite', 184.32;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Rust Inhibiting White Epoxy, 274 908SP', 'Paint', 'BoxHero', 'Glantz', 184.32;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Rust Inhibiting White Epoxy, 274 908SP', 'Paint', 'BoxHero', 'Grimco', 184.32;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Satin Clear, 42 228SP', 'Paint', 'BoxHero', 'Glantz', 177.54;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Satin Clear, 42 228SP', 'Paint', 'BoxHero', 'Tubelite', 177.54;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Satin Clear, 42 228SP', 'Paint', 'BoxHero', 'Grimco', 177.54;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Scarlet Red Satin Mixing Base, N 947SP', 'Paint', 'BoxHero', 'Grimco', 212.00;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Scarlet Red Satin Mixing Base, N 947SP', 'Paint', 'BoxHero', 'Tubelite', 212.00;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Scarlet Red Satin Mixing Base, N 947SP', 'Paint', 'BoxHero', 'Glantz', 212.00;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Sparkle Silver Satin Mixing Base, N 952SP', 'Paint', 'BoxHero', 'Grimco', 168.65;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Sparkle Silver Satin Mixing Base, N 952SP', 'Paint', 'BoxHero', 'Glantz', 168.65;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Sparkle Silver Satin Mixing Base, N 952SP', 'Paint', 'BoxHero', 'Tubelite', 168.65;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Suede Additive Medium, 287 112SP', 'Paint', 'BoxHero', 'Grimco', 88.17;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Suede Additive Medium, 287 112SP', 'Paint', 'BoxHero', 'Glantz', 88.17;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Suede Additive Medium, 287 112SP', 'Paint', 'BoxHero', 'Tubelite', 88.17;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Suede Additive, 287 113SP', 'Paint', 'BoxHero', 'Grimco', 82.76;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Suede Additive, 287 113SP', 'Paint', 'BoxHero', 'Glantz', 82.76;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Suede Additive, 287 113SP', 'Paint', 'BoxHero', 'Tubelite', 82.76;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Super Sparkle Silver Satin Mixing Base, N 953SP', 'Paint', 'BoxHero', 'Tubelite', 167.65;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Super Sparkle Silver Satin Mixing Base, N 953SP', 'Paint', 'BoxHero', 'Grimco', 167.65;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Super Sparkle Silver Satin Mixing Base, N 953SP', 'Paint', 'BoxHero', 'Glantz', 167.65;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Transparent Red Oxide Satin Mixing Base, N 931SP', 'Paint', 'BoxHero', 'Grimco', 260.37;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Transparent Red Oxide Satin Mixing Base, N 931SP', 'Paint', 'BoxHero', 'Glantz', 260.37;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Transparent Red Oxide Satin Mixing Base, N 931SP', 'Paint', 'BoxHero', 'Tubelite', 260.37;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Transparent Yellow Oxide Satin Mixing Base, N 932SP', 'Paint', 'BoxHero', 'Grimco', 200.00;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Transparent Yellow Oxide Satin Mixing Base, N 932SP', 'Paint', 'BoxHero', 'Glantz', 200.00;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Transparent Yellow Oxide Satin Mixing Base, N 932SP', 'Paint', 'BoxHero', 'Tubelite', 200.00;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Undercoat, 74 770SP', 'Paint', 'BoxHero', 'Grimco', 92.23;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Undercoat, 74 770SP', 'Paint', 'BoxHero', 'Glantz', 92.23;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Undercoat, 74 770SP', 'Paint', 'BoxHero', 'Tubelite', 92.23;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Universal Catalyst, 43270SP', 'Paint', 'BoxHero', 'Glantz', 175.00;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Universal Catalyst, 43270SP', 'Paint', 'BoxHero', 'Tubelite', 175.00;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Universal Catalyst, 43270SP', 'Paint', 'BoxHero', 'Grimco', 175.00;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Violet Satin Mixing Base, N 911SP', 'Paint', 'BoxHero', 'Glantz', 192.62;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Violet Satin Mixing Base, N 911SP', 'Paint', 'BoxHero', 'Tubelite', 192.62;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Violet Satin Mixing Base, N 911SP', 'Paint', 'BoxHero', 'Grimco', 192.62;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - White Epoxy Primer, 274530SP', 'Paint', 'BoxHero', 'Tubelite', 110.40;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - White Epoxy Primer, 274530SP', 'Paint', 'BoxHero', 'Grimco', 110.40;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - White Epoxy Primer, 274530SP', 'Paint', 'BoxHero', 'Glantz', 110.40;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - White Satin Mixing Base, N 202SP', 'Paint', 'BoxHero', 'Tubelite', 173.31;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - White Satin Mixing Base, N 202SP', 'Paint', 'BoxHero', 'Glantz', 173.31;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - White Satin Mixing Base, N 202SP', 'Paint', 'BoxHero', 'Grimco', 173.31;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Yellow Oxide Satin Mixing Base, N 917SP', 'Paint', 'BoxHero', 'Tubelite', 237.45;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Yellow Oxide Satin Mixing Base, N 917SP', 'Paint', 'BoxHero', 'Glantz', 237.45;
+EXEC dbo.InsertItemVendorMapping 'Matthews Paint - Yellow Oxide Satin Mixing Base, N 917SP', 'Paint', 'BoxHero', 'Grimco', 237.45;
+EXEC dbo.InsertItemVendorMapping 'Monomer Flush - UV-LED IR2', 'DCP', 'BoxHero', 'Direct Color System', 219.45;
+EXEC dbo.InsertItemVendorMapping 'Paint Mixing Lid DEX1911 Alliance Clicseal Gallon / Waterborne Mixing Lid', 'Paint', 'BoxHero', 'Dedoes', 0.00;
+EXEC dbo.InsertItemVendorMapping 'Paint Mixing Lid DEX1911 Alliance Clicseal Gallon / Waterborne Mixing Lid', 'Paint', 'BoxHero', 'Glantz', 0.00;
+EXEC dbo.InsertItemVendorMapping 'Painter''s Tape - Scotch Rough Surface, 1", Green', 'Adhesive', 'BoxHero', 'Tape-Rite Company, INC.', 3.25;
+EXEC dbo.InsertItemVendorMapping 'Painter''s Tape - Scotch Rough Surface, 1", Green', 'Adhesive', 'BoxHero', 'Tape Systems, Inc', 3.25;
+EXEC dbo.InsertItemVendorMapping 'Painter''s Tape - Scotch Rough Surface, 1", Green', 'Adhesive', 'BoxHero', 'S & F Supplies Inc.', 3.25;
+EXEC dbo.InsertItemVendorMapping 'Painter''s Tape - Scotch Rough Surface, 1.88", Green', 'Adhesive', 'BoxHero', 'S & F Supplies Inc.', 6.15;
+EXEC dbo.InsertItemVendorMapping 'Painter''s Tape - Scotch Rough Surface, 1.88", Green', 'Adhesive', 'BoxHero', 'Tape-Rite Company, INC.', 6.15;
+EXEC dbo.InsertItemVendorMapping 'Painter''s Tape - Scotch Rough Surface, 1.88", Green', 'Adhesive', 'BoxHero', 'Tape Systems, Inc', 6.15;
+EXEC dbo.InsertItemVendorMapping 'Photoluminescent Sheet - Glo Brite #7550, 28" x 48", Glow Film', 'Vinyl', 'BoxHero', 'Jessup Manufacturing Company', 49.25;
+EXEC dbo.InsertItemVendorMapping 'PreCleaner - Matthews Paint 6410SP, Low VOC', 'Paint', 'BoxHero', 'Tubelite', 76.90;
+EXEC dbo.InsertItemVendorMapping 'PreCleaner - Matthews Paint 6410SP, Low VOC', 'Paint', 'BoxHero', 'Glantz', 76.90;
+EXEC dbo.InsertItemVendorMapping 'PreCleaner - Matthews Paint 6410SP, Low VOC', 'Paint', 'BoxHero', 'Grimco', 76.90;
+EXEC dbo.InsertItemVendorMapping 'Primer Catalyst - 32 fl oz', 'Paint', 'BoxHero', 'Sherwin-Williams', 46.32;
+EXEC dbo.InsertItemVendorMapping 'Primer Catalyst - 32 fl oz', 'Paint', 'BoxHero', 'Albert Kemperle', 46.32;
+EXEC dbo.InsertItemVendorMapping 'Primer Surfacer - 128 fl oz', 'Paint', 'BoxHero', 'O Reilly Auto Parts', 156.25;
+EXEC dbo.InsertItemVendorMapping 'Primer Surfacer - 128 fl oz', 'Paint', 'BoxHero', 'Albert Kemperle', 156.25;
+EXEC dbo.InsertItemVendorMapping 'Rate Boards,  46" x 94"', 'SDG', 'BoxHero', 'SDGNY', 200.00;
+
+-- Verify the inserts
+SELECT COUNT(*) as 'Total BoxHero Item-Vendor Mappings (Part 3)' FROM ItemVendorMap;
