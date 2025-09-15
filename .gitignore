@@ -1,9 +1,16 @@
 # Environment variables
+# Root-level
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+# Any subfolder (e.g., Phase2, Phase1)
+**/.env
+**/.env.local
+**/.env.development.local
+**/.env.test.local
+**/.env.production.local
 
 # Python
 __pycache__/
