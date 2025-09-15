@@ -2,19 +2,30 @@ import os
 import pyodbc
 import pandas as pd
 from dotenv import load_dotenv
+import streamlit as st
 
 class DatabaseConnector:
     """Database connection and operations class"""
     
     def __init__(self):
         """Initialize database connection using environment variables"""
+        # Load .env for local dev; in Streamlit Cloud we'll prefer st.secrets
         load_dotenv()
         
-        self.server = os.getenv("DB_SERVER")
-        self.database = os.getenv("DB_NAME")
-        self.username = os.getenv("DB_USERNAME")
-        self.password = os.getenv("DB_PASSWORD")
-        self.driver = os.getenv("DB_DRIVER", "{ODBC Driver 17 for SQL Server}")
+        # Prefer Streamlit secrets if present
+        secrets = getattr(st, 'secrets', None)
+        if secrets and 'DB_SERVER' in secrets:
+            self.server = secrets.get('DB_SERVER')
+            self.database = secrets.get('DB_NAME')
+            self.username = secrets.get('DB_USERNAME')
+            self.password = secrets.get('DB_PASSWORD')
+            self.driver = secrets.get('DB_DRIVER', "{ODBC Driver 17 for SQL Server}")
+        else:
+            self.server = os.getenv("DB_SERVER")
+            self.database = os.getenv("DB_NAME")
+            self.username = os.getenv("DB_USERNAME")
+            self.password = os.getenv("DB_PASSWORD")
+            self.driver = os.getenv("DB_DRIVER", "{ODBC Driver 17 for SQL Server}")
         
         self.conn = None
         self.cursor = None
