@@ -32,11 +32,17 @@ def main():
                 pwd = st.text_input("Password", type="password", key="login_pass")
                 submitted = st.form_submit_button("Login")
                 if submitted:
-                    env_user = os.getenv("APP_USER")
-                    env_pass = os.getenv("APP_PASSWORD")
-                    # Trim whitespace to handle entries like 'APP_USER= admin' in .env
-                    u_ok = env_user is not None and user.strip() == env_user.strip()
-                    p_ok = env_pass is not None and pwd == env_pass
+                    # Prefer Streamlit secrets, then environment variables
+                    sec = getattr(st, 'secrets', None)
+                    if sec and 'APP_USER' in sec and 'APP_PASSWORD' in sec:
+                        env_user = str(sec.get('APP_USER'))
+                        env_pass = str(sec.get('APP_PASSWORD'))
+                    else:
+                        env_user = os.getenv("APP_USER")
+                        env_pass = os.getenv("APP_PASSWORD")
+                    # Trim whitespace to handle entries like 'APP_USER= admin' in .env or secrets
+                    u_ok = env_user is not None and user.strip() == str(env_user).strip()
+                    p_ok = env_pass is not None and pwd == str(env_pass)
                     if u_ok and p_ok:
                         st.session_state.logged_in = True
                         st.success("Logged in successfully.")

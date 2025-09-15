@@ -12,14 +12,26 @@ class DatabaseConnector:
         # Load .env for local dev; in Streamlit Cloud we'll prefer st.secrets
         load_dotenv()
         
-        # Prefer Streamlit secrets if present
+        # Prefer Streamlit secrets if present (support both flat and nested structures)
         secrets = getattr(st, 'secrets', None)
-        if secrets and 'DB_SERVER' in secrets:
-            self.server = secrets.get('DB_SERVER')
-            self.database = secrets.get('DB_NAME')
-            self.username = secrets.get('DB_USERNAME')
-            self.password = secrets.get('DB_PASSWORD')
-            self.driver = secrets.get('DB_DRIVER', "{ODBC Driver 17 for SQL Server}")
+        if secrets:
+            if 'DB_SERVER' in secrets:
+                # Flat structure
+                self.server = secrets.get('DB_SERVER')
+                self.database = secrets.get('DB_NAME')
+                self.username = secrets.get('DB_USERNAME')
+                self.password = secrets.get('DB_PASSWORD')
+                self.driver = secrets.get('DB_DRIVER', "{ODBC Driver 17 for SQL Server}")
+            elif 'azure_sql' in secrets:
+                # Nested structure [azure_sql]
+                azure = secrets['azure_sql']
+                self.server = azure.get('AZURE_DB_SERVER')
+                self.database = azure.get('AZURE_DB_NAME')
+                self.username = azure.get('AZURE_DB_USERNAME')
+                self.password = azure.get('AZURE_DB_PASSWORD')
+                self.driver = azure.get('AZURE_DB_DRIVER', "{ODBC Driver 17 for SQL Server}")
+            else:
+                secrets = None
         else:
             self.server = os.getenv("DB_SERVER")
             self.database = os.getenv("DB_NAME")
