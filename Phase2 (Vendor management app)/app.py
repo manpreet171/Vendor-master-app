@@ -1,4 +1,6 @@
 import streamlit as st
+import os
+from dotenv import load_dotenv
 import pandas as pd
 import plotly.express as px
 from db_connector import DatabaseConnector
@@ -14,6 +16,36 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
+    
+    # Load environment variables from .env in this folder (for local/dev)
+    load_dotenv()
+
+    # Login gate
+    def require_login():
+        if 'logged_in' not in st.session_state:
+            st.session_state.logged_in = False
+        if not st.session_state.logged_in:
+            st.title("Login")
+            st.caption("Please enter your credentials to continue.")
+            with st.form("login_form"):
+                user = st.text_input("Username", key="login_user")
+                pwd = st.text_input("Password", type="password", key="login_pass")
+                submitted = st.form_submit_button("Login")
+                if submitted:
+                    env_user = os.getenv("APP_USER")
+                    env_pass = os.getenv("APP_PASSWORD")
+                    # Trim whitespace to handle entries like 'APP_USER= admin' in .env
+                    u_ok = env_user is not None and user.strip() == env_user.strip()
+                    p_ok = env_pass is not None and pwd == env_pass
+                    if u_ok and p_ok:
+                        st.session_state.logged_in = True
+                        st.success("Logged in successfully.")
+                        st.rerun()
+                    else:
+                        st.error("Invalid credentials. Contact admin if you need access.")
+            st.stop()
+
+    require_login()
     
     # Apply custom CSS
     apply_custom_css()
@@ -51,6 +83,20 @@ def main():
             st.success("Connected")
         else:
             st.error("Not connected")
+        
+        # Logout
+        st.markdown("---")
+        if st.button("Logout"):
+            st.session_state.logged_in = False
+            for k in [
+                'login_user','login_pass','dashboard_mode','add_item_source_selector',
+                'item_name_input','item_type_input','sku_input','barcode_input',
+                'height_input','width_input','thickness_input','assign_vendors_new_item',
+                'new_item_id','new_item_name','reset_add_item_form'
+            ]:
+                if k in st.session_state:
+                    del st.session_state[k]
+            st.rerun()
     
     # Main content based on active tab
     if st.session_state.active_tab == "Dashboard":
