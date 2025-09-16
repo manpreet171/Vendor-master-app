@@ -86,41 +86,30 @@ def main():
         
         
         
-        # Database connection status with detailed diagnostics
+        # Database connection status (minimal)
         st.markdown("---")
-        st.subheader("Database Connection")
+        st.subheader("Database")
         
-        # Check database connection with detailed error info
+        # Check database connection with minimal display
         is_connected, message, connection_details, error_info = db.check_db_connection()
         
         if is_connected:
-            st.success("✅ Connected to database")
-            if st.checkbox("Show connection details"):
-                st.json(connection_details)
+            st.success("Connected")
         else:
-            st.error(f"❌ {message.split(':')[0]}")
+            st.error("Not connected")
             
-            # Display helpful error information
+            # Show only essential error info
             if error_info:
                 if "firewall_issue" in error_info:
-                    st.warning(f"⚠️ **Firewall Issue Detected**")
-                    st.info(f"The IP address **{error_info['client_ip']}** is being blocked by the Azure SQL Database firewall.")
-                    st.info("**Solution:** Add this IP to your Azure SQL Database firewall rules:")
-                    st.code(f"1. Go to Azure Portal\n2. Navigate to your SQL server\n3. Go to 'Security' > 'Networking'\n4. Add rule with IP: {error_info['client_ip']}")
-                
+                    st.warning(f"IP {error_info['client_ip']} blocked by firewall")
                 elif "driver_issue" in error_info:
-                    st.warning("⚠️ **ODBC Driver Issue Detected**")
-                    st.info("The required ODBC driver is not installed or not found on the server.")
-                    st.info("**Solution:** Make sure the packages.txt file includes unixodbc and unixodbc-dev.")
-                
+                    st.warning("ODBC driver not available")
                 elif "credential_issue" in error_info:
-                    st.warning("⚠️ **Login Credentials Issue**")
-                    st.info("The username or password provided is incorrect.")
-                    st.info("**Solution:** Verify your database credentials in Streamlit secrets.")
-                
-                # Show full error details if needed
-                if st.button("Show Full Error Details"):
-                    st.error(message)
+                    st.warning("Invalid credentials")
+            
+            # Optional details in expander
+            with st.expander("Error Details"):
+                st.error(message)
         
         # Logout
         st.markdown("---")
@@ -169,22 +158,18 @@ def display_dashboard(db):
     
     # Step 1: Choose view mode (Item-centric or Vendor-centric)
     if st.session_state.dashboard_step == 1:
-        st.subheader("What would you like to explore?")
-        
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🔍 Find Items by Source", use_container_width=True, help="Browse items from BoxHero or Raw Materials"):
+            if st.button("🔍 Find Items by Source", use_container_width=True):
                 st.session_state.view_mode = "item"
                 st.session_state.dashboard_step = 2
                 st.rerun()
         
         with col2:
-            if st.button("🏢 Browse by Vendor", use_container_width=True, help="See what items each vendor supplies"):
+            if st.button("🏢 Browse by Vendor", use_container_width=True):
                 st.session_state.view_mode = "vendor"
                 st.session_state.dashboard_step = 2
                 st.rerun()
-        
-        st.info("💡 Choose how you'd like to explore your inventory and vendor relationships")
         return
     
     # Back button for all subsequent steps
