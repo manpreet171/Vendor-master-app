@@ -201,28 +201,25 @@ def display_vendor_flow(db):
     
     vendors = db.get_all_vendors() or []
     if not vendors:
-        st.warning("No vendors found in the system.")
-        st.info("💡 Add vendors in the 'Vendors' tab to see them here.")
+        st.warning("No vendors found.")
         return
     
     # Step 2: Select vendor
     vendor_options = {v['vendor_name']: v['vendor_id'] for v in vendors}
     selected_vendor_name = st.selectbox(
-        "Choose a vendor to see their supplied items:",
+        "Choose a vendor:",
         options=[""] + sorted(vendor_options.keys()),
         key="vendor_selector"
     )
     
     if not selected_vendor_name:
-        st.info("👆 Select a vendor from the dropdown above")
         return
     
     vendor_id = vendor_options[selected_vendor_name]
     items_for_vendor = db.get_vendor_items(vendor_id) or []
     
     if not items_for_vendor:
-        st.info(f"📦 {selected_vendor_name} doesn't supply any items yet.")
-        st.info("💡 Add item-vendor mappings in the 'Items' tab.")
+        st.info(f"{selected_vendor_name} doesn't supply any items yet.")
         return
     
     # Display vendor's items
@@ -234,32 +231,25 @@ def display_item_flow(db):
     
     # Step 2: Select source
     if st.session_state.dashboard_step == 2:
-        st.markdown("**Step 1: Choose your data source**")
-        
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("📦 BoxHero Items", use_container_width=True, help="Items from BoxHero inventory system"):
+            if st.button("📦 BoxHero Items", use_container_width=True):
                 st.session_state.selected_source = "BoxHero"
                 st.session_state.dashboard_step = 3
                 st.rerun()
         
         with col2:
-            if st.button("🔧 Raw Materials", use_container_width=True, help="Raw materials and components"):
+            if st.button("🔧 Raw Materials", use_container_width=True):
                 st.session_state.selected_source = "Raw Materials"
                 st.session_state.dashboard_step = 3
                 st.rerun()
-        
-        st.info("💡 Select the source of items you want to explore")
         return
     
     # Step 3: Select specific item
     if st.session_state.dashboard_step == 3:
-        st.markdown(f"**Step 2: Choose an item from {st.session_state.selected_source}**")
-        
         items = db.get_all_items(source_filter=st.session_state.selected_source)
         if not items:
             st.warning(f"No items found for source '{st.session_state.selected_source}'.")
-            st.info("💡 Add items in the 'Items' tab to see them here.")
             return
         
         # Build clean item labels
@@ -267,7 +257,6 @@ def display_item_flow(db):
         for item in items:
             if item['source_sheet'] == "BoxHero":
                 sku = item.get('sku') or '—'
-                bc = item.get('barcode') or '—'
                 label = f"{item['item_name']} (SKU: {sku})"
             else:
                 h = fmt_dim(item.get('height'))
@@ -283,7 +272,6 @@ def display_item_flow(db):
         )
         
         if not selected_label:
-            st.info("👆 Select an item from the dropdown above")
             return
         
         st.session_state.selected_item_id = item_options[selected_label]
@@ -304,8 +292,6 @@ def display_item_details(db):
         return
     
     # Item summary
-    st.markdown("**📋 Item Details**")
-    
     col1, col2 = st.columns(2)
     with col1:
         st.markdown(f"**Name:** {item_record['item_name']}")
@@ -325,7 +311,6 @@ def display_item_details(db):
     st.markdown("---")
     
     # Vendors section
-    st.markdown("**🏢 Available Vendors**")
     vendors = db.get_item_vendors(item_record['item_id'])
     
     if vendors:
@@ -347,16 +332,11 @@ def display_item_details(db):
                         st.markdown(f"**Phone:** [{v['vendor_phone']}](tel:{v['vendor_phone']})")
                     else:
                         st.markdown("**Phone:** —")
-        
-        st.success(f"✅ Found {len(vendors_sorted)} vendor(s) for this item")
     else:
-        st.info("📭 No vendors mapped to this item yet.")
-        st.info("💡 Add vendor mappings in the 'Items' tab.")
+        st.info("No vendors mapped to this item yet.")
 
 def display_vendor_items(vendor_name, items_for_vendor):
     """Display items supplied by a vendor"""
-    st.markdown(f"**📦 Items supplied by {vendor_name}**")
-    
     # Sort items by source then name
     items_sorted = sorted(items_for_vendor, key=lambda i: (i.get('source_sheet') or '', i.get('item_name') or ''))
     
@@ -365,7 +345,7 @@ def display_vendor_items(vendor_name, items_for_vendor):
         cost_text = format_currency(cost) if cost is not None else "N/A"
         
         if item.get('source_sheet') == 'BoxHero':
-            details = f"SKU: {item.get('sku') or '—'} • Barcode: {item.get('barcode') or '—'}"
+            details = f"SKU: {item.get('sku') or '—'}"
         else:
             details = f"{fmt_dim(item.get('height'))}H × {fmt_dim(item.get('width'))}W × {fmt_dim(item.get('thickness'))}T"
         
@@ -376,8 +356,6 @@ def display_vendor_items(vendor_name, items_for_vendor):
                 st.markdown(f"**Source:** {item.get('source_sheet') or '—'}")
             with col2:
                 st.markdown(f"**Details:** {details}")
-    
-    st.success(f"✅ {vendor_name} supplies {len(items_sorted)} item(s)")
 
 def fmt_dim(val):
     """Helper to format dimension values nicely"""
