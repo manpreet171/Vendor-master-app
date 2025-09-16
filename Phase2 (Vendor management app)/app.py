@@ -56,8 +56,7 @@ def main():
     # Apply custom CSS
     apply_custom_css()
     
-    # App title
-    st.title("Vendor Management System")
+    # App title removed - now in sidebar
     
     # Initialize session state for active tab if not exists
     if 'active_tab' not in st.session_state:
@@ -72,6 +71,8 @@ def main():
     
     # Create sidebar for navigation
     with st.sidebar:
+        st.markdown("**Vendor Management System**")
+        st.markdown("---")
         st.header("Navigation")
         
         # Navigation buttons
