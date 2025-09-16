@@ -154,121 +154,180 @@ def main():
     db.close_connection()
 
 def display_dashboard(db):
-    """Display the simplified dashboard page"""
+    """Display the clean, step-by-step dashboard"""
     st.header("Dashboard")
     
-    # Choose dashboard mode
-    mode = st.radio("View by", ["Item", "Vendor"], horizontal=True, key="dashboard_mode")
+    # Initialize session state for dashboard flow
+    if 'dashboard_step' not in st.session_state:
+        st.session_state.dashboard_step = 1
+    if 'selected_source' not in st.session_state:
+        st.session_state.selected_source = None
+    if 'selected_item_id' not in st.session_state:
+        st.session_state.selected_item_id = None
+    if 'view_mode' not in st.session_state:
+        st.session_state.view_mode = None
     
-    if mode == "Vendor":
-        # Vendor-centric view
-        vendors = db.get_all_vendors() or []
-        if not vendors:
-            st.info("No vendors found.")
-            return
-        vendor_options = {v['vendor_name']: v['vendor_id'] for v in vendors}
-        selected_vendor_name = st.selectbox("Select vendor", sorted(vendor_options.keys()))
-        if not selected_vendor_name:
-            return
-        vendor_id = vendor_options[selected_vendor_name]
-        items_for_vendor = db.get_vendor_items(vendor_id) or []
-        if not items_for_vendor:
-            st.info("This vendor does not supply any items yet.")
+    # Step 1: Choose view mode (Item-centric or Vendor-centric)
+    if st.session_state.dashboard_step == 1:
+        st.subheader("What would you like to explore?")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔍 Find Items by Source", use_container_width=True, help="Browse items from BoxHero or Raw Materials"):
+                st.session_state.view_mode = "item"
+                st.session_state.dashboard_step = 2
+                st.rerun()
+        
+        with col2:
+            if st.button("🏢 Browse by Vendor", use_container_width=True, help="See what items each vendor supplies"):
+                st.session_state.view_mode = "vendor"
+                st.session_state.dashboard_step = 2
+                st.rerun()
+        
+        st.info("💡 Choose how you'd like to explore your inventory and vendor relationships")
+        return
+    
+    # Back button for all subsequent steps
+    if st.button("← Back", key="back_button"):
+        if st.session_state.dashboard_step > 1:
+            st.session_state.dashboard_step -= 1
+            if st.session_state.dashboard_step == 1:
+                st.session_state.view_mode = None
+                st.session_state.selected_source = None
+                st.session_state.selected_item_id = None
+            elif st.session_state.dashboard_step == 2 and st.session_state.view_mode == "item":
+                st.session_state.selected_source = None
+                st.session_state.selected_item_id = None
+            st.rerun()
+    
+    # Vendor-centric flow
+    if st.session_state.view_mode == "vendor":
+        display_vendor_flow(db)
+        return
+    
+    # Item-centric flow
+    if st.session_state.view_mode == "item":
+        display_item_flow(db)
+        return
+
+def display_vendor_flow(db):
+    """Clean vendor-centric flow"""
+    st.subheader("🏢 Browse by Vendor")
+    
+    vendors = db.get_all_vendors() or []
+    if not vendors:
+        st.warning("No vendors found in the system.")
+        st.info("💡 Add vendors in the 'Vendors' tab to see them here.")
+        return
+    
+    # Step 2: Select vendor
+    vendor_options = {v['vendor_name']: v['vendor_id'] for v in vendors}
+    selected_vendor_name = st.selectbox(
+        "Choose a vendor to see their supplied items:",
+        options=[""] + sorted(vendor_options.keys()),
+        key="vendor_selector"
+    )
+    
+    if not selected_vendor_name:
+        st.info("👆 Select a vendor from the dropdown above")
+        return
+    
+    vendor_id = vendor_options[selected_vendor_name]
+    items_for_vendor = db.get_vendor_items(vendor_id) or []
+    
+    if not items_for_vendor:
+        st.info(f"📦 {selected_vendor_name} doesn't supply any items yet.")
+        st.info("💡 Add item-vendor mappings in the 'Items' tab.")
+        return
+    
+    # Display vendor's items
+    display_vendor_items(selected_vendor_name, items_for_vendor)
+
+def display_item_flow(db):
+    """Clean item-centric flow"""
+    st.subheader("🔍 Find Items by Source")
+    
+    # Step 2: Select source
+    if st.session_state.dashboard_step == 2:
+        st.markdown("**Step 1: Choose your data source**")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📦 BoxHero Items", use_container_width=True, help="Items from BoxHero inventory system"):
+                st.session_state.selected_source = "BoxHero"
+                st.session_state.dashboard_step = 3
+                st.rerun()
+        
+        with col2:
+            if st.button("🔧 Raw Materials", use_container_width=True, help="Raw materials and components"):
+                st.session_state.selected_source = "Raw Materials"
+                st.session_state.dashboard_step = 3
+                st.rerun()
+        
+        st.info("💡 Select the source of items you want to explore")
+        return
+    
+    # Step 3: Select specific item
+    if st.session_state.dashboard_step == 3:
+        st.markdown(f"**Step 2: Choose an item from {st.session_state.selected_source}**")
+        
+        items = db.get_all_items(source_filter=st.session_state.selected_source)
+        if not items:
+            st.warning(f"No items found for source '{st.session_state.selected_source}'.")
+            st.info("💡 Add items in the 'Items' tab to see them here.")
             return
         
-        # Helper to format dimension values nicely (strip trailing zeros)
-        def fmt_dim(val):
-            if val is None:
-                return '—'
-            try:
-                f = float(val)
-                if f.is_integer():
-                    return str(int(f))
-                s = f"{f:.3f}".rstrip('0').rstrip('.')
-                return s
-            except Exception:
-                return str(val)
-        
-        st.subheader(f"Items supplied by {selected_vendor_name}")
-        # Sort items by source then name
-        items_sorted = sorted(items_for_vendor, key=lambda i: (i.get('source_sheet') or '', i.get('item_name') or ''))
-        for it in items_sorted:
-            # Build header with cost
-            cost = it.get('vendor_cost')
-            cost_text = format_currency(cost) if cost is not None else "N/A"
-            if (it.get('source_sheet') == 'BoxHero'):
-                sub = f"SKU: {it.get('sku') or '—'} • Barcode: {it.get('barcode') or '—'}"
+        # Build clean item labels
+        item_options = {}
+        for item in items:
+            if item['source_sheet'] == "BoxHero":
+                sku = item.get('sku') or '—'
+                bc = item.get('barcode') or '—'
+                label = f"{item['item_name']} (SKU: {sku})"
             else:
-                sub = f"{fmt_dim(it.get('height'))}H × {fmt_dim(it.get('width'))}W × {fmt_dim(it.get('thickness'))}T"
-            header = f"{it.get('item_name')} — {cost_text}"
-            with st.expander(header, expanded=False):
-                left, right = st.columns(2)
-                with left:
-                    st.markdown(f"**Type:** {it.get('item_type') or '—'}")
-                    st.markdown(f"**Source:** {it.get('source_sheet') or '—'}")
-                    st.markdown(f"**Details:** {sub}")
-                # We intentionally hide technical IDs in the dashboard; map_id omitted.
-        st.write(f"Total items: {len(items_sorted)}")
-        return
+                h = fmt_dim(item.get('height'))
+                w = fmt_dim(item.get('width'))
+                t = fmt_dim(item.get('thickness'))
+                label = f"{item['item_name']} ({h}H × {w}W × {t}T)"
+            item_options[label] = item['item_id']
+        
+        selected_label = st.selectbox(
+            "Choose an item:",
+            options=[""] + sorted(item_options.keys()),
+            key="item_selector"
+        )
+        
+        if not selected_label:
+            st.info("👆 Select an item from the dropdown above")
+            return
+        
+        st.session_state.selected_item_id = item_options[selected_label]
+        st.session_state.dashboard_step = 4
+        st.rerun()
     
-    # Item-centric view (existing)
-    # Step 1: Select source
-    source = st.radio("Select source", ["BoxHero", "Raw Materials"], horizontal=True)
-    
-    # Step 2: Select item by name (from chosen source)
-    items = db.get_all_items(source_filter=source)
-    if not items:
-        st.info(f"No items found for source '{source}'.")
-        return
-    
-    # Helper to format dimension values nicely (strip trailing zeros)
-    def fmt_dim(val):
-        if val is None:
-            return '—'
-        try:
-            f = float(val)
-            if f.is_integer():
-                return str(int(f))
-            # show up to 3 decimals, drop trailing zeros
-            s = f"{f:.3f}".rstrip('0').rstrip('.')
-            return s
-        except Exception:
-            return str(val)
+    # Step 4: Display item details and vendors
+    if st.session_state.dashboard_step == 4:
+        display_item_details(db)
 
-    # Build disambiguated labels so items with the same name but different attributes can be selected
-    def build_label(it):
-        if it['source_sheet'] == "BoxHero":
-            sku = it.get('sku') or '—'
-            bc = it.get('barcode') or '—'
-            return f"{it['item_name']}  •  SKU: {sku}  •  Barcode: {bc}"
-        else:
-            h = fmt_dim(it.get('height'))
-            w = fmt_dim(it.get('width'))
-            t = fmt_dim(it.get('thickness'))
-            return f"{it['item_name']}  •  {h}H × {w}W × {t}T"
-
-    options = {build_label(it): it['item_id'] for it in items}
-    selected_label = st.selectbox("Select item by name", sorted(options.keys()))
-    
-    if not selected_label:
-        return
-    
-    # Retrieve selected item by its unique ID
-    selected_item_id = options[selected_label]
-    item_record = next((it for it in items if it['item_id'] == selected_item_id), None)
+def display_item_details(db):
+    """Display detailed item information and vendors"""
+    items = db.get_all_items(source_filter=st.session_state.selected_source)
+    item_record = next((it for it in items if it['item_id'] == st.session_state.selected_item_id), None)
     
     if not item_record:
-        st.warning("Item not found.")
+        st.error("Item not found.")
         return
     
-    # Item summary (clean, not JSON)
-    st.subheader("Item Details")
-    info_col1, info_col2 = st.columns(2)
-    with info_col1:
+    # Item summary
+    st.markdown("**📋 Item Details**")
+    
+    col1, col2 = st.columns(2)
+    with col1:
         st.markdown(f"**Name:** {item_record['item_name']}")
         st.markdown(f"**Type:** {item_record['item_type']}")
         st.markdown(f"**Source:** {item_record['source_sheet']}")
-    with info_col2:
+    
+    with col2:
         if item_record['source_sheet'] == "BoxHero":
             st.markdown(f"**SKU:** {item_record.get('sku') or '—'}")
             st.markdown(f"**Barcode:** {item_record.get('barcode') or '—'}")
@@ -276,42 +335,77 @@ def display_dashboard(db):
             h = fmt_dim(item_record.get('height'))
             w = fmt_dim(item_record.get('width'))
             t = fmt_dim(item_record.get('thickness'))
-            st.markdown(f"**Height:** {h}")
-            st.markdown(f"**Width:** {w}")
-            st.markdown(f"**Thickness:** {t}")
-
-    st.subheader("Vendors for this Item")
+            st.markdown(f"**Dimensions:** {h}H × {w}W × {t}T")
+    
+    st.markdown("---")
+    
+    # Vendors section
+    st.markdown("**🏢 Available Vendors**")
     vendors = db.get_item_vendors(item_record['item_id'])
+    
     if vendors:
-        # Sort vendors by cost (lowest first, None last)
         vendors_sorted = sorted(vendors, key=lambda v: (v['cost'] is None, v['cost']))
-        st.caption("Click a vendor to view details")
+        
         for idx, v in enumerate(vendors_sorted):
             cost_text = format_currency(v['cost']) if 'cost' in v else "N/A"
-            header = f"{v['vendor_name']} — {cost_text}"
-            with st.expander(header, expanded=False):
-                email_link = f"mailto:{v['vendor_email']}" if v.get('vendor_email') else None
-                phone_link = f"tel:{v['vendor_phone']}" if v.get('vendor_phone') else None
-                
-                # Left/Right columns for clean layout
+            
+            with st.expander(f"{v['vendor_name']} — {cost_text}", expanded=idx == 0):
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.markdown("**Contact**")
-                    st.markdown(v.get('contact_name') or '—')
-                    st.markdown("**Email**")
-                    if email_link:
-                        st.markdown(f"[{v['vendor_email']}]({email_link})")
+                    st.markdown(f"**Contact:** {v.get('contact_name') or '—'}")
+                    if v.get('vendor_email'):
+                        st.markdown(f"**Email:** [{v['vendor_email']}](mailto:{v['vendor_email']})")
                     else:
-                        st.markdown("—")
+                        st.markdown("**Email:** —")
                 with col2:
-                    st.markdown("**Phone**")
-                    if phone_link:
-                        st.markdown(f"[{v['vendor_phone']}]({phone_link})")
+                    if v.get('vendor_phone'):
+                        st.markdown(f"**Phone:** [{v['vendor_phone']}](tel:{v['vendor_phone']})")
                     else:
-                        st.markdown("—")
-        st.write(f"Total vendors: {len(vendors_sorted)}")
+                        st.markdown("**Phone:** —")
+        
+        st.success(f"✅ Found {len(vendors_sorted)} vendor(s) for this item")
     else:
-        st.info("No vendors mapped to this item yet.")
+        st.info("📭 No vendors mapped to this item yet.")
+        st.info("💡 Add vendor mappings in the 'Items' tab.")
+
+def display_vendor_items(vendor_name, items_for_vendor):
+    """Display items supplied by a vendor"""
+    st.markdown(f"**📦 Items supplied by {vendor_name}**")
+    
+    # Sort items by source then name
+    items_sorted = sorted(items_for_vendor, key=lambda i: (i.get('source_sheet') or '', i.get('item_name') or ''))
+    
+    for idx, item in enumerate(items_sorted):
+        cost = item.get('vendor_cost')
+        cost_text = format_currency(cost) if cost is not None else "N/A"
+        
+        if item.get('source_sheet') == 'BoxHero':
+            details = f"SKU: {item.get('sku') or '—'} • Barcode: {item.get('barcode') or '—'}"
+        else:
+            details = f"{fmt_dim(item.get('height'))}H × {fmt_dim(item.get('width'))}W × {fmt_dim(item.get('thickness'))}T"
+        
+        with st.expander(f"{item.get('item_name')} — {cost_text}", expanded=idx == 0):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"**Type:** {item.get('item_type') or '—'}")
+                st.markdown(f"**Source:** {item.get('source_sheet') or '—'}")
+            with col2:
+                st.markdown(f"**Details:** {details}")
+    
+    st.success(f"✅ {vendor_name} supplies {len(items_sorted)} item(s)")
+
+def fmt_dim(val):
+    """Helper to format dimension values nicely"""
+    if val is None:
+        return '—'
+    try:
+        f = float(val)
+        if f.is_integer():
+            return str(int(f))
+        s = f"{f:.3f}".rstrip('0').rstrip('.')
+        return s
+    except Exception:
+        return str(val)
 
 def display_validation_page(db):
     """Display the data validation page"""
