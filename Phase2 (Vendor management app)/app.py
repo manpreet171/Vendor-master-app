@@ -73,58 +73,51 @@ def main():
     # Create sidebar for navigation
     with st.sidebar:
         st.header("Navigation")
+        # Compact navigation with a single control
+        nav_choice = st.radio(
+            "Go to",
+            ["Dashboard", "Items", "Vendors"],
+            index=["Dashboard", "Items", "Vendors"].index(st.session_state.active_tab),
+            horizontal=False,
+        )
+        if nav_choice != st.session_state.active_tab:
+            st.session_state.active_tab = nav_choice
         
-        # Navigation buttons
-        if st.button("Dashboard", use_container_width=True):
-            st.session_state.active_tab = "Dashboard"
-        
-        if st.button("Items", use_container_width=True):
-            st.session_state.active_tab = "Items"
-        
-        if st.button("Vendors", use_container_width=True):
-            st.session_state.active_tab = "Vendors"
-        
-        
-        
-        # Database connection status with detailed diagnostics
+        # Database connection status with detailed diagnostics (collapsed by default)
         st.markdown("---")
-        st.subheader("Database Connection")
-        
-        # Check database connection with detailed error info
-        is_connected, message, connection_details, error_info = db.check_db_connection()
-        
-        if is_connected:
-            st.success("✅ Connected to database")
-            if st.checkbox("Show connection details"):
-                st.json(connection_details)
-        else:
-            st.error(f"❌ {message.split(':')[0]}")
+        with st.expander("Database connection", expanded=False):
+            # Check database connection with detailed error info
+            is_connected, message, connection_details, error_info = db.check_db_connection()
             
-            # Display helpful error information
-            if error_info:
-                if "firewall_issue" in error_info:
-                    st.warning(f"⚠️ **Firewall Issue Detected**")
-                    st.info(f"The IP address **{error_info['client_ip']}** is being blocked by the Azure SQL Database firewall.")
-                    st.info("**Solution:** Add this IP to your Azure SQL Database firewall rules:")
-                    st.code(f"1. Go to Azure Portal\n2. Navigate to your SQL server\n3. Go to 'Security' > 'Networking'\n4. Add rule with IP: {error_info['client_ip']}")
+            if is_connected:
+                st.success("✅ Connected to database")
+                if st.checkbox("Show connection details"):
+                    st.json(connection_details)
+            else:
+                st.error(f"❌ {message.split(':')[0]}")
                 
-                elif "driver_issue" in error_info:
-                    st.warning("⚠️ **ODBC Driver Issue Detected**")
-                    st.info("The required ODBC driver is not installed or not found on the server.")
-                    st.info("**Solution:** Make sure the packages.txt file includes unixodbc and unixodbc-dev.")
+                # Display helpful error information
+                if error_info:
+                    if "firewall_issue" in error_info:
+                        st.warning("Firewall Issue Detected")
+                        st.info(f"The IP address **{error_info['client_ip']}** is being blocked by the Azure SQL Database firewall.")
+                        st.code(
+                            "1. Azure Portal\n2. SQL server > Security > Networking\n3. Add rule with IP: " + str(error_info['client_ip'])
+                        )
+                    elif "driver_issue" in error_info:
+                        st.warning("ODBC Driver Issue Detected")
+                        st.info("The required ODBC driver is not installed or not found on the server.")
+                        st.caption("packages.txt should include: unixodbc, unixodbc-dev")
+                    elif "credential_issue" in error_info:
+                        st.warning("Login Credentials Issue")
+                        st.info("Verify your database credentials in Streamlit secrets.")
                 
-                elif "credential_issue" in error_info:
-                    st.warning("⚠️ **Login Credentials Issue**")
-                    st.info("The username or password provided is incorrect.")
-                    st.info("**Solution:** Verify your database credentials in Streamlit secrets.")
-                
-                # Show full error details if needed
-                if st.button("Show Full Error Details"):
+                if st.button("Show full error details"):
                     st.error(message)
         
-        # Logout
+        # Logout kept at the bottom for clarity
         st.markdown("---")
-        if st.button("Logout"):
+        if st.button("Logout", use_container_width=True):
             st.session_state.logged_in = False
             for k in [
                 'login_user','login_pass','dashboard_mode','add_item_source_selector',
@@ -156,6 +149,23 @@ def main():
 def display_dashboard(db):
     """Display the simplified dashboard page"""
     st.header("Dashboard")
+    st.caption("Quick overview of items and vendors. Use the navigation to manage details.")
+    
+    # Small KPIs for quick context
+    try:
+        total_boxhero = len(db.get_all_items(source_filter="BoxHero") or [])
+        total_raw = len(db.get_all_items(source_filter="Raw Materials") or [])
+        total_items = total_boxhero + total_raw
+    except Exception:
+        total_boxhero = total_raw = total_items = 0
+    try:
+        total_vendors = len(db.get_all_vendors() or [])
+    except Exception:
+        total_vendors = 0
+    kpi1, kpi2, kpi3 = st.columns(3)
+    kpi1.metric("Total Items", f"{total_items}")
+    kpi2.metric("BoxHero Items", f"{total_boxhero}")
+    kpi3.metric("Vendors", f"{total_vendors}")
     
     # Choose dashboard mode
     mode = st.radio("View by", ["Item", "Vendor"], horizontal=True, key="dashboard_mode")
