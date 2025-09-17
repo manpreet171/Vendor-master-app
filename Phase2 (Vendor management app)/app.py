@@ -20,10 +20,15 @@ def main():
     # Load environment variables from .env in this folder (for local/dev)
     load_dotenv()
 
-    # Login gate
+    # Login gate with role-based access
     def require_login():
         if 'logged_in' not in st.session_state:
             st.session_state.logged_in = False
+        if 'user_role' not in st.session_state:
+            st.session_state.user_role = None
+        if 'username' not in st.session_state:
+            st.session_state.username = None
+            
         if not st.session_state.logged_in:
             st.title("Login")
             st.caption("Please enter your credentials to continue.")
@@ -32,24 +37,48 @@ def main():
                 pwd = st.text_input("Password", type="password", key="login_pass")
                 submitted = st.form_submit_button("Login")
                 if submitted:
-                    # Prefer Streamlit secrets, then environment variables
-                    sec = getattr(st, 'secrets', None)
-                    if sec and 'APP_USER' in sec and 'APP_PASSWORD' in sec:
-                        env_user = str(sec.get('APP_USER'))
-                        env_pass = str(sec.get('APP_PASSWORD'))
-                    else:
-                        env_user = os.getenv("APP_USER")
-                        env_pass = os.getenv("APP_PASSWORD")
-                    # Trim whitespace to handle entries like 'APP_USER= admin' in .env or secrets
-                    u_ok = env_user is not None and user.strip() == str(env_user).strip()
-                    p_ok = env_pass is not None and pwd == str(env_pass)
-                    if u_ok and p_ok:
+                    # Check credentials and determine role
+                    role = check_user_credentials(user.strip(), pwd)
+                    if role:
                         st.session_state.logged_in = True
-                        st.success("Logged in successfully.")
+                        st.session_state.user_role = role
+                        st.session_state.username = user.strip()
+                        st.success(f"Logged in successfully as {role}.")
                         st.rerun()
                     else:
                         st.error("Invalid credentials. Contact admin if you need access.")
             st.stop()
+
+    def check_user_credentials(username, password):
+        """Check credentials and return user role (admin/team) or None"""
+        # Get credentials from secrets or environment
+        sec = getattr(st, 'secrets', None)
+        
+        # Admin credentials
+        if sec and 'APP_USER' in sec and 'APP_PASSWORD' in sec:
+            admin_user = str(sec.get('APP_USER')).strip()
+            admin_pass = str(sec.get('APP_PASSWORD'))
+        else:
+            admin_user = os.getenv("APP_USER", "").strip()
+            admin_pass = os.getenv("APP_PASSWORD", "")
+        
+        # Team credentials
+        if sec and 'TEAM_USER' in sec and 'TEAM_PASSWORD' in sec:
+            team_user = str(sec.get('TEAM_USER')).strip()
+            team_pass = str(sec.get('TEAM_PASSWORD'))
+        else:
+            team_user = os.getenv("TEAM_USER", "").strip()
+            team_pass = os.getenv("TEAM_PASSWORD", "")
+        
+        # Check admin credentials
+        if admin_user and admin_pass and username == admin_user and password == admin_pass:
+            return "Admin"
+        
+        # Check team credentials
+        if team_user and team_pass and username == team_user and password == team_pass:
+            return "Team"
+        
+        return None
 
     require_login()
     
@@ -72,18 +101,27 @@ def main():
     # Create sidebar for navigation
     with st.sidebar:
         st.markdown("**Vendor Management System**")
+        st.markdown(f"*Logged in as: {st.session_state.user_role}*")
         st.markdown("---")
         st.header("Navigation")
         
-        # Navigation buttons
+        # Navigation buttons - role-based access
         if st.button("Dashboard", use_container_width=True):
             st.session_state.active_tab = "Dashboard"
         
-        if st.button("Items", use_container_width=True):
-            st.session_state.active_tab = "Items"
-        
-        if st.button("Vendors", use_container_width=True):
-            st.session_state.active_tab = "Vendors"
+        # Only show Items and Vendors tabs for Admin users
+        if st.session_state.user_role == "Admin":
+            if st.button("Items", use_container_width=True):
+                st.session_state.active_tab = "Items"
+            
+            if st.button("Vendors", use_container_width=True):
+                st.session_state.active_tab = "Vendors"
+        else:
+            # Show disabled buttons for Team users with explanation
+            st.markdown("---")
+            st.markdown("**Admin Only:**")
+            st.button("Items", use_container_width=True, disabled=True, help="Admin access required")
+            st.button("Vendors", use_container_width=True, disabled=True, help="Admin access required")
         
         
         
@@ -116,6 +154,8 @@ def main():
         st.markdown("---")
         if st.button("Logout"):
             st.session_state.logged_in = False
+            st.session_state.user_role = None
+            st.session_state.username = None
             for k in [
                 'login_user','login_pass','dashboard_mode','add_item_source_selector',
                 'item_name_input','item_type_input','sku_input','barcode_input',
@@ -126,17 +166,25 @@ def main():
                     del st.session_state[k]
             st.rerun()
     
-    # Main content based on active tab
+    # Main content based on active tab and user role
     if st.session_state.active_tab == "Dashboard":
         display_dashboard(db)
     
     elif st.session_state.active_tab == "Items":
-        item_manager = ItemManager(db)
-        item_manager.display_items_page()
+        if st.session_state.user_role == "Admin":
+            item_manager = ItemManager(db)
+            item_manager.display_items_page()
+        else:
+            st.error("🔒 Admin access required for Items management.")
+            st.info("You are logged in as Team member with read-only access.")
     
     elif st.session_state.active_tab == "Vendors":
-        vendor_manager = VendorManager(db)
-        vendor_manager.display_vendors_page()
+        if st.session_state.user_role == "Admin":
+            vendor_manager = VendorManager(db)
+            vendor_manager.display_vendors_page()
+        else:
+            st.error("🔒 Admin access required for Vendor management.")
+            st.info("You are logged in as Team member with read-only access.")
     
     
     
