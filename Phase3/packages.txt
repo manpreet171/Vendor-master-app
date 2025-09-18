@@ -1,0 +1,5 @@
+# System packages for Streamlit Cloud deployment
+# Same as Phase 2's working configuration
+
+unixodbc
+unixodbc-dev

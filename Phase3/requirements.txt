@@ -1,0 +1,7 @@
+# Phase 3 Requirements System Dependencies
+# Using same proven versions as Phase 2
+
+streamlit==1.30.0
+pyodbc==5.2.0
+pandas==2.1.4
+python-dotenv==1.0.0
