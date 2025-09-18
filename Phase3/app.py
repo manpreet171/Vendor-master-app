@@ -183,12 +183,20 @@ def display_boxhero_tab(db):
             st.info("No BoxHero items available at the moment.")
             return
         
+        # Filter out items that user has already requested (pending/in-progress)
+        requested_item_ids = db.get_user_requested_item_ids(st.session_state.user_id)
+        available_items = [item for item in all_items if item['item_id'] not in requested_item_ids]
+        
+        if not available_items:
+            st.info("All BoxHero items are currently in your pending or in-progress requests. Check 'My Requests' tab to manage them.")
+            return
+        
         # Step 1: Select Item Type
         if st.session_state.bh_step >= 1:
             st.subheader("Step 1: What type of item do you need?")
             
-            # Get unique item types
-            item_types = sorted(list(set(item.get('item_type', '') for item in all_items if item.get('item_type'))))
+            # Get unique item types from available items only
+            item_types = sorted(list(set(item.get('item_type', '') for item in available_items if item.get('item_type'))))
             
             selected_type = st.selectbox(
                 "Choose item type:",
@@ -208,8 +216,8 @@ def display_boxhero_tab(db):
             st.subheader("Step 2: Which specific item?")
             st.caption(f"Selected type: **{st.session_state.bh_selected_type}**")
             
-            # Filter items by selected type
-            type_items = [item for item in all_items if item.get('item_type') == st.session_state.bh_selected_type]
+            # Filter available items by selected type
+            type_items = [item for item in available_items if item.get('item_type') == st.session_state.bh_selected_type]
             
             # Get unique item names for this type
             item_names = sorted(list(set(item.get('item_name', '') for item in type_items if item.get('item_name'))))
@@ -311,12 +319,20 @@ def display_raw_materials_tab(db):
             st.info("No raw materials available at the moment.")
             return
         
+        # Filter out items that user has already requested (pending/in-progress)
+        requested_item_ids = db.get_user_requested_item_ids(st.session_state.user_id)
+        available_items = [item for item in all_items if item['item_id'] not in requested_item_ids]
+        
+        if not available_items:
+            st.info("All raw materials are currently in your pending or in-progress requests. Check 'My Requests' tab to manage them.")
+            return
+        
         # Step 1: Select Item Type
         if st.session_state.rm_step >= 1:
             st.subheader("Step 1: What type of material do you need?")
             
-            # Get unique item types
-            item_types = sorted(list(set(item.get('item_type', '') for item in all_items if item.get('item_type'))))
+            # Get unique item types from available items only
+            item_types = sorted(list(set(item.get('item_type', '') for item in available_items if item.get('item_type'))))
             
             selected_type = st.selectbox(
                 "Choose material type:",
@@ -337,8 +353,8 @@ def display_raw_materials_tab(db):
             st.subheader("Step 2: Which specific material?")
             st.caption(f"Selected type: **{st.session_state.rm_selected_type}**")
             
-            # Filter items by selected type
-            type_items = [item for item in all_items if item.get('item_type') == st.session_state.rm_selected_type]
+            # Filter available items by selected type
+            type_items = [item for item in available_items if item.get('item_type') == st.session_state.rm_selected_type]
             
             # Get unique item names for this type
             item_names = sorted(list(set(item.get('item_name', '') for item in type_items if item.get('item_name'))))
@@ -361,8 +377,8 @@ def display_raw_materials_tab(db):
             st.subheader("Step 3: Select dimensions")
             st.caption(f"Selected material: **{st.session_state.rm_selected_name}**")
             
-            # Filter items by selected type and name
-            name_items = [item for item in all_items if 
+            # Filter available items by selected type and name
+            name_items = [item for item in available_items if 
                          item.get('item_type') == st.session_state.rm_selected_type and 
                          item.get('item_name') == st.session_state.rm_selected_name]
             
@@ -535,59 +551,13 @@ def display_item_card(item, col, category):
         st.markdown("---")
 
 def add_to_cart(item, quantity, category):
-    """Add item to cart with duplicate request checking"""
+    """Add item to cart - simple version"""
     try:
-        # Check for existing requests for this item
-        db = DatabaseConnector()
-        existing_requests = db.check_existing_item_requests(
-            st.session_state.user_id, 
-            item['item_id']
-        )
-        
-        if existing_requests:
-            # Handle existing requests based on status
-            for req in existing_requests:
-                if req['status'] == 'In Progress':
-                    # Block addition - bundle is being worked on
-                    st.error(f"❌ Cannot add **{item.get('item_name', 'this item')}**")
-                    st.warning(f"You have an **In Progress** request ({req['req_number']}) for {req['quantity']} pieces.")
-                    st.info("Please wait until the current request is completed before ordering more.")
-                    db.close_connection()
-                    return "duplicate_in_progress"
-                
-                elif req['status'] == 'Pending':
-                    # Only allow updating the existing pending request
-                    st.warning(f"⚠️ You already have a **Pending** request for **{item.get('item_name', 'this item')}**")
-                    st.info(f"Existing request: {req['req_number']} - {req['quantity']} pieces")
-                    st.write("**Would you like to update the quantity?**")
-                    
-                    # Show update option only
-                    if st.button(f"📝 Update to {req['quantity'] + quantity} pieces", key=f"update_{item['item_id']}", type="primary"):
-                        try:
-                            # Update existing request
-                            new_quantity = req['quantity'] + quantity
-                            success = db.update_order_item_quantity(req['req_id'], item['item_id'], new_quantity)
-                            if success:
-                                st.success(f"✅ Updated existing request to {new_quantity} pieces!")
-                                st.info("Check 'My Requests' tab to see the updated quantity.")
-                            else:
-                                st.error("❌ Failed to update request. Please try again.")
-                        except Exception as e:
-                            st.error(f"❌ Error updating request: {str(e)}")
-                        db.close_connection()
-                        return "updated_existing"
-                    
-                    # Don't add to cart - only allow updating existing request
-                    db.close_connection()
-                    return "duplicate_pending"
-        
-        # No existing requests or user chose to create new request
         # Check if item already in current cart
         for cart_item in st.session_state.cart_items:
             if cart_item['item_id'] == item['item_id']:
                 # Update quantity if item already exists in cart
                 cart_item['quantity'] += quantity
-                db.close_connection()
                 return "added"
         
         # Add new item to cart
@@ -601,11 +571,10 @@ def add_to_cart(item, quantity, category):
         }
         
         st.session_state.cart_items.append(cart_item)
-        db.close_connection()
         return "added"
         
     except Exception as e:
-        st.error(f"Error checking existing requests: {str(e)}")
+        st.error(f"Error adding to cart: {str(e)}")
         return "error"
 
 def display_cart_tab(db):
@@ -720,7 +689,7 @@ def display_my_requests_tab(db):
                     st.write("**Items in this request:**")
                     for item in request_items:
                         # Build item description with dimensions for Raw Materials
-                        item_desc = f"• **{item['item_name']}** - {item['quantity']} pieces"
+                        item_desc = f"• **{item['item_name']}**"
                         
                         # Add dimensions for Raw Materials
                         if item.get('source_sheet') == 'Raw Materials':
@@ -737,12 +706,34 @@ def display_my_requests_tab(db):
                         elif item.get('source_sheet') == 'BoxHero' and item.get('sku'):
                             item_desc += f" (SKU: {item['sku']})"
                         
-                        # Add category info
-                        item_notes = item.get('item_notes', '')
-                        if item_notes:
-                            item_desc += f" - {item_notes}"
-                        
-                        st.write(item_desc)
+                        # Show quantity with edit option for pending requests
+                        if request['status'] == 'Pending':
+                            col_item, col_qty, col_btn = st.columns([3, 1, 1])
+                            with col_item:
+                                st.write(item_desc)
+                            with col_qty:
+                                new_qty = st.number_input(
+                                    "Qty", 
+                                    min_value=1, 
+                                    value=item['quantity'], 
+                                    key=f"qty_{request['req_id']}_{item['item_name']}"
+                                )
+                            with col_btn:
+                                if new_qty != item['quantity']:
+                                    if st.button("Update", key=f"update_{request['req_id']}_{item['item_name']}"):
+                                        try:
+                                            success = db.update_order_item_quantity(request['req_id'], item['item_id'], new_qty)
+                                            if success:
+                                                st.success("✅ Updated!")
+                                                st.rerun()
+                                            else:
+                                                st.error("❌ Failed to update")
+                                        except Exception as e:
+                                            st.error(f"❌ Error: {str(e)}")
+                        else:
+                            # For non-pending requests, just show the quantity
+                            item_desc += f" - {item['quantity']} pieces"
+                            st.write(item_desc)
                 else:
                     st.write("*No items found for this request*")
     
@@ -773,7 +764,7 @@ def get_user_requests(db, user_id):
 def get_request_items(db, req_id):
     """Get items for a specific request with dimensions"""
     query = """
-    SELECT ri.quantity, ri.item_notes, i.item_name, i.sku, i.source_sheet,
+    SELECT ri.quantity, ri.item_notes, i.item_id, i.item_name, i.sku, i.source_sheet,
            i.height, i.width, i.thickness, i.item_type
     FROM requirements_order_items ri
     JOIN items i ON ri.item_id = i.item_id

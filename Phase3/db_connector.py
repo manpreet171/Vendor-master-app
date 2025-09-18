@@ -241,16 +241,16 @@ class DatabaseConnector:
         
         return req_number
     
-    def check_existing_item_requests(self, user_id, item_id):
-        """Check if user has existing requests for this item"""
+    def get_user_requested_item_ids(self, user_id):
+        """Get item IDs that user has already requested (pending or in progress)"""
         query = """
-        SELECT ro.req_id, ro.req_number, ro.status, roi.quantity, ro.req_date
+        SELECT DISTINCT roi.item_id
         FROM requirements_orders ro
         JOIN requirements_order_items roi ON ro.req_id = roi.req_id
-        WHERE ro.user_id = ? AND roi.item_id = ? AND ro.status IN ('Pending', 'In Progress')
-        ORDER BY ro.req_date DESC
+        WHERE ro.user_id = ? AND ro.status IN ('Pending', 'In Progress')
         """
-        return self.execute_query(query, (user_id, item_id))
+        results = self.execute_query(query, (user_id,))
+        return [row['item_id'] for row in results] if results else []
     
     def update_order_item_quantity(self, req_id, item_id, new_quantity):
         """Update quantity for an existing order item"""
