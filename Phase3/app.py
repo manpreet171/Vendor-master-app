@@ -1,8 +1,12 @@
 # Phase 3 Requirements System - Main Application
 import streamlit as st
 import os
+import json
+import time
+from datetime import datetime
 from dotenv import load_dotenv
 from db_connector import DatabaseConnector
+from bundling_engine import SmartBundlingEngine
 # Page configuration
 st.set_page_config(
     page_title="Requirements Management System",
@@ -45,18 +49,31 @@ def require_login():
                             st.error(f"Database connection failed: {db.connection_error}")
                             return
                         
-                        # Try to authenticate user
-                        user_data = db.authenticate_user(user.strip(), pwd)
+                        # Check for admin credentials first (from .env)
+                        admin_username = os.getenv('ADMIN_USERNAME', 'admin')
+                        admin_password = os.getenv('ADMIN_PASSWORD', 'admin123')
                         
-                        if user_data:
+                        if user.strip() == admin_username and pwd == admin_password:
+                            # Admin login - redirect to operator dashboard
                             st.session_state.logged_in = True
-                            st.session_state.user_role = user_data['user_role']
-                            st.session_state.user_id = user_data['user_id']
-                            st.session_state.username = user_data['username']
-                            st.success(f"Logged in successfully as {user_data['user_role']}")
+                            st.session_state.user_role = 'operator'
+                            st.session_state.user_id = 'admin'
+                            st.session_state.username = 'admin'
+                            st.success("Logged in successfully as Operator")
                             st.rerun()
                         else:
-                            st.error("Invalid credentials. Please check your username and password.")
+                            # Try to authenticate regular user from database
+                            user_data = db.authenticate_user(user.strip(), pwd)
+                            
+                            if user_data:
+                                st.session_state.logged_in = True
+                                st.session_state.user_role = user_data['user_role']
+                                st.session_state.user_id = user_data['user_id']
+                                st.session_state.username = user_data['username']
+                                st.success(f"Logged in successfully as {user_data['user_role']}")
+                                st.rerun()
+                            else:
+                                st.error("Invalid credentials. Please check your username and password.")
                             
                         db.close_connection()
                         
@@ -80,7 +97,13 @@ def main():
     # Require login
     require_login()
     
-    # Create sidebar
+    # Role-based routing
+    if st.session_state.user_role == 'operator':
+        # Load operator dashboard
+        display_operator_dashboard(db)
+        return
+    
+    # Create sidebar for regular users
     with st.sidebar:
         st.markdown("**Requirements Management System**")
         st.markdown(f"*Logged in as: {st.session_state.user_role}*")
@@ -119,7 +142,7 @@ def main():
         st.session_state.cart_items = []
     
     # Main content area - Simple tab navigation
-    if st.session_state.user_role == "User":
+    if st.session_state.user_role != 'operator':  # Show for all non-operator users
         # Create tabs - clean and simple
         tab1, tab2, tab3, tab4 = st.tabs(["📦 BoxHero Items", "🔧 Raw Materials", "🛒 My Cart", "📋 My Requests"])
         
@@ -135,28 +158,10 @@ def main():
         with tab4:
             display_my_requests_tab(db)
     
-    elif st.session_state.user_role == "Operator":
-        st.info("⚙️ **Operator Dashboard** - You can manage bundles and view all requirements")
-        
-        # Show operator-specific info
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Your Role", "Operator")
-        
-        with col2:
-            # Test database connection by counting vendors
-            try:
-                vendors_query = "SELECT COUNT(*) as count FROM vendors"
-                result = db.execute_query(vendors_query)
-                vendor_count = result[0]['count'] if result else 0
-                st.metric("Available Vendors", vendor_count)
-            except Exception as e:
-                st.metric("Available Vendors", "Error")
-                st.error(f"Database query error: {str(e)}")
-        
-        with col3:
-            st.metric("Status", "Connected" if is_connected else "Disconnected")
+    else:
+        # Fallback for unknown user roles
+        st.error(f"Unknown user role: {st.session_state.user_role}")
+        st.info("Please contact administrator or try logging out and back in.")
     
     
     # Close database connection
@@ -804,6 +809,455 @@ def submit_cart_as_request(db):
     except Exception as e:
         st.error(f"Error submitting request: {str(e)}")
         return False
+
+def display_operator_dashboard(db):
+    """Operator Dashboard integrated into main app"""
+    st.title("⚙️ Operator Dashboard")
+    st.caption("Bundle Management for Procurement Team")
+    
+    # Sidebar for operator navigation
+    with st.sidebar:
+        st.markdown("**Operator Dashboard**")
+        st.markdown(f"*Logged in as: {st.session_state.user_role}*")
+        st.markdown(f"*User: {st.session_state.username}*")
+        st.markdown("---")
+        
+        # Logout button
+        if st.button("🚪 Logout"):
+            st.session_state.logged_in = False
+            st.session_state.user_role = None
+            st.session_state.user_id = None
+            st.session_state.username = None
+            st.rerun()
+        
+        st.markdown("---")
+        
+        # Database connection status
+        st.subheader("Database")
+        is_connected, message, connection_details, error_info = db.check_db_connection()
+        
+        if is_connected:
+            st.success("Connected")
+        else:
+            st.error("Connection Failed")
+    
+    # Main operator dashboard tabs
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📦 Bundle Overview", "🤖 Manual Bundling", "🔍 Bundle Details", "📊 System Status", "🧹 System Reset"])
+    
+    with tab1:
+        display_bundle_overview(db)
+    
+    with tab2:
+        display_manual_bundling(db)
+    
+    with tab3:
+        display_bundle_details(db)
+    
+    with tab4:
+        display_system_status(db)
+    
+    with tab5:
+        display_system_reset(db)
+
+def display_bundle_overview(db):
+    """Display overview of all bundles"""
+    st.header("📦 Bundle Overview")
+    
+    try:
+        # Get all bundles
+        bundles = get_all_bundles(db)
+        
+        if not bundles:
+            st.info("No bundles created yet. Use 'Manual Bundling' to create the first bundle.")
+            return
+        
+        # Display bundles in a table format
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Total Bundles", len(bundles))
+        
+        with col2:
+            active_bundles = [b for b in bundles if b['status'] == 'Active']
+            st.metric("Active Bundles", len(active_bundles))
+        
+        with col3:
+            completed_bundles = [b for b in bundles if b['status'] == 'Completed']
+            st.metric("Completed Bundles", len(completed_bundles))
+        
+        st.markdown("---")
+        
+        # Display each bundle
+        for bundle in bundles:
+            with st.expander(f"📦 {bundle['bundle_name']} - {get_status_badge(bundle['status'])}", expanded=False):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.write(f"**Bundle ID:** {bundle['bundle_id']}")
+                    st.write(f"**Status:** {get_status_badge(bundle['status'])}")
+                    if bundle.get('created_at'):
+                        st.write(f"**Created:** {bundle['created_at']}")
+                    if bundle.get('total_items'):
+                        st.write(f"**Total Items:** {bundle['total_items']}")
+                    if bundle.get('total_quantity'):
+                        st.write(f"**Total Quantity:** {bundle['total_quantity']}")
+                
+                with col2:
+                    # Show vendor recommendations if available
+                    if bundle.get('vendor_info'):
+                        try:
+                            vendor_data = json.loads(bundle['vendor_info'])  # Parse JSON properly
+                            if vendor_data and len(vendor_data) > 0:
+                                st.write("**Top Vendor Recommendation:**")
+                                top_vendor = vendor_data[0]
+                                st.write(f"• {top_vendor['vendor_name']} ({top_vendor.get('coverage_percentage', 'N/A')}% coverage)")
+                                st.write(f"• Contact: {top_vendor['contact_email']}")
+                                st.write(f"• Items: {top_vendor.get('items_covered', 'N/A')}")
+                        except:
+                            st.write("**Vendor Info:** Available in details")
+                    else:
+                        st.write("**Bundle Items:**")
+                        # Get bundle items
+                        items_query = """
+                        SELECT bi.item_id, bi.total_quantity as quantity, i.item_name
+                        FROM requirements_bundle_items bi
+                        JOIN Items i ON bi.item_id = i.item_id
+                        WHERE bi.bundle_id = ?
+                        """
+                        try:
+                            bundle_items = db.execute_query(items_query, (bundle['bundle_id'],))
+                            if bundle_items:
+                                for item in bundle_items:
+                                    st.write(f"• {item['item_name']}: {item['quantity']} pieces")
+                            else:
+                                st.write("No items found")
+                        except:
+                            st.write("Items info not available")
+                
+                # Action buttons
+                if bundle['status'] == 'Active':
+                    if st.button(f"✅ Mark as Completed", key=f"complete_{bundle['bundle_id']}"):
+                        mark_bundle_completed(db, bundle['bundle_id'])
+                        st.success("Bundle marked as completed!")
+                        st.rerun()
+    
+    except Exception as e:
+        st.error(f"Error loading bundles: {str(e)}")
+
+def display_manual_bundling(db):
+    """Manual bundling trigger for operators"""
+    st.header("🤖 Manual Bundling")
+    st.write("Trigger the smart bundling process manually")
+    
+    # Show current pending requests
+    try:
+        pending_requests = db.get_all_pending_requests()
+        
+        if not pending_requests:
+            st.info("No pending requests available for bundling.")
+            return
+        
+        # Group by request for display
+        requests_by_id = {}
+        for req in pending_requests:
+            req_id = req['req_id']
+            if req_id not in requests_by_id:
+                requests_by_id[req_id] = {
+                    'req_number': req['req_number'],
+                    'user_id': req['user_id'],
+                    'req_date': req['req_date'],
+                    'items': []
+                }
+            requests_by_id[req_id]['items'].append({
+                'item_name': req['item_name'],
+                'quantity': req['quantity'],
+                'source_sheet': req['source_sheet']
+            })
+        
+        st.write(f"**Found {len(requests_by_id)} pending requests with {len(pending_requests)} items:**")
+        
+        # Display pending requests
+        for req_id, req_data in requests_by_id.items():
+            with st.expander(f"📋 {req_data['req_number']} - User {req_data['user_id']}", expanded=False):
+                for item in req_data['items']:
+                    st.write(f"• {item['item_name']} - {item['quantity']} pieces ({item['source_sheet']})")
+        
+        st.markdown("---")
+        
+        # Bundling button
+        if st.button("🚀 Run Smart Bundling", type="primary"):
+            with st.spinner("Running smart bundling process..."):
+                engine = SmartBundlingEngine()
+                result = engine.run_bundling_process()
+                
+                if result['success']:
+                    st.success("🎉 Bundling completed successfully!")
+                    
+                    # Display results
+                    st.write(f"**Total Bundles Created:** {result.get('total_bundles', 0)}")
+                    st.write(f"**Requests Processed:** {result.get('total_requests', 0)}")
+                    st.write(f"**Total Items:** {result.get('total_items', 0)}")
+                    st.write(f"**Coverage:** {result.get('coverage_percentage', 0):.1f}%")
+                    
+                    st.write("**Created Bundles:**")
+                    for i, bundle in enumerate(result.get('bundles_created', []), 1):
+                        st.write(f"{i}. **{bundle['bundle_name']}**")
+                        st.write(f"   • Vendor: {bundle['vendor_name']}")
+                        st.write(f"   • Items: {bundle['items_count']}, Quantity: {bundle['total_quantity']}")
+                        st.write("")
+                    
+                    st.info("All pending requests have been moved to 'In Progress' status. Users can no longer modify these requests.")
+                    
+                else:
+                    st.error(f"❌ Bundling failed: {result.get('error', 'Unknown error')}")
+    
+    except Exception as e:
+        st.error(f"Error in manual bundling: {str(e)}")
+
+def display_bundle_details(db):
+    """Display detailed view of a specific bundle"""
+    st.header("🔍 Bundle Details")
+    
+    try:
+        bundles = get_all_bundles(db)
+        
+        if not bundles:
+            st.info("No bundles available.")
+            return
+        
+        # Bundle selection
+        bundle_options = [f"{b['bundle_name']} ({b['status']})" for b in bundles]
+        selected_bundle_name = st.selectbox("Select a bundle:", bundle_options)
+        
+        if selected_bundle_name:
+            # Find selected bundle
+            bundle_name = selected_bundle_name.split(' (')[0]
+            selected_bundle = next((b for b in bundles if b['bundle_name'] == bundle_name), None)
+            
+            if selected_bundle:
+                # Display bundle details
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.write(f"**Bundle ID:** {selected_bundle['bundle_id']}")
+                    st.write(f"**Name:** {selected_bundle['bundle_name']}")
+                    st.write(f"**Status:** {get_status_badge(selected_bundle['status'])}")
+                    if selected_bundle.get('created_at'):
+                        st.write(f"**Created:** {selected_bundle['created_at']}")
+                
+                with col2:
+                    if selected_bundle.get('total_items'):
+                        st.write(f"**Total Items:** {selected_bundle['total_items']}")
+                    if selected_bundle.get('total_quantity'):
+                        st.write(f"**Total Quantity:** {selected_bundle['total_quantity']}")
+                    
+                    # Show related requests count
+                    try:
+                        requests_query = """
+                        SELECT COUNT(*) as count 
+                        FROM requirements_bundle_mapping 
+                        WHERE bundle_id = ?
+                        """
+                        req_result = db.execute_query(requests_query, (selected_bundle['bundle_id'],))
+                        req_count = req_result[0]['count'] if req_result else 0
+                        st.write(f"**Related Requests:** {req_count}")
+                    except:
+                        pass
+                
+                # Show vendor recommendations
+                if selected_bundle.get('vendor_info'):
+                    try:
+                        vendor_data = json.loads(selected_bundle['vendor_info'])
+                        
+                        st.markdown("---")
+                        st.subheader("🏪 Vendor Recommendations")
+                        
+                        for i, vendor in enumerate(vendor_data, 1):
+                            with st.expander(f"{i}. {vendor['vendor_name']} - {vendor.get('coverage_percentage', 'N/A')}% coverage"):
+                                st.write(f"**Contact Email:** {vendor['contact_email']}")
+                                st.write(f"**Contact Phone:** {vendor['contact_phone']}")
+                                st.write(f"**Items Covered:** {vendor.get('items_covered', 'N/A')}")
+                                st.write(f"**Total Quantity:** {vendor['total_quantity']}")
+                                
+                                st.write("**Items List:**")
+                                for item in vendor.get('items_list', []):
+                                    st.write(f"• {item['item_name']} - {item['quantity']} pieces")
+                    
+                    except Exception as e:
+                        st.write(f"Error displaying vendor info: {str(e)}")
+    
+    except Exception as e:
+        st.error(f"Error loading bundle details: {str(e)}")
+
+def display_system_status(db):
+    """Display system status and statistics"""
+    st.header("📊 System Status")
+    
+    try:
+        # Get statistics
+        pending_requests = db.get_all_pending_requests()
+        bundles = get_all_bundles(db)
+        
+        # Metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            pending_count = len(set([req['req_id'] for req in pending_requests]))
+            st.metric("Pending Requests", pending_count)
+        
+        with col2:
+            active_bundles = [b for b in bundles if b['status'] == 'Active']
+            st.metric("Active Bundles", len(active_bundles))
+        
+        with col3:
+            completed_bundles = [b for b in bundles if b['status'] == 'Completed']
+            st.metric("Completed Bundles", len(completed_bundles))
+        
+        with col4:
+            total_items = sum(req['quantity'] for req in pending_requests)
+            st.metric("Pending Items", total_items)
+        
+        # Database connection status
+        st.markdown("---")
+        st.subheader("🔗 Database Status")
+        
+        is_connected, message, _, _ = db.check_db_connection()
+        if is_connected:
+            st.success(f"✅ {message}")
+        else:
+            st.error(f"❌ {message}")
+    
+    except Exception as e:
+        st.error(f"Error loading system status: {str(e)}")
+
+def display_system_reset(db):
+    """System reset for testing - clears all Phase 3 data except users"""
+    st.header("🧹 System Reset")
+    st.caption("⚠️ Testing Tool - Clears all requests, orders, and bundles")
+    
+    st.warning("""
+    **⚠️ WARNING: This will permanently delete:**
+    - All user requests and orders
+    - All bundles and bundle items
+    - All bundle mappings
+    - Order status history
+    
+    **✅ This will preserve:**
+    - User accounts and login credentials
+    - Phase 2 data (items, vendors, mappings)
+    """)
+    
+    # Show current system state
+    try:
+        pending_requests = db.get_all_pending_requests()
+        bundles = get_all_bundles(db)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            pending_count = len(set([req['req_id'] for req in pending_requests])) if pending_requests else 0
+            st.metric("Pending Requests", pending_count)
+        
+        with col2:
+            st.metric("Total Bundles", len(bundles) if bundles else 0)
+        
+        with col3:
+            total_items = sum(req['quantity'] for req in pending_requests) if pending_requests else 0
+            st.metric("Total Items", total_items)
+        
+        st.markdown("---")
+        
+        # Reset confirmation
+        st.subheader("🔄 Reset System")
+        
+        # Two-step confirmation
+        if st.checkbox("I understand this will delete all test data"):
+            if st.button("🧹 RESET SYSTEM FOR TESTING", type="primary"):
+                with st.spinner("Resetting system..."):
+                    success = db.reset_system_for_testing()
+                    
+                    if success:
+                        st.success("✅ System reset completed successfully!")
+                        st.info("You can now create new test requests and run bundling again.")
+                        st.balloons()
+                        
+                        # Auto-refresh after 2 seconds
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error("❌ System reset failed. Check database connection.")
+        else:
+            st.info("Check the box above to enable system reset.")
+    
+    except Exception as e:
+        st.error(f"Error in system reset: {str(e)}")
+
+def get_all_bundles(db):
+    """Get all bundles from database"""
+    # First check what columns exist
+    check_query = """
+    SELECT COLUMN_NAME 
+    FROM INFORMATION_SCHEMA.COLUMNS 
+    WHERE TABLE_NAME = 'requirements_bundles'
+    """
+    columns_result = db.execute_query(check_query)
+    available_columns = [col['COLUMN_NAME'] for col in columns_result] if columns_result else []
+    
+    # Build query with available columns from validator results
+    base_columns = "bundle_id, bundle_name, status, total_items, total_quantity, created_at"
+    
+    query = f"""
+    SELECT {base_columns}
+    FROM requirements_bundles
+    ORDER BY bundle_id DESC
+    """
+    return db.execute_query(query)
+
+def mark_bundle_completed(db, bundle_id):
+    """Mark a bundle as completed and update related requests"""
+    try:
+        # Update bundle status
+        bundle_query = """
+        UPDATE requirements_bundles 
+        SET status = 'Completed'
+        WHERE bundle_id = ?
+        """
+        db.execute_insert(bundle_query, (bundle_id,))
+        
+        # Get all request IDs in this bundle
+        mapping_query = """
+        SELECT req_id FROM requirements_bundle_mapping 
+        WHERE bundle_id = ?
+        """
+        mappings = db.execute_query(mapping_query, (bundle_id,))
+        
+        if mappings:
+            req_ids = [mapping['req_id'] for mapping in mappings]
+            
+            # Update all related requests to Completed
+            placeholders = ','.join(['?' for _ in req_ids])
+            requests_query = f"""
+            UPDATE requirements_orders 
+            SET status = 'Completed'
+            WHERE req_id IN ({placeholders})
+            """
+            db.execute_insert(requests_query, req_ids)
+        
+        db.conn.commit()
+        return True
+        
+    except Exception as e:
+        if db.conn:
+            db.conn.rollback()
+        raise Exception(f"Failed to mark bundle as completed: {str(e)}")
+
+def get_status_badge(status):
+    """Return colored status badge"""
+    if status == "Active":
+        return "🔵 Active"
+    elif status == "Completed":
+        return "🟢 Completed"
+    else:
+        return f"⚪ {status}"
 
 if __name__ == "__main__":
     main()

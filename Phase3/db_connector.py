@@ -1,7 +1,8 @@
 import pyodbc
+import os
+import json
 import streamlit as st
 from dotenv import load_dotenv
-import os
 
 class DatabaseConnector:
     def __init__(self):
@@ -289,6 +290,197 @@ class DatabaseConnector:
                 self.conn.rollback()
             raise Exception(f"Failed to update quantity: {str(e)}")
     
+    def get_all_pending_requests(self):
+        """Get all pending requests for bundling"""
+        query = """
+        SELECT ro.req_id, ro.req_number, ro.user_id, ro.req_date, ro.total_items,
+               roi.item_id, roi.quantity, i.item_name, i.sku, i.source_sheet
+        FROM requirements_orders ro
+        JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+        JOIN items i ON roi.item_id = i.item_id
+        WHERE ro.status = 'Pending'
+        ORDER BY ro.req_date ASC
+        """
+        return self.execute_query(query)
+    
+    def update_requests_to_in_progress(self, req_ids):
+        """Update multiple requests status to In Progress"""
+        try:
+            if not req_ids:
+                return False
+            
+            # Create placeholders for the IN clause
+            placeholders = ','.join(['?' for _ in req_ids])
+            query = f"""
+            UPDATE requirements_orders 
+            SET status = 'In Progress'
+            WHERE req_id IN ({placeholders})
+            """
+            
+            self.execute_insert(query, req_ids)
+            self.conn.commit()
+            return True
+            
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            raise Exception(f"Failed to update request status: {str(e)}")
+    
+    def create_bundle(self, bundle_data):
+        """Create a new bundle in the database"""
+        try:
+            # First, let's check what columns exist in requirements_bundles table
+            check_columns_query = """
+            SELECT COLUMN_NAME 
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_NAME = 'requirements_bundles'
+            """
+            columns_result = self.execute_query(check_columns_query)
+            available_columns = [col['COLUMN_NAME'] for col in columns_result] if columns_result else []
+            print(f"Available columns in requirements_bundles: {available_columns}")
+            
+            # Insert main bundle record with available columns including recommended_vendor_id
+            bundle_query = """
+            INSERT INTO requirements_bundles 
+            (bundle_name, status, total_items, total_quantity, recommended_vendor_id)
+            VALUES (?, 'Active', ?, ?, ?)
+            """
+            
+            bundle_name = f"BUNDLE-{bundle_data['timestamp']}"
+            total_items = len(bundle_data['items'])
+            total_quantity = sum(item['quantity'] for item in bundle_data['items'])
+            
+            # Get the recommended vendor ID from the bundle data
+            recommended_vendor_id = None
+            if bundle_data.get('vendor_recommendations') and len(bundle_data['vendor_recommendations']) > 0:
+                recommended_vendor_id = bundle_data['vendor_recommendations'][0].get('vendor_id')
+            
+            self.execute_insert(bundle_query, (bundle_name, total_items, total_quantity, recommended_vendor_id))
+            
+            # Get the inserted bundle ID
+            bundle_id = self.get_last_insert_id()
+            
+            if not bundle_id:
+                raise Exception("Failed to get bundle ID")
+            
+            # Check bundle items table structure
+            check_items_columns_query = """
+            SELECT COLUMN_NAME 
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_NAME = 'requirements_bundle_items'
+            """
+            items_columns_result = self.execute_query(check_items_columns_query)
+            available_items_columns = [col['COLUMN_NAME'] for col in items_columns_result] if items_columns_result else []
+            print(f"Available columns in requirements_bundle_items: {available_items_columns}")
+            
+            # Insert bundle items with available columns
+            for item in bundle_data['items']:
+                item_query = """
+                INSERT INTO requirements_bundle_items 
+                (bundle_id, item_id, total_quantity, user_breakdown)
+                VALUES (?, ?, ?, ?)
+                """
+                
+                user_breakdown = json.dumps(item['user_breakdown'], ensure_ascii=True)
+                self.execute_insert(item_query, (
+                    bundle_id,
+                    item['item_id'],
+                    item['quantity'],
+                    user_breakdown
+                ))
+            
+            # Insert bundle-request mappings
+            for req_id in bundle_data['request_ids']:
+                mapping_query = """
+                INSERT INTO requirements_bundle_mapping 
+                (bundle_id, req_id)
+                VALUES (?, ?)
+                """
+                self.execute_insert(mapping_query, (bundle_id, req_id))
+            
+            self.conn.commit()
+            return bundle_id
+            
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            raise Exception(f"Failed to create bundle: {str(e)}")
+    
+    def get_item_vendors(self, item_ids):
+        """Get vendors for specific items using Phase 2's item_vendor_mapping"""
+        try:
+            if not item_ids:
+                print("No item IDs provided to get_item_vendors")
+                return []
+            
+            print(f"Looking up vendors for item IDs: {item_ids}")
+            
+            placeholders = ','.join(['?' for _ in item_ids])
+            query = f"""
+            SELECT ivm.item_id, ivm.vendor_id, v.vendor_name, v.vendor_email as contact_email, 
+                   v.vendor_phone as contact_phone, i.item_name
+            FROM ItemVendorMap ivm
+            JOIN Vendors v ON ivm.vendor_id = v.vendor_id
+            JOIN Items i ON ivm.item_id = i.item_id
+            WHERE ivm.item_id IN ({placeholders})
+            ORDER BY ivm.item_id, v.vendor_name
+            """
+            
+            print(f"Executing vendor query: {query}")
+            result = self.execute_query(query, item_ids)
+            print(f"Vendor query returned {len(result) if result else 0} results")
+            
+            return result
+            
+        except Exception as e:
+            print(f"Error getting item vendors: {str(e)}")
+            return []
+    
+    def reset_system_for_testing(self):
+        """Clear all Phase 3 data except users - for testing purposes"""
+        try:
+            print("Starting system reset for testing...")
+            
+            # Clear tables in proper order (foreign key dependencies)
+            tables_to_clear = [
+                'requirements_bundle_mapping',  # Links bundles to requests
+                'requirements_bundle_items',    # Items in bundles
+                'requirements_bundles',         # Bundles themselves
+                'requirements_order_items',     # Items in orders
+                'requirements_orders'           # Orders/requests
+            ]
+            
+            for table in tables_to_clear:
+                query = f"DELETE FROM {table}"
+                self.execute_insert(query, ())
+                print(f"Cleared table: {table}")
+            
+            # Reset identity columns if they exist
+            identity_reset_queries = [
+                "DBCC CHECKIDENT ('requirements_orders', RESEED, 0)",
+                "DBCC CHECKIDENT ('requirements_bundles', RESEED, 0)"
+            ]
+            
+            for reset_query in identity_reset_queries:
+                try:
+                    self.cursor.execute(reset_query)
+                    print(f"Reset identity: {reset_query}")
+                except Exception as e:
+                    print(f"Identity reset warning (may not exist): {str(e)}")
+            
+            self.conn.commit()
+            print("System reset completed successfully!")
+            print("All requests, orders, bundles, and related data cleared.")
+            print("Users table preserved - you can login with existing credentials.")
+            
+            return True
+            
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            print(f"Error during system reset: {str(e)}")
+            return False
+
     def check_db_connection(self):
         """Check database connection status (same as Phase 2)"""
         if self.conn:
