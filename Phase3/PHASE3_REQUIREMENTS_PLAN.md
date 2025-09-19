@@ -27,6 +27,20 @@
 
 > Notes: System Reset tab is retained for testing only (per doc); to be removed in production.
 
+#### **⚙️ Automation Setup (Phase 3D – Partially Implemented)**
+- **Cron Runner Script**: Added `Phase3/smart_bundling_cron.py` (headless)
+  - Connects to DB via environment variables
+  - Runs `SmartBundlingEngine().run_bundling_process()`
+  - Logs summary (bundles, requests, items, coverage)
+- **GitHub Actions Workflow**: Added `.github/workflows/smart_bundling.yml`
+  - Schedule: Tue/Thu 15:00 UTC (plus manual dispatch)
+  - Installs `msodbcsql18` and `unixodbc-dev` for `pyodbc`
+  - Installs Python deps from `Phase3/requirements.txt`
+  - Executes `python Phase3/smart_bundling_cron.py`
+- **Secrets Required (in GitHub → Actions Secrets)**:
+  - `AZURE_DB_SERVER`, `AZURE_DB_NAME`, `AZURE_DB_USERNAME`, `AZURE_DB_PASSWORD`
+- **Deferred**: Operator email summary (Brevo) to be integrated later as a follow-up step.
+
 ### **September 18, 2024 - Phase 3A Implementation Complete**
 
 #### **✅ Core Infrastructure Completed:**
@@ -69,7 +83,7 @@
 - **Enhanced Transparency System**: Complete bundling decision visibility with vendor analysis (Sept 19, 2024)
 
 #### **🔄 Next Phase (Phase 3D - Planned):**
-- **Automated Cron Jobs**: GitHub Actions scheduled bundling triggers
+- **Automated Cron Jobs**: Implemented on Sept 19, 2025 (see workflow and cron runner)
 - **Email Notifications**: Brevo integration for status updates and vendor notifications
 - **Advanced Analytics**: Bundle performance metrics and reporting
 - **Production Deployment**: Streamlit Cloud deployment with secrets management

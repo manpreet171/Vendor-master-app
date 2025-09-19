@@ -1,0 +1,40 @@
+name: Smart Bundling Cron Job
+
+on:
+  schedule:
+    # Tuesday and Thursday at 15:00 UTC (10 AM ET during Standard Time)
+    - cron: '0 15 * * 2,4'
+  workflow_dispatch:
+
+jobs:
+  smart-bundling:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ODBC driver (msodbcsql18) and unixODBC dev
+        run: |
+          sudo su -c 'wget -qO- https://packages.microsoft.com/keys/microsoft.asc | apt-key add -'
+          sudo su -c 'wget -qO /etc/apt/sources.list.d/mssql-release.list https://packages.microsoft.com/config/ubuntu/22.04/prod.list'
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r "Phase3/requirements.txt"
+
+      - name: Run Smart Bundling
+        env:
+          AZURE_DB_SERVER: ${{ secrets.AZURE_DB_SERVER }}
+          AZURE_DB_NAME: ${{ secrets.AZURE_DB_NAME }}
+          AZURE_DB_USERNAME: ${{ secrets.AZURE_DB_USERNAME }}
+          AZURE_DB_PASSWORD: ${{ secrets.AZURE_DB_PASSWORD }}
+        run: |
+          python "Phase3/smart_bundling_cron.py"

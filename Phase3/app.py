@@ -181,15 +181,34 @@ def display_boxhero_tab(db):
         st.session_state.bh_selected_item = None
     
     try:
-        # Get all BoxHero items
-        all_items = db.get_all_items(source_filter="BoxHero")
+        # Get all BoxHero items with lightweight session cache (TTL ~60s)
+        now_ts = time.time()
+        cache_key = 'bh_items_cache'
+        cache_ttl = 60
+        if cache_key not in st.session_state or (now_ts - st.session_state[cache_key]['ts'] > cache_ttl):
+            all_items = db.get_all_items(source_filter="BoxHero")
+            st.session_state[cache_key] = {'data': all_items or [], 'ts': now_ts}
+        else:
+            all_items = st.session_state[cache_key]['data']
         
         if not all_items:
             st.info("No BoxHero items available at the moment.")
             return
         
-        # Filter out items that user has already requested (pending/in-progress)
-        requested_item_ids = db.get_user_requested_item_ids(st.session_state.user_id)
+        # Filter out items that user has already requested (pending/in-progress) with small cache
+        rid_cache_key = 'requested_item_ids_cache'
+        rid_ttl = 60
+        if (rid_cache_key not in st.session_state or 
+            st.session_state[rid_cache_key].get('user_id') != st.session_state.user_id or
+            (now_ts - st.session_state[rid_cache_key]['ts'] > rid_ttl)):
+            requested_item_ids = db.get_user_requested_item_ids(st.session_state.user_id)
+            st.session_state[rid_cache_key] = {
+                'user_id': st.session_state.user_id,
+                'data': requested_item_ids or [],
+                'ts': now_ts
+            }
+        else:
+            requested_item_ids = st.session_state[rid_cache_key]['data']
         available_items = [item for item in all_items if item['item_id'] not in requested_item_ids]
         
         if not available_items:
@@ -214,7 +233,6 @@ def display_boxhero_tab(db):
                 st.session_state.bh_selected_type = selected_type
                 st.session_state.bh_step = 2
                 st.session_state.bh_selected_item = None
-                st.rerun()
         
         # Step 2: Select Item Name
         if st.session_state.bh_step >= 2 and st.session_state.bh_selected_type:
@@ -317,15 +335,34 @@ def display_raw_materials_tab(db):
         st.session_state.rm_selected_item = None
     
     try:
-        # Get all raw materials
-        all_items = db.get_all_items(source_filter="Raw Materials")
+        # Get all raw materials with lightweight session cache (TTL ~60s)
+        now_ts = time.time()
+        cache_key = 'rm_items_cache'
+        cache_ttl = 60
+        if cache_key not in st.session_state or (now_ts - st.session_state[cache_key]['ts'] > cache_ttl):
+            all_items = db.get_all_items(source_filter="Raw Materials")
+            st.session_state[cache_key] = {'data': all_items or [], 'ts': now_ts}
+        else:
+            all_items = st.session_state[cache_key]['data']
         
         if not all_items:
             st.info("No raw materials available at the moment.")
             return
         
-        # Filter out items that user has already requested (pending/in-progress)
-        requested_item_ids = db.get_user_requested_item_ids(st.session_state.user_id)
+        # Filter out items that user has already requested (pending/in-progress) with small cache
+        rid_cache_key = 'requested_item_ids_cache'
+        rid_ttl = 60
+        if (rid_cache_key not in st.session_state or 
+            st.session_state[rid_cache_key].get('user_id') != st.session_state.user_id or
+            (now_ts - st.session_state[rid_cache_key]['ts'] > rid_ttl)):
+            requested_item_ids = db.get_user_requested_item_ids(st.session_state.user_id)
+            st.session_state[rid_cache_key] = {
+                'user_id': st.session_state.user_id,
+                'data': requested_item_ids or [],
+                'ts': now_ts
+            }
+        else:
+            requested_item_ids = st.session_state[rid_cache_key]['data']
         available_items = [item for item in all_items if item['item_id'] not in requested_item_ids]
         
         if not available_items:
@@ -351,7 +388,6 @@ def display_raw_materials_tab(db):
                 st.session_state.rm_step = 2
                 st.session_state.rm_selected_name = None
                 st.session_state.rm_selected_item = None
-                st.rerun()
         
         # Step 2: Select Item Name
         if st.session_state.rm_step >= 2 and st.session_state.rm_selected_type:
@@ -375,7 +411,6 @@ def display_raw_materials_tab(db):
                 st.session_state.rm_selected_name = selected_name
                 st.session_state.rm_step = 3
                 st.session_state.rm_selected_item = None
-                st.rerun()
         
         # Step 3: Select Dimensions (if multiple variants exist)
         if st.session_state.rm_step >= 3 and st.session_state.rm_selected_name:
@@ -435,7 +470,6 @@ def display_raw_materials_tab(db):
                         if st.button(f"Select", key=f"select_variant_{idx}"):
                             st.session_state.rm_selected_item = item
                             st.session_state.rm_step = 4
-                            st.rerun()
         
         # Step 4: Quantity and Add to Cart
         if st.session_state.rm_step >= 4 and st.session_state.rm_selected_item:
@@ -1001,32 +1035,47 @@ def display_active_bundles_for_operator(db):
     st.write("Track your approved orders and their status")
     
     try:
-        bundles = get_all_bundles(db)
+        # Batch fetch: bundles with vendor info in a single query
+        bundles = get_bundles_with_vendor_info(db)
         
         if not bundles:
             st.info("No active bundles yet. Generate recommendations first!")
             return
         
         st.write(f"**📊 You have {len(bundles)} orders to manage**")
+
+        # Prepare IDs for batched item and user lookups
+        bundle_ids = [b.get('bundle_id') for b in bundles if b.get('bundle_id') is not None]
+
+        # Batch fetch: all items for these bundles in one query
+        items_by_bundle = {}
+        if bundle_ids:
+            items_list = get_bundle_items_for_bundles(db, bundle_ids)
+            for row in items_list or []:
+                items_by_bundle.setdefault(row['bundle_id'], []).append(row)
+
+        # Collect all user IDs from user_breakdown across all items
+        user_ids_set = set()
+        for rows in items_by_bundle.values():
+            for it in rows:
+                try:
+                    breakdown = json.loads(it.get('user_breakdown') or '{}') if isinstance(it.get('user_breakdown'), str) else it.get('user_breakdown') or {}
+                except Exception:
+                    breakdown = {}
+                for uid in breakdown.keys():
+                    if str(uid).isdigit():
+                        user_ids_set.add(int(uid))
+
+        # Batch fetch: user names for all referenced user IDs
+        user_name_map = get_user_names_map(db, sorted(user_ids_set)) if user_ids_set else {}
         
         # Display bundles in operator-friendly format
         for bundle in bundles:
             with st.expander(f"📦 {bundle['bundle_name']} - {bundle['status']}", expanded=False):
-                # Fetch vendor details using recommended_vendor_id
-                vendor_name = "Unknown Vendor"
-                vendor_email = ""
-                vendor_phone = ""
-                if bundle.get('recommended_vendor_id'):
-                    vq = """
-                    SELECT vendor_name, vendor_email, vendor_phone
-                    FROM Vendors
-                    WHERE vendor_id = ?
-                    """
-                    vres = db.execute_query(vq, (bundle['recommended_vendor_id'],))
-                    if vres:
-                        vendor_name = vres[0].get('vendor_name', vendor_name)
-                        vendor_email = vres[0].get('vendor_email', '')
-                        vendor_phone = vres[0].get('vendor_phone', '')
+                # Vendor details already joined
+                vendor_name = bundle.get('vendor_name') or "Unknown Vendor"
+                vendor_email = bundle.get('vendor_email') or ""
+                vendor_phone = bundle.get('vendor_phone') or ""
 
                 # Summary row
                 col1, col2, col3 = st.columns([2, 2, 2])
@@ -1040,22 +1089,12 @@ def display_active_bundles_for_operator(db):
                     st.write(f"**Items:** {bundle.get('total_items', 'N/A')}")
                     st.write(f"**Pieces:** {bundle.get('total_quantity', 'N/A')}")
                 with col3:
-                    status_color = "🟢" if bundle['status'] == 'Approved' else "🔵" if bundle['status'] == 'Completed' else "🟡"
-                    st.write(f"**Status:** {status_color} {bundle['status']}")
+                    st.write(f"**Status:** {get_status_badge(bundle['status'])}")
 
                 st.markdown("---")
                 st.write("**Items in this bundle:**")
-
-                # Fetch items with per-user breakdown
-                items_q = """
-                SELECT bi.item_id, i.item_name, bi.total_quantity, bi.user_breakdown
-                FROM requirements_bundle_items bi
-                JOIN Items i ON bi.item_id = i.item_id
-                WHERE bi.bundle_id = ?
-                ORDER BY i.item_name
-                """
-                items = db.execute_query(items_q, (bundle.get('bundle_id'),))
-
+                # Use batched items
+                items = items_by_bundle.get(bundle.get('bundle_id'), [])
                 if items:
                     for it in items:
                         st.write(f"• **{it['item_name']}** — {it['total_quantity']} pieces")
@@ -1065,31 +1104,18 @@ def display_active_bundles_for_operator(db):
                         except Exception:
                             breakdown = {}
                         if breakdown:
-                            # Map user IDs to names
-                            user_ids = [int(uid) for uid in breakdown.keys() if str(uid).isdigit()]
-                            name_map = {}
-                            if user_ids:
-                                uq = f"SELECT user_id, COALESCE(full_name, username) as name FROM requirements_users WHERE user_id IN ({','.join(['?']*len(user_ids))})"
-                                for row in db.execute_query(uq, tuple(user_ids)) or []:
-                                    name_map[row['user_id']] = row['name']
                             for uid, qty in breakdown.items():
-                                uname = name_map.get(int(uid), f"User {uid}") if str(uid).isdigit() else f"User {uid}"
+                                uname = user_name_map.get(int(uid), f"User {uid}") if str(uid).isdigit() else f"User {uid}"
                                 st.write(f"   - {uname}: {qty} pcs")
                 else:
                     st.write("No items found for this bundle")
 
                 st.markdown("---")
-                # Show related requests (traceability)
-                map_q = """
-                SELECT o.req_number
-                FROM requirements_bundle_mapping m
-                JOIN requirements_orders o ON m.req_id = o.req_id
-                WHERE m.bundle_id = ?
-                ORDER BY o.req_number
-                """
-                maps = db.execute_query(map_q, (bundle.get('bundle_id'),))
-                if maps:
-                    st.write("**From Requests:** " + ", ".join([m['req_number'] for m in maps]))
+                # Show related requests (traceability) using batched map
+                bundle_req_numbers = get_bundle_request_numbers_map(db, bundle_ids)
+                req_list = bundle_req_numbers.get(bundle.get('bundle_id'), [])
+                if req_list:
+                    st.write("**From Requests:** " + ", ".join(req_list))
 
                 # Actions
                 action_cols = st.columns(2)
@@ -1514,6 +1540,94 @@ def get_all_bundles(db):
     except Exception as e:
         print(f"Error in get_all_bundles: {str(e)}")
         return []
+
+def get_bundles_with_vendor_info(db):
+    """Fetch bundles joined with vendor details in one query (performance optimization)."""
+    try:
+        query = """
+        SELECT 
+            b.bundle_id,
+            b.bundle_name,
+            b.status,
+            b.total_items,
+            b.total_quantity,
+            b.recommended_vendor_id,
+            v.vendor_name,
+            v.vendor_email,
+            v.vendor_phone,
+            b.created_at,
+            b.completed_at,
+            b.completed_by
+        FROM requirements_bundles b
+        LEFT JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
+        ORDER BY b.bundle_id DESC
+        """
+        return db.execute_query(query)
+    except Exception as e:
+        print(f"Error in get_bundles_with_vendor_info: {str(e)}")
+        return []
+
+def get_bundle_items_for_bundles(db, bundle_ids):
+    """Fetch all items for multiple bundles in a single query and return a flat list."""
+    try:
+        if not bundle_ids:
+            return []
+        placeholders = ','.join(['?' for _ in bundle_ids])
+        query = f"""
+        SELECT 
+            bi.bundle_id,
+            bi.item_id,
+            i.item_name,
+            bi.total_quantity,
+            bi.user_breakdown
+        FROM requirements_bundle_items bi
+        JOIN Items i ON bi.item_id = i.item_id
+        WHERE bi.bundle_id IN ({placeholders})
+        ORDER BY i.item_name
+        """
+        return db.execute_query(query, tuple(bundle_ids))
+    except Exception as e:
+        print(f"Error in get_bundle_items_for_bundles: {str(e)}")
+        return []
+
+def get_user_names_map(db, user_ids):
+    """Return dict of {user_id: name} for provided user IDs in one query."""
+    try:
+        if not user_ids:
+            return {}
+        placeholders = ','.join(['?' for _ in user_ids])
+        query = f"""
+        SELECT user_id, COALESCE(full_name, username) AS name
+        FROM requirements_users
+        WHERE user_id IN ({placeholders})
+        """
+        rows = db.execute_query(query, tuple(user_ids)) or []
+        return {row['user_id']: row['name'] for row in rows}
+    except Exception as e:
+        print(f"Error in get_user_names_map: {str(e)}")
+        return {}
+
+def get_bundle_request_numbers_map(db, bundle_ids):
+    """Return {bundle_id: [req_number,...]} for provided bundle IDs in one query."""
+    try:
+        if not bundle_ids:
+            return {}
+        placeholders = ','.join(['?' for _ in bundle_ids])
+        query = f"""
+        SELECT m.bundle_id, o.req_number
+        FROM requirements_bundle_mapping m
+        JOIN requirements_orders o ON m.req_id = o.req_id
+        WHERE m.bundle_id IN ({placeholders})
+        ORDER BY o.req_number
+        """
+        rows = db.execute_query(query, tuple(bundle_ids)) or []
+        out = {}
+        for r in rows:
+            out.setdefault(r['bundle_id'], []).append(r['req_number'])
+        return out
+    except Exception as e:
+        print(f"Error in get_bundle_request_numbers_map: {str(e)}")
+        return {}
 
 def mark_bundle_completed(db, bundle_id):
     """Mark a bundle as completed and update related requests"""
