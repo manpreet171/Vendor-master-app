@@ -6,6 +6,27 @@
 
 ## Development Progress Log
 
+### **September 19, 2025 - Operator Dashboard Redesign & Approval Workflow**
+
+#### **✅ Completed Today:**
+- **Operator Dashboard Layout Fix**: Tabs now render in the main content area (not sidebar).
+- **Active Bundles View (Operator-Focused)**:
+  - Shows vendor name, email, and phone using `recommended_vendor_id` → `Vendors`.
+  - Lists items with total quantities from `requirements_bundle_items`.
+  - Displays per-user breakdown (parsed from `user_breakdown` JSON and resolved via `requirements_users`).
+  - Shows originating requests via `requirements_bundle_mapping` → `requirements_orders.req_number`.
+- **Approval Workflow**:
+  - Added `Approve Bundle` action → sets `requirements_bundles.status = 'Approved'` (`mark_bundle_approved()` in `app.py`).
+  - `Mark as Completed` → sets bundle to `Completed` and cascades all linked `requirements_orders.status = 'Completed'` (`mark_bundle_completed()` in `app.py`).
+  - Updated status badges: Active = 🟡, Approved = 🔵, Completed = 🟢.
+- **Status Lifecycle Clarified in Doc**:
+  - Request: Pending → In Progress → Completed.
+  - Bundle: Active → Approved → Completed.
+- **Data Access Reliability**:
+  - `get_all_bundles()` now uses `SELECT *` to ensure `bundle_id` is always returned for downstream flows and tests.
+
+> Notes: System Reset tab is retained for testing only (per doc); to be removed in production.
+
 ### **September 18, 2024 - Phase 3A Implementation Complete**
 
 #### **✅ Core Infrastructure Completed:**
