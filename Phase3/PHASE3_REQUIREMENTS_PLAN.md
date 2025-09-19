@@ -41,6 +41,20 @@
   - `AZURE_DB_SERVER`, `AZURE_DB_NAME`, `AZURE_DB_USERNAME`, `AZURE_DB_PASSWORD`
 - **Deferred**: Operator email summary (Brevo) to be integrated later as a follow-up step.
 
+#### **🚀 Performance Optimizations (Sept 19, 2025)**
+- **Operator View** (`app.py`):
+  - Batched queries for bundles + vendor info, bundle items, per-user names, and request numbers.
+  - Reduced DB round-trips in `display_active_bundles_for_operator()` with helpers:
+    - `get_bundles_with_vendor_info`, `get_bundle_items_for_bundles`, `get_user_names_map`, `get_bundle_request_numbers_map`.
+- **User Views** (`app.py`):
+  - Added lightweight session caching (TTL ~60s) for item lists and requested item IDs in:
+    - `display_boxhero_tab()` and `display_raw_materials_tab()`.
+  - Removed unnecessary `st.rerun()` calls on selection changes to reduce lag.
+
+#### **📅 Next Day Plan**
+1. Test GitHub Actions workflow via manual dispatch and verify logs + DB updates.
+2. Integrate operator summary email into the cron (Brevo SMTP) after action test passes.
+
 ### **September 18, 2024 - Phase 3A Implementation Complete**
 
 #### **✅ Core Infrastructure Completed:**
