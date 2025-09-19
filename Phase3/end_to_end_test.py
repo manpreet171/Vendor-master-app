@@ -41,30 +41,51 @@ def test_complete_workflow():
         # Step 2: Create test user requests
         print("\n2. CREATING TEST USER REQUESTS...")
         
-        # Get some real items from the database
-        items_query = "SELECT TOP 3 item_id, item_name FROM Items WHERE item_id IN (SELECT item_id FROM ItemVendorMap)"
+        # Get more items from the database for comprehensive testing
+        items_query = "SELECT TOP 10 item_id, item_name FROM Items WHERE item_id IN (SELECT item_id FROM ItemVendorMap) ORDER BY item_id"
         items = db.execute_query(items_query)
         
-        if len(items) < 2:
+        if len(items) < 8:
             print("ERROR: Not enough items with vendor mappings found")
             return False
         
-        # Create test requests
+        print(f"   Available items for testing: {len(items)}")
+        for item in items[:8]:
+            print(f"     - {item['item_name']} (ID: {item['item_id']})")
+        
+        # Create test requests with 5 items each
         test_requests = [
             {
                 'user_id': 1,
                 'req_number': 'TEST-REQ-001',
                 'items': [
-                    {'item_id': items[0]['item_id'], 'quantity': 5},
-                    {'item_id': items[1]['item_id'], 'quantity': 3}
+                    {'item_id': items[0]['item_id'], 'quantity': 5},  # Item 1
+                    {'item_id': items[1]['item_id'], 'quantity': 3},  # Item 2
+                    {'item_id': items[2]['item_id'], 'quantity': 2},  # Item 3
+                    {'item_id': items[3]['item_id'], 'quantity': 4},  # Item 4
+                    {'item_id': items[4]['item_id'], 'quantity': 6}   # Item 5
                 ]
             },
             {
                 'user_id': 2,
                 'req_number': 'TEST-REQ-002',
                 'items': [
-                    {'item_id': items[0]['item_id'], 'quantity': 2},  # Same item as request 1
-                    {'item_id': items[2]['item_id'], 'quantity': 4} if len(items) > 2 else {'item_id': items[1]['item_id'], 'quantity': 1}
+                    {'item_id': items[0]['item_id'], 'quantity': 2},  # Same as req 1 - item 1
+                    {'item_id': items[2]['item_id'], 'quantity': 3},  # Same as req 1 - item 3
+                    {'item_id': items[5]['item_id'], 'quantity': 1},  # New item 6
+                    {'item_id': items[6]['item_id'], 'quantity': 4},  # New item 7
+                    {'item_id': items[7]['item_id'], 'quantity': 2}   # New item 8
+                ]
+            },
+            {
+                'user_id': 1,
+                'req_number': 'TEST-REQ-003',
+                'items': [
+                    {'item_id': items[1]['item_id'], 'quantity': 1},  # Same as req 1 - item 2
+                    {'item_id': items[4]['item_id'], 'quantity': 3},  # Same as req 1 - item 5
+                    {'item_id': items[5]['item_id'], 'quantity': 2},  # Same as req 2 - item 6
+                    {'item_id': items[6]['item_id'], 'quantity': 1},  # Same as req 2 - item 7
+                    {'item_id': items[7]['item_id'], 'quantity': 5}   # Same as req 2 - item 8
                 ]
             }
         ]
@@ -95,7 +116,10 @@ def test_complete_workflow():
                 """
                 db.execute_insert(item_query, (req_id, item['item_id'], item['quantity']))
             
-            print(f"   Created request {req_data['req_number']} with {len(req_data['items'])} items")
+            print(f"   Created request {req_data['req_number']} with {len(req_data['items'])} items:")
+            for item in req_data['items']:
+                item_name = next(i['item_name'] for i in items if i['item_id'] == item['item_id'])
+                print(f"     - {item_name}: {item['quantity']} pieces")
         
         db.conn.commit()
         
@@ -153,6 +177,8 @@ def test_complete_workflow():
         print("\n5. TESTING BUNDLE COMPLETION...")
         
         if bundles:
+            print(f"   DEBUG: First bundle keys: {list(bundles[0].keys())}")
+            print(f"   DEBUG: First bundle data: {bundles[0]}")
             test_bundle_id = bundles[0]['bundle_id']
             
             # Mark bundle as completed

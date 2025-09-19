@@ -45,6 +45,7 @@
 - **Smart Bundling Engine**: 100% coverage algorithm with optimal vendor distribution
 - **Operator Dashboard**: Complete bundle management interface for procurement team
 - **Multi-Bundle Creation**: Separate bundles per vendor for maximum efficiency
+- **Enhanced Transparency System**: Complete bundling decision visibility with vendor analysis (Sept 19, 2024)
 
 #### **🔄 Next Phase (Phase 3D - Planned):**
 - **Automated Cron Jobs**: GitHub Actions scheduled bundling triggers
@@ -114,7 +115,7 @@ Phase3/ (Completely Independent App)
 
 ## Complete Data Flow & Business Logic
 
-### **User Journey Example**
+### **User Journey Example (Updated with Approval Workflow)**
 ```
 Day 1 (Monday):
 Alice logs in → Browses Raw Materials → Adds "Steel Rod 10mm" (5 pieces) → Submits Request
@@ -132,9 +133,10 @@ Smart Bundling Cron Runs:
 └── Updates Status: Alice & Bob requests = "In Progress"
 
 Day 5 (Thursday):
-Operator receives steel rods → Marks bundle as "Completed" in dashboard
-System automatically updates: Alice & Bob requests = "Completed"
-Alice & Bob can now order Steel Rod again
+Operator reviews bundles → clicks "Approve Bundle" (bundle status becomes Approved)
+Operator places the order with vendor → once fulfilled, clicks "Mark as Completed"
+System automatically updates: all linked requests = "Completed"
+Items become available again for users to request
 ```
 
 ### **Smart Bundling Algorithm Logic**
@@ -306,7 +308,7 @@ CREATE TABLE requirements_bundles (
     recommended_vendor_id INT NOT NULL,
     total_items INT DEFAULT 0,
     total_quantity INT DEFAULT 0,
-    status NVARCHAR(20) DEFAULT 'Active',     -- Active, Completed
+    status NVARCHAR(20) DEFAULT 'Active',     -- Active, Approved, Completed
     created_at DATETIME2 DEFAULT GETDATE(),
     completed_at DATETIME2 NULL,
     completed_by NVARCHAR(100) NULL,          -- Operator username
@@ -371,7 +373,11 @@ Phase 3 App Navigation:
 ├── Tab 2: Raw Materials (Browse & Add to Cart)
 ├── Tab 3: My Cart (Review & Submit)
 ├── Tab 4: My Requests (Status Tracking)
-└── Tab 5: Bundle Management (Operator Only - Hidden from Users)
+└── Operator Dashboard (Operator only)
+    ├── User Requests (who requested what; human-readable)
+    ├── Smart Recommendations (AI vendor strategy with contacts; approve per vendor)
+    ├── Active Bundles (vendor details, items, per-user breakdown; Approve/Complete)
+    └── System Reset (testing only; removed in production)
 ```
 
 ### **1. Authentication System (Building on Phase 2 Success)**
@@ -517,48 +523,27 @@ def display_my_requests_tab():
                 st.write(f"• {item.item_name}: {item.quantity} pieces")
 ```
 
-### **5. Operator Dashboard (Hidden from Regular Users)**
-```python
-def display_bundle_management_tab():
-    # Only visible to operators
-    if st.session_state.user_role != 'Operator':
-        st.error("Access denied")
-        return
-    
-    # Show active bundles
-    active_bundles = db.get_active_bundles()
-    
-    for bundle in active_bundles:
-        with st.expander(f"📦 {bundle.bundle_name} - {bundle.vendor_name}"):
-            # Bundle details
-            st.write(f"**Recommended Vendor:** {bundle.vendor_name}")
-            st.write(f"**Contact:** {bundle.contact_name}")
-            st.write(f"**Email:** {bundle.vendor_email}")
-            st.write(f"**Phone:** {bundle.vendor_phone}")
-            
-            # Items in bundle
-            bundle_items = db.get_bundle_items(bundle.bundle_id)
-            st.write("**Items to Order:**")
-            for item in bundle_items:
-                st.write(f"• {item.item_name}: {item.total_quantity} pieces")
-                st.write(f"  Users: {item.user_breakdown}")
-            
-            # Complete bundle action
-            if st.button(f"Mark {bundle.bundle_name} as Completed", 
-                        key=f"complete_{bundle.bundle_id}"):
-                complete_bundle(bundle.bundle_id)
-                st.success("Bundle marked as completed!")
-                st.rerun()
+### **5. Operator Dashboard (Updated – Approval + Completion)**
+- **Tabs**
+  - **User Requests**: All pending requests grouped by user and request. Human-readable only (names, items, quantities).
+  - **Smart Recommendations**: AI-generated vendor strategy with clear contact info and items per vendor. Operators can review and preliminarily approve per vendor suggestion.
+  - **Active Bundles**: Source of truth for live bundles. For each bundle we show:
+    - **Vendor** name, email, phone (via `recommended_vendor_id` → `Vendors`)
+    - **Items** in bundle with quantities (from `requirements_bundle_items`)
+    - **Per-user breakdown** (parsed from `user_breakdown` JSON, user names from `requirements_users`)
+    - **From Requests** list (via `requirements_bundle_mapping` → `requirements_orders.req_number`)
+    - **Actions**:
+      - **Approve Bundle** → sets `requirements_bundles.status = 'Approved'`
+      - **Mark as Completed** → sets `requirements_bundles.status = 'Completed'` and all linked `requirements_orders.status = 'Completed'`
+  - **System Reset**: For testing only; removed in production.
 
-def complete_bundle(bundle_id):
-    # Update bundle status
-    db.update_bundle_status(bundle_id, 'Completed', st.session_state.username)
-    
-    # Get all requests in this bundle and mark as completed
-    requests_in_bundle = db.get_bundle_requests(bundle_id)
-    for req_id in requests_in_bundle:
-        db.update_request_status(req_id, 'Completed')
-```
+- **User availability logic**
+  - Users cannot reorder items that are in requests with status `Pending` or `In Progress` (filtered by `get_user_requested_item_ids`).
+  - After operator clicks **Mark as Completed**, linked requests become `Completed` and items become available again for users to request.
+
+- **Status lifecycle summary**
+  - Request: `Pending` → `In Progress` (bundled) → `Completed` (bundle completed)
+  - Bundle: `Active` (created) → `Approved` (operator approval) → `Completed` (operator completion)
 
 ## Smart Bundling Cron Job - Detailed Implementation
 
@@ -1717,4 +1702,84 @@ Their "My Requests" tab shows:
 - **🎯 Final Goal**: Fully autonomous procurement optimization platform
 
 ### **🎉 CURRENT STATUS:**
-**Phase 3C is COMPLETE and PRODUCTION-READY for manual operations. Ready to begin Phase 3D development after successful user acceptance testing.**
+**Phase 3C is COMPLETE and PRODUCTION-READY for manual operations. Enhanced with comprehensive bundling transparency system. Ready to begin Phase 3D development after successful user acceptance testing.**
+
+---
+
+## **Enhanced Bundling Transparency System - September 19, 2024**
+
+### **🔍 MAJOR ENHANCEMENT COMPLETED:**
+
+#### **Enhanced Debug Visibility System:**
+- **Complete Bundling Analysis** - Step-by-step decision-making transparency
+- **Item-Vendor Mapping Display** - Shows all available vendors per item with contact info
+- **Vendor Coverage Analysis** - Coverage percentages and capabilities per vendor
+- **Bundle Creation Strategy** - Real-time algorithm decision explanations
+- **Human-Readable Interface** - No technical IDs shown to operators, only names and contacts
+
+#### **🎯 Key Features Implemented:**
+
+**1. Items and Their Vendors Analysis:**
+```
+ITEM: Acrylic Primer - Gray 6401 (7 pieces)
+   - Master NY (ID: 33) - sab@masterny.com - 718-358-1234
+
+ITEM: Adhesive - Loctite AA H8003 (3 pieces)  
+   - Assemblyonics (ID: 7) - angelac@assemblyonics.com - 631 231 4440
+   - Home Depot (ID: 27) - purchasing@sdgny.com - +1 718 392 0779
+```
+
+**2. Vendor Coverage Analysis:**
+```
+VENDOR: Master NY (ID: 33)
+   Coverage: 1/3 items (33.3%)
+   Total Pieces: 7
+   Contact: sab@masterny.com | 718-358-1234
+   Items covered: Acrylic Primer - Gray 6401 (7 pieces)
+```
+
+**3. Bundle Creation Strategy:**
+```
+Bundle 1: Master NY covers 1 items (7 pieces)
+   Contact: sab@masterny.com | 718-358-1234
+   Items in this bundle:
+     - Acrylic Primer - Gray 6401 (7 pieces)
+```
+
+#### **🛠️ Technical Implementation:**
+
+**Enhanced Bundling Engine (`bundling_engine.py`):**
+- Added comprehensive debug information collection
+- Real-time vendor analysis and coverage calculation
+- Step-by-step bundle creation logging
+- Unicode-safe console output for Windows compatibility
+- Detailed vendor contact information display
+
+**Enhanced Operator Dashboard (`app.py`):**
+- Integrated debug view in manual bundling section
+- Expandable sections for detailed analysis
+- Temporary debug interface (to be removed in production)
+- Complete transparency of algorithm decisions
+
+#### **📊 Validation Results:**
+```
+✅ End-to-End Test Results:
+- Items Analyzed: 3 unique items from 2 user requests
+- Vendors Found: 6 vendors across all items
+- Bundle Strategy: 3 bundles for 100% coverage
+- Contact Information: Complete email/phone for all vendors
+- Algorithm Transparency: Full step-by-step decision logging
+```
+
+#### **🎯 Business Value:**
+- **Operator Confidence** - Complete visibility into bundling decisions
+- **Vendor Selection Clarity** - See all options and understand choices
+- **Quality Assurance** - Verify algorithm correctness through transparency
+- **Contact Efficiency** - Immediate access to vendor contact information
+- **Coverage Guarantee** - Visual confirmation of 100% item coverage
+
+### **🔄 Next Steps for Phase 3D:**
+- Remove debug interface for production deployment
+- Implement automated cron job scheduling
+- Add email notifications to vendors with bundle details
+- Deploy to Streamlit Cloud with production configuration

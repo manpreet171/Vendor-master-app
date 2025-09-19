@@ -832,32 +832,296 @@ def display_operator_dashboard(db):
         
         st.markdown("---")
         
-        # Database connection status
+        # Database connection status (sidebar only)
         st.subheader("Database")
         is_connected, message, connection_details, error_info = db.check_db_connection()
-        
         if is_connected:
             st.success("Connected")
         else:
             st.error("Connection Failed")
-    
-    # Main operator dashboard tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📦 Bundle Overview", "🤖 Manual Bundling", "🔍 Bundle Details", "📊 System Status", "🧹 System Reset"])
+            with st.expander("Error Details"):
+                st.write(message)
+
+    # Main content (outside sidebar)
+    if not is_connected:
+        st.error("Database connection is not available. Please check settings.")
+        return
+
+    if st.session_state.user_role != 'operator':
+        display_user_interface(db)
+        return
+
+    st.header("🎯 Operator Dashboard")
+    st.write("Smart Procurement Management")
+
+    # Create simplified tabs for operators (main area)
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 User Requests", "🎯 Smart Recommendations", "📦 Active Bundles", "🧹 System Reset"])
     
     with tab1:
-        display_bundle_overview(db)
+        display_user_requests_for_operator(db)
     
     with tab2:
-        display_manual_bundling(db)
+        display_smart_recommendations(db)
     
     with tab3:
-        display_bundle_details(db)
+        display_active_bundles_for_operator(db)
     
     with tab4:
-        display_system_status(db)
-    
-    with tab5:
         display_system_reset(db)
+
+def display_user_requests_for_operator(db):
+    """Show all user requests in a clean, operator-friendly format"""
+    st.header("📋 User Requests Overview")
+    st.write("See what users have requested and need to be ordered")
+    
+    try:
+        # Get all pending requests with user details
+        pending_requests = db.get_all_pending_requests()
+        
+        if not pending_requests:
+            st.info("✅ No pending requests - all caught up!")
+            return
+        
+        # Group by user and request
+        requests_by_user = {}
+        for req in pending_requests:
+            user_key = f"{req['user_id']} - {req['req_number']}"
+            if user_key not in requests_by_user:
+                requests_by_user[user_key] = {
+                    'user_id': req['user_id'],
+                    'req_number': req['req_number'],
+                    'req_date': req['req_date'],
+                    'items': [],
+                    'total_pieces': 0
+                }
+            requests_by_user[user_key]['items'].append({
+                'item_name': req['item_name'],
+                'quantity': req['quantity'],
+                'source_sheet': req['source_sheet']
+            })
+            requests_by_user[user_key]['total_pieces'] += req['quantity']
+        
+        st.write(f"**📊 Summary: {len(requests_by_user)} requests from users with {len(pending_requests)} total items**")
+        
+        # Display each request in a clean format
+        for user_key, req_data in requests_by_user.items():
+            with st.expander(f"👤 User {req_data['user_id']} - {req_data['req_number']} ({req_data['total_pieces']} pieces total)", expanded=True):
+                st.write(f"**Request Date:** {req_data['req_date']}")
+                st.write(f"**Items Requested:**")
+                
+                # Create a clean table of items
+                for i, item in enumerate(req_data['items'], 1):
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    with col1:
+                        st.write(f"{i}. **{item['item_name']}**")
+                    with col2:
+                        st.write(f"**{item['quantity']} pieces**")
+                    with col3:
+                        st.write(f"*{item['source_sheet']}*")
+        
+        st.markdown("---")
+        st.info("💡 **Next Step:** Go to 'Smart Recommendations' tab to see how to bundle these efficiently!")
+        
+    except Exception as e:
+        st.error(f"Error loading user requests: {str(e)}")
+
+def display_smart_recommendations(db):
+    """Show smart bundling recommendations in operator-friendly format"""
+    st.header("🎯 Smart Bundling Recommendations")
+    st.write("AI-powered vendor recommendations for maximum efficiency")
+    
+    try:
+        # Check if there are pending requests
+        pending_requests = db.get_all_pending_requests()
+        
+        if not pending_requests:
+            st.info("No pending requests to bundle.")
+            return
+        
+        st.success(f"Found {len(pending_requests)} items across multiple users ready for bundling!")
+        
+        # Show bundling button
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            if st.button("🚀 Generate Smart Recommendations", type="primary", use_container_width=True):
+                with st.spinner("Analyzing items and vendors..."):
+                    from bundling_engine import SmartBundlingEngine
+                    engine = SmartBundlingEngine()
+                    result = engine.run_bundling_process()
+                    
+                    if result['success']:
+                        st.success("🎉 Smart bundling analysis complete!")
+                        
+                        # Show the enhanced debug info in operator-friendly format
+                        debug_info = result.get('debug_info', {})
+                        if debug_info:
+                            st.markdown("---")
+                            st.subheader("📋 **RECOMMENDED VENDOR STRATEGY**")
+                            
+                            # Show bundle recommendations
+                            if 'coverage_strategy' in debug_info:
+                                st.write("**🎯 Here's what you should order:**")
+                                
+                                for i, strategy in enumerate(debug_info['coverage_strategy'], 1):
+                                    with st.container():
+                                        st.markdown(f"### 📦 Order #{i}: Contact **{strategy['vendor_name']}**")
+                                        
+                                        # Vendor contact info prominently displayed
+                                        col1, col2 = st.columns(2)
+                                        with col1:
+                                            st.write(f"📧 **Email:** {strategy['contact_email']}")
+                                        with col2:
+                                            st.write(f"📞 **Phone:** {strategy['contact_phone']}")
+                                        
+                                        # Items to order
+                                        st.write(f"**📋 Order these items ({strategy['total_pieces']} pieces total):**")
+                                        for item in strategy['items_list']:
+                                            st.write(f"• **{item['item_name']}** - {item['quantity']} pieces")
+                                        
+                                        # Approval button for each bundle
+                                        if st.button(f"✅ Approve Order #{i} - {strategy['vendor_name']}", key=f"approve_{i}"):
+                                            st.success(f"✅ Order #{i} approved! You can now contact {strategy['vendor_name']}")
+                                        
+                                        st.markdown("---")
+                            
+                            # Summary
+                            st.info(f"💡 **Summary:** {result.get('total_bundles', 0)} vendors will provide {result.get('coverage_percentage', 0):.0f}% coverage of all requested items")
+                    else:
+                        st.error(f"❌ Analysis failed: {result.get('error', 'Unknown error')}")
+        
+        with col2:
+            st.info("💡 This will analyze all pending requests and recommend the most efficient vendor strategy")
+    
+    except Exception as e:
+        st.error(f"Error in smart recommendations: {str(e)}")
+
+def display_active_bundles_for_operator(db):
+    """Show active bundles in operator-friendly format"""
+    st.header("📦 Active Orders & Bundles")
+    st.write("Track your approved orders and their status")
+    
+    try:
+        bundles = get_all_bundles(db)
+        
+        if not bundles:
+            st.info("No active bundles yet. Generate recommendations first!")
+            return
+        
+        st.write(f"**📊 You have {len(bundles)} orders to manage**")
+        
+        # Display bundles in operator-friendly format
+        for bundle in bundles:
+            with st.expander(f"📦 {bundle['bundle_name']} - {bundle['status']}", expanded=False):
+                # Fetch vendor details using recommended_vendor_id
+                vendor_name = "Unknown Vendor"
+                vendor_email = ""
+                vendor_phone = ""
+                if bundle.get('recommended_vendor_id'):
+                    vq = """
+                    SELECT vendor_name, vendor_email, vendor_phone
+                    FROM Vendors
+                    WHERE vendor_id = ?
+                    """
+                    vres = db.execute_query(vq, (bundle['recommended_vendor_id'],))
+                    if vres:
+                        vendor_name = vres[0].get('vendor_name', vendor_name)
+                        vendor_email = vres[0].get('vendor_email', '')
+                        vendor_phone = vres[0].get('vendor_phone', '')
+
+                # Summary row
+                col1, col2, col3 = st.columns([2, 2, 2])
+                with col1:
+                    st.write(f"**Vendor:** {vendor_name}")
+                    if vendor_email:
+                        st.write(f"📧 {vendor_email}")
+                    if vendor_phone:
+                        st.write(f"📞 {vendor_phone}")
+                with col2:
+                    st.write(f"**Items:** {bundle.get('total_items', 'N/A')}")
+                    st.write(f"**Pieces:** {bundle.get('total_quantity', 'N/A')}")
+                with col3:
+                    status_color = "🟢" if bundle['status'] == 'Approved' else "🔵" if bundle['status'] == 'Completed' else "🟡"
+                    st.write(f"**Status:** {status_color} {bundle['status']}")
+
+                st.markdown("---")
+                st.write("**Items in this bundle:**")
+
+                # Fetch items with per-user breakdown
+                items_q = """
+                SELECT bi.item_id, i.item_name, bi.total_quantity, bi.user_breakdown
+                FROM requirements_bundle_items bi
+                JOIN Items i ON bi.item_id = i.item_id
+                WHERE bi.bundle_id = ?
+                ORDER BY i.item_name
+                """
+                items = db.execute_query(items_q, (bundle.get('bundle_id'),))
+
+                if items:
+                    for it in items:
+                        st.write(f"• **{it['item_name']}** — {it['total_quantity']} pieces")
+                        # Show per-user breakdown if available
+                        try:
+                            breakdown = json.loads(it.get('user_breakdown') or '{}') if isinstance(it.get('user_breakdown'), str) else it.get('user_breakdown') or {}
+                        except Exception:
+                            breakdown = {}
+                        if breakdown:
+                            # Map user IDs to names
+                            user_ids = [int(uid) for uid in breakdown.keys() if str(uid).isdigit()]
+                            name_map = {}
+                            if user_ids:
+                                uq = f"SELECT user_id, COALESCE(full_name, username) as name FROM requirements_users WHERE user_id IN ({','.join(['?']*len(user_ids))})"
+                                for row in db.execute_query(uq, tuple(user_ids)) or []:
+                                    name_map[row['user_id']] = row['name']
+                            for uid, qty in breakdown.items():
+                                uname = name_map.get(int(uid), f"User {uid}") if str(uid).isdigit() else f"User {uid}"
+                                st.write(f"   - {uname}: {qty} pcs")
+                else:
+                    st.write("No items found for this bundle")
+
+                st.markdown("---")
+                # Show related requests (traceability)
+                map_q = """
+                SELECT o.req_number
+                FROM requirements_bundle_mapping m
+                JOIN requirements_orders o ON m.req_id = o.req_id
+                WHERE m.bundle_id = ?
+                ORDER BY o.req_number
+                """
+                maps = db.execute_query(map_q, (bundle.get('bundle_id'),))
+                if maps:
+                    st.write("**From Requests:** " + ", ".join([m['req_number'] for m in maps]))
+
+                # Actions
+                action_cols = st.columns(2)
+                with action_cols[0]:
+                    if bundle['status'] == 'Active':
+                        if st.button(f"✅ Approve Bundle", key=f"approve_{bundle['bundle_id']}"):
+                            mark_bundle_approved(db, bundle.get('bundle_id'))
+                            st.success("Bundle approved")
+                            st.rerun()
+                with action_cols[1]:
+                    if bundle['status'] in ('Approved', 'Active'):
+                        if st.button(f"🏁 Mark as Completed", key=f"complete_{bundle['bundle_id']}"):
+                            mark_bundle_completed(db, bundle.get('bundle_id'))
+                            st.success("Bundle marked as completed")
+                            st.rerun()
+    
+    except Exception as e:
+        st.error(f"Error loading active bundles: {str(e)}")
+
+def display_user_interface(db):
+    """Regular user interface for non-operator users"""
+    st.header("🏠 User Dashboard")
+    st.write("Browse items and manage your requests")
+    
+    # Add user interface tabs here
+    tab1, tab2 = st.tabs(["🛒 Browse Items", "📋 My Requests"])
+    
+    with tab1:
+        st.info("Item browsing interface would go here")
+    
+    with tab2:
+        st.info("User requests interface would go here")
 
 def display_bundle_overview(db):
     """Display overview of all bundles"""
@@ -999,6 +1263,52 @@ def display_manual_bundling(db):
                     st.write(f"**Total Items:** {result.get('total_items', 0)}")
                     st.write(f"**Coverage:** {result.get('coverage_percentage', 0):.1f}%")
                     
+                    # Show debug information if available
+                    debug_info = result.get('debug_info', {})
+                    if debug_info:
+                        st.markdown("---")
+                        st.subheader("🔍 DEBUG VIEW - Bundling Analysis")
+                        st.caption("(This detailed view will be removed in production)")
+                        
+                        # Items Analysis
+                        if 'items_analysis' in debug_info:
+                            st.write("**1. Items and Their Vendors:**")
+                            for item_id, item_info in debug_info['items_analysis'].items():
+                                with st.expander(f"📦 {item_info['item_name']} ({item_info['quantity']} pieces)", expanded=False):
+                                    st.write(f"**Item ID:** {item_id}")
+                                    st.write(f"**Available Vendors:** {item_info['vendor_count']}")
+                                    for vendor_name in item_info['vendors']:
+                                        st.write(f"• {vendor_name}")
+                        
+                        # Vendor Coverage Analysis
+                        if 'vendor_coverage_analysis' in debug_info:
+                            st.write("**2. Vendor Coverage Analysis:**")
+                            for vendor_id, vendor_info in debug_info['vendor_coverage_analysis'].items():
+                                with st.expander(f"🏪 {vendor_info['vendor_name']} - {vendor_info['coverage_percentage']:.1f}% coverage", expanded=False):
+                                    st.write(f"**Vendor ID:** {vendor_id}")
+                                    st.write(f"**Items Covered:** {vendor_info['items_count']}")
+                                    st.write(f"**Total Pieces:** {vendor_info['total_pieces']}")
+                                    st.write(f"**Contact:** {vendor_info['contact_email']}")
+                                    st.write(f"**Phone:** {vendor_info['contact_phone']}")
+                                    st.write("**Items this vendor can supply:**")
+                                    for item in vendor_info['items_covered']:
+                                        st.write(f"• {item['item_name']} ({item['quantity']} pieces)")
+                        
+                        # Bundle Creation Strategy
+                        if 'coverage_strategy' in debug_info:
+                            st.write("**3. Bundle Creation Strategy:**")
+                            for strategy in debug_info['coverage_strategy']:
+                                with st.expander(f"Bundle {strategy['bundle_number']}: {strategy['vendor_name']}", expanded=True):
+                                    st.write(f"**Vendor:** {strategy['vendor_name']} (ID: {strategy['vendor_id']})")
+                                    st.write(f"**Contact:** {strategy['contact_email']}")
+                                    st.write(f"**Phone:** {strategy['contact_phone']}")
+                                    st.write(f"**Items Covered:** {strategy['items_covered']}")
+                                    st.write(f"**Total Pieces:** {strategy['total_pieces']}")
+                                    st.write("**Items in this bundle:**")
+                                    for item in strategy['items_list']:
+                                        st.write(f"• {item['item_name']} - {item['quantity']} pieces")
+                    
+                    st.markdown("---")
                     st.write("**Created Bundles:**")
                     for i, bundle in enumerate(result.get('bundles_created', []), 1):
                         st.write(f"{i}. **{bundle['bundle_name']}**")
@@ -1193,24 +1503,17 @@ def display_system_reset(db):
 
 def get_all_bundles(db):
     """Get all bundles from database"""
-    # First check what columns exist
-    check_query = """
-    SELECT COLUMN_NAME 
-    FROM INFORMATION_SCHEMA.COLUMNS 
-    WHERE TABLE_NAME = 'requirements_bundles'
-    """
-    columns_result = db.execute_query(check_query)
-    available_columns = [col['COLUMN_NAME'] for col in columns_result] if columns_result else []
-    
-    # Build query with available columns from validator results
-    base_columns = "bundle_id, bundle_name, status, total_items, total_quantity, created_at"
-    
-    query = f"""
-    SELECT {base_columns}
-    FROM requirements_bundles
-    ORDER BY bundle_id DESC
-    """
-    return db.execute_query(query)
+    try:
+        # Use SELECT * to get all columns including bundle_id
+        query = "SELECT * FROM requirements_bundles ORDER BY bundle_id DESC"
+        result = db.execute_query(query)
+        print(f"DEBUG: get_all_bundles returned {len(result) if result else 0} bundles")
+        if result and len(result) > 0:
+            print(f"DEBUG: First bundle keys: {list(result[0].keys())}")
+        return result
+    except Exception as e:
+        print(f"Error in get_all_bundles: {str(e)}")
+        return []
 
 def mark_bundle_completed(db, bundle_id):
     """Mark a bundle as completed and update related requests"""
@@ -1250,10 +1553,29 @@ def mark_bundle_completed(db, bundle_id):
             db.conn.rollback()
         raise Exception(f"Failed to mark bundle as completed: {str(e)}")
 
+def mark_bundle_approved(db, bundle_id):
+    """Mark a bundle as approved by operator"""
+    try:
+        update_q = """
+        UPDATE requirements_bundles
+        SET status = 'Approved'
+        WHERE bundle_id = ?
+        """
+        db.execute_insert(update_q, (bundle_id,))
+        if db.conn:
+            db.conn.commit()
+        return True
+    except Exception as e:
+        if db.conn:
+            db.conn.rollback()
+        raise Exception(f"Failed to approve bundle: {str(e)}")
+
 def get_status_badge(status):
     """Return colored status badge"""
     if status == "Active":
-        return "🔵 Active"
+        return "🟡 Active"
+    elif status == "Approved":
+        return "🔵 Approved"
     elif status == "Completed":
         return "🟢 Completed"
     else:
