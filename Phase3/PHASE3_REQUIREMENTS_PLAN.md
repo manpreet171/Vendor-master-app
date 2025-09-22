@@ -27,7 +27,7 @@
 
 > Notes: System Reset tab is retained for testing only (per doc); to be removed in production.
 
-#### **⚙️ Automation Setup (Phase 3D – Partially Implemented)**
+#### **⚙️ Automation Setup (Phase 3D – Implemented)**
 - **Cron Runner Script**: Added `Phase3/smart_bundling_cron.py` (headless)
   - Connects to DB via environment variables
   - Runs `SmartBundlingEngine().run_bundling_process()`
@@ -38,8 +38,35 @@
   - Installs Python deps from `Phase3/requirements.txt`
   - Executes `python Phase3/smart_bundling_cron.py`
 - **Secrets Required (in GitHub → Actions Secrets)**:
-  - `AZURE_DB_SERVER`, `AZURE_DB_NAME`, `AZURE_DB_USERNAME`, `AZURE_DB_PASSWORD`
-- **Deferred**: Operator email summary (Brevo) to be integrated later as a follow-up step.
+  - Database: `AZURE_DB_SERVER`, `AZURE_DB_NAME`, `AZURE_DB_USERNAME`, `AZURE_DB_PASSWORD`
+  - Brevo SMTP: `BREVO_SMTP_SERVER`, `BREVO_SMTP_PORT`, `BREVO_SMTP_LOGIN`, `BREVO_SMTP_PASSWORD`
+  - Email meta: `EMAIL_SENDER`, `EMAIL_SENDER_NAME` (opt), `EMAIL_RECIPIENTS`, `EMAIL_CC` (opt), `EMAIL_REPLY_TO` (opt)
+- **Email Summary**: Integrated via Brevo SMTP in `Phase3/email_service.py` and called from `Phase3/smart_bundling_cron.py` after a successful bundling run.
+
+### **September 22, 2025 - Email Integration & Formatting Improvements**
+
+#### **✅ Completed Today:**
+- **Operator Email Integration**
+  - Implemented `Phase3/email_service.py` (Brevo SMTP via env vars) and wired it into `Phase3/smart_bundling_cron.py`.
+  - Workflow env updated to pass Brevo/email secrets.
+  - Email now includes a clean per-vendor HTML table: `Item | Dimensions | Qty`.
+  - Summary header shows: `Bundles`, `Requests Processed`, `Distinct Items`, `Total Pieces`, `Coverage`.
+- **Dimension Formatting (UI + Email)**
+  - Introduced `fmt_dim()` in `Phase3/app.py` to strip trailing zeros from DECIMAL values (e.g., `48.0000 -> 48`, `0.1250 -> 0.125`).
+  - Applied consistently across:
+    - Operator → Active Bundles item list.
+    - User → Raw Materials variants table, selected material details, item cards.
+    - User → My Cart and My Requests views.
+  - Email uses the same formatting for dimensions.
+- **Summary Metric Fix**
+  - Email “Distinct Items” now counts unique `item_id`s across bundles.
+  - Added “Total Pieces” summarizing the sum of all quantities.
+- **Actions Test**
+  - Manual dispatch of “Smart Bundling Cron Job” verified: DB updates, UI bundles, and email delivery.
+
+#### **📌 Notes/Follow-ups:**
+- Optionally append units (e.g., `in`, `mm`) next to dimensions once units are standardized in `Items`.
+- Optional: include per-user breakdown in email (mirroring Operator view) if required by Ops.
 
 #### **🚀 Performance Optimizations (Sept 19, 2025)**
 - **Operator View** (`app.py`):
