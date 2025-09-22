@@ -58,13 +58,37 @@ def _get_item_dimensions_map(db: DatabaseConnector, result: dict) -> dict:
 
 
 def _build_email_bodies(result: dict, dims_map: dict | None = None) -> tuple[str, str]:
+    # Local formatter to match UI behavior (remove trailing zeros)
+    def _fmt_dim(v):
+        if v is None:
+            return ''
+        s = str(v).strip()
+        if s == '':
+            return ''
+        try:
+            from decimal import Decimal
+            d = Decimal(s)
+            s = format(d.normalize(), 'f')
+        except Exception:
+            pass
+        if '.' in s:
+            s = s.rstrip('0').rstrip('.')
+        return s
     """Return (plain_text, html) summaries for operator email."""
     total_bundles = result.get("total_bundles", 0)
     total_requests = result.get("total_requests", 0)
-    total_items = result.get("total_items", 0)
     coverage = result.get("coverage_percentage", 0)
     opt = result.get("optimization_result", {}) or {}
     bundles = opt.get("bundles", []) or []
+    # Compute distinct items and total pieces across bundles
+    item_ids = []
+    pieces_sum = 0
+    for b in bundles:
+        for it in (b.get('items_list') or []):
+            if it.get('item_id') is not None:
+                item_ids.append(it['item_id'])
+            pieces_sum += int(it.get('quantity', 0) or 0)
+    distinct_items = len(set(item_ids))
 
     # Plain text
     lines = []
@@ -72,7 +96,8 @@ def _build_email_bodies(result: dict, dims_map: dict | None = None) -> tuple[str
     lines.append("")
     lines.append(f"Bundles: {total_bundles}")
     lines.append(f"Requests Processed: {total_requests}")
-    lines.append(f"Distinct Items: {total_items}")
+    lines.append(f"Distinct Items: {distinct_items}")
+    lines.append(f"Total Pieces: {pieces_sum}")
     lines.append(f"Coverage: {coverage}%")
     lines.append("")
     for b in bundles:
@@ -88,7 +113,7 @@ def _build_email_bodies(result: dict, dims_map: dict | None = None) -> tuple[str
             dims_txt = ""
             if dims_map and it.get('item_id') in dims_map:
                 d = dims_map[it['item_id']]
-                parts = [str(d.get('height') or '').strip(), str(d.get('width') or '').strip(), str(d.get('thickness') or '').strip()]
+                parts = [_fmt_dim(d.get('height')), _fmt_dim(d.get('width')), _fmt_dim(d.get('thickness'))]
                 parts = [p for p in parts if p and p.lower() not in ('n/a', 'none', 'null')]
                 if parts:
                     dims_txt = f" ({' x '.join(parts)})"
@@ -118,7 +143,7 @@ def _build_email_bodies(result: dict, dims_map: dict | None = None) -> tuple[str
             dims_txt = ''
             if dims_map and it.get('item_id') in dims_map:
                 d = dims_map[it['item_id']]
-                parts = [str(d.get('height') or '').strip(), str(d.get('width') or '').strip(), str(d.get('thickness') or '').strip()]
+                parts = [_fmt_dim(d.get('height')), _fmt_dim(d.get('width')), _fmt_dim(d.get('thickness'))]
                 parts = [p for p in parts if p and p.lower() not in ('n/a','none','null')]
                 if parts:
                     dims_txt = ' x '.join(parts)
@@ -147,7 +172,8 @@ def _build_email_bodies(result: dict, dims_map: dict | None = None) -> tuple[str
       <h2 style="margin:0 0 8px;">Smart Bundling Summary</h2>
       <div style="margin:6px 0;">Bundles: {total_bundles}</div>
       <div style="margin:6px 0;">Requests Processed: {total_requests}</div>
-      <div style="margin:6px 0;">Distinct Items: {total_items}</div>
+      <div style="margin:6px 0;">Distinct Items: {distinct_items}</div>
+      <div style="margin:6px 0;">Total Pieces: {pieces_sum}</div>
       <div style="margin:6px 0 16px;">Coverage: {coverage}%</div>
       {''.join(vendor_blocks) if vendor_blocks else '<div>No bundles created.</div>'}
     </div>
@@ -181,11 +207,15 @@ def main() -> int:
         # 3) Summarize outcome
         total_bundles = result.get("total_bundles", 0)
         total_requests = result.get("total_requests", 0)
-        total_items = result.get("total_items", 0)
         coverage = result.get("coverage_percentage", 0)
+        # Derive distinct item count and total pieces from optimization bundles for clarity
+        opt = result.get("optimization_result", {}) or {}
+        bundles = opt.get("bundles", []) or []
+        distinct_items = len({it.get('item_id') for b in bundles for it in (b.get('items_list') or []) if it.get('item_id') is not None})
+        total_pieces = sum(int(it.get('quantity', 0) or 0) for b in bundles for it in (b.get('items_list') or []))
 
         log("Bundling completed successfully")
-        log(f"Summary: bundles={total_bundles}, requests={total_requests}, items={total_items}, coverage={coverage}%")
+        log(f"Summary: bundles={total_bundles}, requests={total_requests}, distinct_items={distinct_items}, pieces={total_pieces}, coverage={coverage}%")
 
         # 4) Send operator summary email if SMTP envs are configured
         try:

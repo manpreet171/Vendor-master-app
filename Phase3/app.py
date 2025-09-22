@@ -455,16 +455,16 @@ def display_raw_materials_tab(db):
                         st.write(f"#{idx + 1}")
                     
                     with cols[1]:
-                        height = item.get('height', 'N/A')
-                        st.write(f"{height}" if height != 'N/A' else "N/A")
+                        height = fmt_dim(item.get('height'))
+                        st.write(height if height else "N/A")
                     
                     with cols[2]:
-                        width = item.get('width', 'N/A')
-                        st.write(f"{width}" if width != 'N/A' else "N/A")
+                        width = fmt_dim(item.get('width'))
+                        st.write(width if width else "N/A")
                     
                     with cols[3]:
-                        thickness = item.get('thickness', 'N/A')
-                        st.write(f"{thickness}" if thickness != 'N/A' else "N/A")
+                        thickness = fmt_dim(item.get('thickness'))
+                        st.write(thickness if thickness else "N/A")
                     
                     with cols[4]:
                         if st.button(f"Select", key=f"select_variant_{idx}"):
@@ -476,7 +476,16 @@ def display_raw_materials_tab(db):
             st.subheader("Step 4: How many do you need?")
             
             # Just show the material name - simple
-            st.info(f"Selected: **{st.session_state.rm_selected_item.get('item_name', 'Unknown Material')}**")
+            sel = st.session_state.rm_selected_item
+            dims = []
+            h = fmt_dim(sel.get('height'))
+            w = fmt_dim(sel.get('width'))
+            t = fmt_dim(sel.get('thickness'))
+            if h: dims.append(h)
+            if w: dims.append(w)
+            if t: dims.append(t)
+            dim_txt = f" ({' x '.join(dims)})" if dims else ""
+            st.info(f"Selected: **{sel.get('item_name', 'Unknown Material')}**{dim_txt}")
             
             # Quantity input
             col1, col2 = st.columns([2, 1])
@@ -529,16 +538,16 @@ def display_selected_material_details(item):
     dim_col1, dim_col2, dim_col3 = st.columns(3)
     
     with dim_col1:
-        height = item.get('height', 'N/A')
-        st.metric("Height", f"{height}" if height != 'N/A' else "Not specified")
+        height = fmt_dim(item.get('height'))
+        st.metric("Height", height if height else "Not specified")
     
     with dim_col2:
-        width = item.get('width', 'N/A')
-        st.metric("Width", f"{width}" if width != 'N/A' else "Not specified")
+        width = fmt_dim(item.get('width'))
+        st.metric("Width", width if width else "Not specified")
     
     with dim_col3:
-        thickness = item.get('thickness', 'N/A')
-        st.metric("Thickness", f"{thickness}" if thickness != 'N/A' else "Not specified")
+        thickness = fmt_dim(item.get('thickness'))
+        st.metric("Thickness", thickness if thickness else "Not specified")
 
 def reset_raw_materials_flow():
     """Reset the raw materials selection flow"""
@@ -561,11 +570,14 @@ def display_item_card(item, col, category):
             if item.get('item_type'):
                 st.caption(f"Type: {item['item_type']}")
             
-            # Dimensions if available
+            # Dimensions if available (formatted)
             dimensions = []
-            if item.get('height'): dimensions.append(f"H: {item['height']}")
-            if item.get('width'): dimensions.append(f"W: {item['width']}")
-            if item.get('thickness'): dimensions.append(f"T: {item['thickness']}")
+            h = fmt_dim(item.get('height'))
+            w = fmt_dim(item.get('width'))
+            t = fmt_dim(item.get('thickness'))
+            if h: dimensions.append(f"H: {h}")
+            if w: dimensions.append(f"W: {w}")
+            if t: dimensions.append(f"T: {t}")
             
             if dimensions:
                 st.caption(f"Size: {' × '.join(dimensions)}")
@@ -606,7 +618,12 @@ def add_to_cart(item, quantity, category):
             'sku': item.get('sku', ''),
             'category': category,
             'quantity': quantity,
-            'item_type': item.get('item_type', '')
+            'item_type': item.get('item_type', ''),
+            # Include dimensions if present so Cart and downstream screens can render them
+            'height': item.get('height'),
+            'width': item.get('width'),
+            'thickness': item.get('thickness'),
+            'source_sheet': item.get('source_sheet', '')
         }
         
         st.session_state.cart_items.append(cart_item)
@@ -634,6 +651,16 @@ def display_cart_tab(db):
         with col1:
             st.write(f"**{cart_item['item_name']}**")
             st.caption(f"{cart_item['category']} • SKU: {cart_item.get('sku', 'N/A')}")
+            # Dimensions if available
+            dims = []
+            h = fmt_dim(cart_item.get('height'))
+            w = fmt_dim(cart_item.get('width'))
+            t = fmt_dim(cart_item.get('thickness'))
+            if h: dims.append(f"H: {h}")
+            if w: dims.append(f"W: {w}")
+            if t: dims.append(f"T: {t}")
+            if dims:
+                st.caption(f"Size: {' × '.join(dims)}")
         
         with col2:
             # Editable quantity
@@ -730,13 +757,15 @@ def display_my_requests_tab(db):
                         # Build item description with dimensions for Raw Materials
                         item_desc = f"• **{item['item_name']}**"
                         
-                        # Add dimensions for Raw Materials
+                        # Add dimensions for Raw Materials (formatted)
                         if item.get('source_sheet') == 'Raw Materials':
                             dimensions = []
-                            if item.get('height'): dimensions.append(f"H: {item['height']}")
-                            if item.get('width'): dimensions.append(f"W: {item['width']}")
-                            if item.get('thickness'): dimensions.append(f"T: {item['thickness']}")
-                            
+                            h = fmt_dim(item.get('height'))
+                            w = fmt_dim(item.get('width'))
+                            t = fmt_dim(item.get('thickness'))
+                            if h: dimensions.append(f"H: {h}")
+                            if w: dimensions.append(f"W: {w}")
+                            if t: dimensions.append(f"T: {t}")
                             if dimensions:
                                 dim_str = " × ".join(dimensions)
                                 item_desc += f" ({dim_str})"
@@ -1100,10 +1129,7 @@ def display_active_bundles_for_operator(db):
                         # Build dimension text if available
                         dims = []
                         for key in ('height', 'width', 'thickness'):
-                            val = it.get(key)
-                            if val is None:
-                                continue
-                            sval = str(val).strip()
+                            sval = fmt_dim(it.get(key))
                             if sval and sval.lower() not in ("n/a", "none", "null"):
                                 dims.append(sval)
                         dim_txt = f" ({' x '.join(dims)})" if dims else ""
@@ -1550,6 +1576,26 @@ def get_all_bundles(db):
     except Exception as e:
         print(f"Error in get_all_bundles: {str(e)}")
         return []
+
+
+def fmt_dim(val):
+    """Format numeric/string dimension values without trailing zeros.
+    Examples: 48.0000 -> '48', 0.1250 -> '0.125'.
+    """
+    if val is None:
+        return ''
+    s = str(val).strip()
+    if s == '':
+        return ''
+    try:
+        from decimal import Decimal
+        d = Decimal(s)
+        s = format(d.normalize(), 'f')
+    except Exception:
+        pass
+    if '.' in s:
+        s = s.rstrip('0').rstrip('.')
+    return s
 
 def get_bundles_with_vendor_info(db):
     """Fetch bundles joined with vendor details in one query (performance optimization)."""

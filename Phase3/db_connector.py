@@ -162,7 +162,16 @@ class DatabaseConnector:
     def get_request_items(self, req_id):
         """Get items for a specific request"""
         query = """
-        SELECT ri.quantity, ri.item_notes, i.item_name, i.sku
+        SELECT 
+            ri.item_id,
+            ri.quantity, 
+            ri.item_notes, 
+            i.item_name, 
+            i.sku,
+            i.source_sheet,
+            i.height,
+            i.width,
+            i.thickness
         FROM requirements_order_items ri
         JOIN items i ON ri.item_id = i.item_id
         WHERE ri.req_id = ?
