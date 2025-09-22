@@ -30,7 +30,34 @@ def log(msg: str):
     print(f"[{ts}] {msg}")
 
 
-def _build_email_bodies(result: dict) -> tuple[str, str]:
+def _get_item_dimensions_map(db: DatabaseConnector, result: dict) -> dict:
+    """Return {item_id: {height, width, thickness}} for all items in result bundles."""
+    try:
+        opt = result.get("optimization_result", {}) or {}
+        bundles = opt.get("bundles", []) or []
+        item_ids = set()
+        for b in bundles:
+            for it in (b.get('items_list') or []):
+                if it.get('item_id') is not None:
+                    item_ids.add(it['item_id'])
+        if not item_ids:
+            return {}
+        placeholders = ','.join(['?' for _ in item_ids])
+        q = f"SELECT item_id, height, width, thickness FROM Items WHERE item_id IN ({placeholders})"
+        rows = db.execute_query(q, tuple(item_ids)) or []
+        dims = {}
+        for r in rows:
+            dims[r['item_id']] = {
+                'height': r.get('height'),
+                'width': r.get('width'),
+                'thickness': r.get('thickness'),
+            }
+        return dims
+    except Exception:
+        return {}
+
+
+def _build_email_bodies(result: dict, dims_map: dict | None = None) -> tuple[str, str]:
     """Return (plain_text, html) summaries for operator email."""
     total_bundles = result.get("total_bundles", 0)
     total_requests = result.get("total_requests", 0)
@@ -58,24 +85,62 @@ def _build_email_bodies(result: dict) -> tuple[str, str]:
         if email or phone:
             lines.append(f"  Contact: {email}{' | ' if email and phone else ''}{phone}")
         for it in b.get('items_list') or []:
-            lines.append(f"  • {it.get('item_name', 'Item')} — {it.get('quantity', 0)} pcs")
+            dims_txt = ""
+            if dims_map and it.get('item_id') in dims_map:
+                d = dims_map[it['item_id']]
+                parts = [str(d.get('height') or '').strip(), str(d.get('width') or '').strip(), str(d.get('thickness') or '').strip()]
+                parts = [p for p in parts if p and p.lower() not in ('n/a', 'none', 'null')]
+                if parts:
+                    dims_txt = f" ({' x '.join(parts)})"
+            lines.append(f"  • {it.get('item_name', 'Item')}{dims_txt} — {it.get('quantity', 0)} pcs")
         lines.append("")
     plain_text = "\n".join(lines)
 
     # HTML
-    rows_html = []
+    vendor_blocks = []
     for b in bundles:
         vendor = b.get('vendor_name', 'Unknown Vendor')
         items_count = b.get('items_count', len(b.get('items_list') or []))
         total_qty = b.get('total_quantity', 0)
         email = b.get('contact_email') or ''
         phone = b.get('contact_phone') or ''
-        header = f"<div style='font-weight:600;margin:8px 0 4px;'>{vendor}</div>"
-        meta = f"<div style='color:#555;margin:0 0 8px;'>Items: {items_count} | Pieces: {total_qty}" + (f" | Contact: {email} {(' | '+phone) if phone else ''}" if email or phone else "") + "</div>"
-        items_lines = []
-        for it in b.get('items_list') or []:
-            items_lines.append(f"<div>• {it.get('item_name','Item')} — {it.get('quantity',0)} pcs</div>")
-        rows_html.append(header + meta + "".join(items_lines))
+        header = f"<div style='font-weight:600;margin:12px 0 6px;font-size:16px;'>{vendor}</div>"
+        contact = ""
+        if email or phone:
+            sep = " | " if email and phone else ""
+            contact = f"<div style='color:#555;margin:0 0 10px;'>Items: {items_count} | Pieces: {total_qty} | Contact: {email}{sep}{phone}</div>"
+        else:
+            contact = f"<div style='color:#555;margin:0 0 10px;'>Items: {items_count} | Pieces: {total_qty}</div>"
+
+        # Build a table per vendor: Item | Dimensions | Quantity
+        row_html = []
+        for it in (b.get('items_list') or []):
+            dims_txt = ''
+            if dims_map and it.get('item_id') in dims_map:
+                d = dims_map[it['item_id']]
+                parts = [str(d.get('height') or '').strip(), str(d.get('width') or '').strip(), str(d.get('thickness') or '').strip()]
+                parts = [p for p in parts if p and p.lower() not in ('n/a','none','null')]
+                if parts:
+                    dims_txt = ' x '.join(parts)
+            row_html.append(
+                f"<tr>"
+                f"<td style='padding:6px 8px;border-bottom:1px solid #eee;'>{it.get('item_name','Item')}</td>"
+                f"<td style='padding:6px 8px;border-bottom:1px solid #eee;color:#555;'>{dims_txt}</td>"
+                f"<td style='padding:6px 8px;border-bottom:1px solid #eee;text-align:right;'>{it.get('quantity',0)}</td>"
+                f"</tr>"
+            )
+
+        table = (
+            "<table style=\"border-collapse:collapse;width:100%;max-width:900px;\">"
+            "<thead>\n<tr style=\"background:#f6f7f9;\">"
+            "<th style=\"text-align:left;padding:6px 8px;\">Item</th>"
+            "<th style=\"text-align:left;padding:6px 8px;\">Dimensions</th>"
+            "<th style=\"text-align:right;padding:6px 8px;\">Qty</th>"
+            "</tr>\n</thead>"
+            f"<tbody>{''.join(row_html)}</tbody>"
+            "</table>"
+        )
+        vendor_blocks.append(header + contact + table)
 
     html = f"""
     <div style="font-family:Segoe UI, Arial, sans-serif; font-size:14px; color:#222;">
@@ -84,7 +149,7 @@ def _build_email_bodies(result: dict) -> tuple[str, str]:
       <div style="margin:6px 0;">Requests Processed: {total_requests}</div>
       <div style="margin:6px 0;">Distinct Items: {total_items}</div>
       <div style="margin:6px 0 16px;">Coverage: {coverage}%</div>
-      {''.join(rows_html) if rows_html else '<div>No bundles created.</div>'}
+      {''.join(vendor_blocks) if vendor_blocks else '<div>No bundles created.</div>'}
     </div>
     """
     return plain_text, html
@@ -125,7 +190,8 @@ def main() -> int:
         # 4) Send operator summary email if SMTP envs are configured
         try:
             subject = f"Smart Bundling: {total_bundles} bundles | {coverage}% coverage"
-            body_text, html_body = _build_email_bodies(result)
+            dims_map = _get_item_dimensions_map(db, result)
+            body_text, html_body = _build_email_bodies(result, dims_map)
             sent = send_email_via_brevo(subject, body_text, html_body=html_body)
             if sent:
                 log("Operator summary email sent via Brevo SMTP")

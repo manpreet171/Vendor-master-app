@@ -1097,7 +1097,17 @@ def display_active_bundles_for_operator(db):
                 items = items_by_bundle.get(bundle.get('bundle_id'), [])
                 if items:
                     for it in items:
-                        st.write(f"• **{it['item_name']}** — {it['total_quantity']} pieces")
+                        # Build dimension text if available
+                        dims = []
+                        for key in ('height', 'width', 'thickness'):
+                            val = it.get(key)
+                            if val is None:
+                                continue
+                            sval = str(val).strip()
+                            if sval and sval.lower() not in ("n/a", "none", "null"):
+                                dims.append(sval)
+                        dim_txt = f" ({' x '.join(dims)})" if dims else ""
+                        st.write(f"• **{it['item_name']}**{dim_txt} — {it['total_quantity']} pieces")
                         # Show per-user breakdown if available
                         try:
                             breakdown = json.loads(it.get('user_breakdown') or '{}') if isinstance(it.get('user_breakdown'), str) else it.get('user_breakdown') or {}
@@ -1578,6 +1588,9 @@ def get_bundle_items_for_bundles(db, bundle_ids):
             bi.bundle_id,
             bi.item_id,
             i.item_name,
+            i.height,
+            i.width,
+            i.thickness,
             bi.total_quantity,
             bi.user_breakdown
         FROM requirements_bundle_items bi
