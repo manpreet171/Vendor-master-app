@@ -36,5 +36,14 @@ jobs:
           AZURE_DB_NAME: ${{ secrets.AZURE_DB_NAME }}
           AZURE_DB_USERNAME: ${{ secrets.AZURE_DB_USERNAME }}
           AZURE_DB_PASSWORD: ${{ secrets.AZURE_DB_PASSWORD }}
+          BREVO_SMTP_SERVER: ${{ secrets.BREVO_SMTP_SERVER }}
+          BREVO_SMTP_PORT: ${{ secrets.BREVO_SMTP_PORT }}
+          BREVO_SMTP_LOGIN: ${{ secrets.BREVO_SMTP_LOGIN }}
+          BREVO_SMTP_PASSWORD: ${{ secrets.BREVO_SMTP_PASSWORD }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_SENDER_NAME: ${{ secrets.EMAIL_SENDER_NAME }}
+          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+          EMAIL_CC: ${{ secrets.EMAIL_CC }}
+          EMAIL_REPLY_TO: ${{ secrets.EMAIL_REPLY_TO }}
         run: |
           python "Phase3/smart_bundling_cron.py"
