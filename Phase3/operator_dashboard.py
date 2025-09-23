@@ -26,7 +26,7 @@ def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.selectbox(
         "Choose a page:",
-        ["Bundle Overview", "Manual Bundling", "Bundle Details", "System Status"]
+        ["Bundle Overview", "Manual Bundling", "Bundle Details", "System Status", "User Management"]
     )
     
     if page == "Bundle Overview":
@@ -37,6 +37,8 @@ def main():
         display_bundle_details(db)
     elif page == "System Status":
         display_system_status(db)
+    elif page == "User Management":
+        display_user_management(db)
     
     db.close_connection()
 
@@ -272,6 +274,118 @@ def display_system_status(db):
     
     except Exception as e:
         st.error(f"Error loading system status: {str(e)}")
+
+def display_user_management(db: DatabaseConnector):
+    """Admin-only user management (create, update, activate, role, reset password)"""
+    st.header("👤 User Management (Admin)")
+
+    # Simple admin gate using requirements_users with role Operator/Admin
+    if 'um_admin_auth' not in st.session_state:
+        st.session_state.um_admin_auth = False
+        st.session_state.um_admin_user = None
+
+    if not st.session_state.um_admin_auth:
+        st.info("Operator/Admin sign-in required to manage users.")
+        with st.form("um_admin_login"):
+            username = st.text_input("Admin username")
+            password = st.text_input("Admin password", type="password")
+            submitted = st.form_submit_button("Sign in")
+        if submitted:
+            try:
+                u = db.authenticate_user(username, password)
+                if u and str(u.get('user_role', '')).lower() in ("operator", "admin"):
+                    st.session_state.um_admin_auth = True
+                    st.session_state.um_admin_user = u
+                    st.success(f"Welcome, {u.get('full_name') or u.get('username')}!")
+                    st.rerun()
+                else:
+                    st.error("Not authorized. Operator/Admin only.")
+            except Exception as e:
+                st.error(f"Login error: {str(e)}")
+        return
+
+    # Authenticated admin UI
+    colL, colR = st.columns([2, 1])
+    with colR:
+        if st.button("Sign out", use_container_width=True):
+            st.session_state.um_admin_auth = False
+            st.session_state.um_admin_user = None
+            st.rerun()
+
+    st.subheader("All Users")
+    try:
+        users = db.list_users() or []
+        if not users:
+            st.info("No users found.")
+        for u in users:
+            with st.expander(f"{u['username']} — {u.get('full_name') or ''}"):
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    full_name = st.text_input("Full name", value=u.get('full_name') or "", key=f"name_{u['user_id']}")
+                with c2:
+                    email = st.text_input("Email", value=u.get('email') or "", key=f"email_{u['user_id']}")
+                with c3:
+                    dept = st.text_input("Department", value=u.get('department') or "", key=f"dept_{u['user_id']}")
+                with c4:
+                    role = st.selectbox("Role", options=["User", "Operator"], index=0 if (u.get('user_role') or "User") == "User" else 1, key=f"role_{u['user_id']}")
+
+                c5, c6, c7 = st.columns(3)
+                with c5:
+                    active = st.checkbox("Active", value=bool(u.get('is_active')), key=f"active_{u['user_id']}")
+                with c6:
+                    new_pw = st.text_input("Reset password", type="password", key=f"pw_{u['user_id']}")
+                with c7:
+                    st.caption(f"Created: {u.get('created_at')}\nLast login: {u.get('last_login')}")
+
+                b1, b2, b3 = st.columns(3)
+                with b1:
+                    if st.button("Save Profile", key=f"save_{u['user_id']}"):
+                        ok1 = db.update_user_profile(u['user_id'], full_name, email, dept)
+                        ok2 = db.set_user_role(u['user_id'], role)
+                        ok3 = db.set_user_active(u['user_id'], active)
+                        if ok1 and ok2 and ok3:
+                            st.success("Updated.")
+                        else:
+                            st.error("Failed to update some fields.")
+                with b2:
+                    if st.button("Reset Password", key=f"reset_{u['user_id']}"):
+                        if (new_pw or "").strip():
+                            if db.reset_user_password(u['user_id'], new_pw.strip()):
+                                st.success("Password reset.")
+                            else:
+                                st.error("Failed to reset password.")
+                        else:
+                            st.warning("Enter a new password first.")
+                with b3:
+                    st.write("")
+
+    except Exception as e:
+        st.error(f"Error loading users: {str(e)}")
+
+    st.markdown("---")
+    st.subheader("Create New User")
+    with st.form("create_user_form"):
+        cu1, cu2 = st.columns(2)
+        with cu1:
+            c_username = st.text_input("Username")
+            c_fullname = st.text_input("Full name")
+            c_department = st.text_input("Department")
+        with cu2:
+            c_email = st.text_input("Email")
+            c_role = st.selectbox("Role", ["User", "Operator"])
+            c_active = st.checkbox("Active", value=True)
+        c_pw = st.text_input("Initial password", type="password")
+        submit_new = st.form_submit_button("Create User", type="primary")
+    if submit_new:
+        if not c_username or not c_pw:
+            st.warning("Username and password are required.")
+        else:
+            res = db.create_user(c_username.strip(), c_pw.strip(), c_fullname.strip(), c_email.strip(), c_department.strip(), c_role, 1 if c_active else 0)
+            if res.get('success'):
+                st.success("User created.")
+                st.rerun()
+            else:
+                st.error(f"Failed to create user: {res.get('error')}")
 
 def get_all_bundles(db):
     """Get all bundles from database"""

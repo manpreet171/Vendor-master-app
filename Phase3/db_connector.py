@@ -513,3 +513,96 @@ class DatabaseConnector:
             self.cursor.close()
         if self.conn:
             self.conn.close()
+
+    # ------------------------------
+    # Admin: requirements_users CRUD
+    # ------------------------------
+    def list_users(self):
+        """Return all users for admin management UI"""
+        query = """
+        SELECT user_id, username, full_name, email, department, user_role, is_active, created_at, last_login
+        FROM requirements_users
+        ORDER BY created_at DESC
+        """
+        return self.execute_query(query)
+
+    def get_user_by_username(self, username: str):
+        query = """
+        SELECT user_id, username FROM requirements_users WHERE username = ?
+        """
+        res = self.execute_query(query, (username,))
+        return res[0] if res else None
+
+    def create_user(self, username: str, password: str, full_name: str, email: str = None, department: str = None, user_role: str = 'User', is_active: int = 1) -> dict:
+        """Create a new user. Note: password stored as provided to match current auth behavior."""
+        try:
+            # Ensure unique username
+            existing = self.get_user_by_username(username)
+            if existing:
+                return {"success": False, "error": "Username already exists"}
+
+            query = """
+            INSERT INTO requirements_users (username, password_hash, full_name, email, department, user_role, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, GETDATE())
+            """
+            self.execute_insert(query, (username, password, full_name, email, department, user_role, is_active))
+            self.conn.commit()
+            return {"success": True}
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            return {"success": False, "error": str(e)}
+
+    def update_user_profile(self, user_id: int, full_name: str, email: str, department: str) -> bool:
+        try:
+            query = """
+            UPDATE requirements_users
+            SET full_name = ?, email = ?, department = ?
+            WHERE user_id = ?
+            """
+            self.execute_insert(query, (full_name, email, department, user_id))
+            self.conn.commit()
+            return True
+        except Exception:
+            if self.conn:
+                self.conn.rollback()
+            return False
+
+    def set_user_role(self, user_id: int, role: str) -> bool:
+        try:
+            query = """
+            UPDATE requirements_users SET user_role = ? WHERE user_id = ?
+            """
+            self.execute_insert(query, (role, user_id))
+            self.conn.commit()
+            return True
+        except Exception:
+            if self.conn:
+                self.conn.rollback()
+            return False
+
+    def set_user_active(self, user_id: int, is_active: bool) -> bool:
+        try:
+            query = """
+            UPDATE requirements_users SET is_active = ? WHERE user_id = ?
+            """
+            self.execute_insert(query, (1 if is_active else 0, user_id))
+            self.conn.commit()
+            return True
+        except Exception:
+            if self.conn:
+                self.conn.rollback()
+            return False
+
+    def reset_user_password(self, user_id: int, new_password: str) -> bool:
+        try:
+            query = """
+            UPDATE requirements_users SET password_hash = ? WHERE user_id = ?
+            """
+            self.execute_insert(query, (new_password, user_id))
+            self.conn.commit()
+            return True
+        except Exception:
+            if self.conn:
+                self.conn.rollback()
+            return False

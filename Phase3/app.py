@@ -1116,7 +1116,7 @@ def display_active_bundles_for_operator(db):
                         st.write(f"📞 {vendor_phone}")
                 with col2:
                     st.write(f"**Items:** {bundle.get('total_items', 'N/A')}")
-                    st.write(f"**Pieces:** {bundle.get('total_quantity', 'N/A')}")
+                    st.write(f+"**Pieces:** {bundle.get('total_quantity', 'N/A')}")
                 with col3:
                     st.write(f"**Status:** {get_status_badge(bundle['status'])}")
 
