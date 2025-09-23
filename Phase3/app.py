@@ -910,7 +910,9 @@ def display_operator_dashboard(db):
         st.error("Database connection is not available. Please check settings.")
         return
 
-    if st.session_state.user_role != 'operator':
+    # Allow both 'Operator' and 'Admin' roles, case-insensitive
+    role_val = str(st.session_state.get('user_role') or '').lower()
+    if role_val not in ('operator', 'admin'):
         display_user_interface(db)
         return
 
@@ -918,7 +920,7 @@ def display_operator_dashboard(db):
     st.write("Smart Procurement Management")
 
     # Create simplified tabs for operators (main area)
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 User Requests", "🎯 Smart Recommendations", "📦 Active Bundles", "🧹 System Reset"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 User Requests", "🎯 Smart Recommendations", "📦 Active Bundles", "🧹 System Reset", "👤 User Management"])
     
     with tab1:
         display_user_requests_for_operator(db)
@@ -931,6 +933,9 @@ def display_operator_dashboard(db):
     
     with tab4:
         display_system_reset(db)
+    
+    with tab5:
+        display_user_management_admin(db)
 
 def display_user_requests_for_operator(db):
     """Show all user requests in a clean, operator-friendly format"""
@@ -1057,6 +1062,86 @@ def display_smart_recommendations(db):
     
     except Exception as e:
         st.error(f"Error in smart recommendations: {str(e)}")
+
+def display_user_management_admin(db):
+    """Admin-only user management inside integrated operator dashboard.
+    Note: Only visible to users in operator dashboard, so no extra login prompt.
+    """
+    st.header("👤 User Management")
+    st.caption("Create, edit, activate/deactivate users; change roles; reset passwords")
+
+    # List and manage users
+    try:
+        users = db.list_users() or []
+        if not users:
+            st.info("No users found.")
+        for u in users:
+            with st.expander(f"{u['username']} — {u.get('full_name') or ''}"):
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    full_name = st.text_input("Full name", value=u.get('full_name') or "", key=f"um_name_{u['user_id']}")
+                with c2:
+                    email = st.text_input("Email", value=u.get('email') or "", key=f"um_email_{u['user_id']}")
+                with c3:
+                    dept = st.text_input("Department", value=u.get('department') or "", key=f"um_dept_{u['user_id']}")
+                with c4:
+                    role = st.selectbox("Role", options=["User", "Operator"], index=0 if (u.get('user_role') or "User") == "User" else 1, key=f"um_role_{u['user_id']}")
+
+                c5, c6, c7 = st.columns(3)
+                with c5:
+                    active = st.checkbox("Active", value=bool(u.get('is_active')), key=f"um_active_{u['user_id']}")
+                with c6:
+                    new_pw = st.text_input("Reset password", type="password", key=f"um_pw_{u['user_id']}")
+                with c7:
+                    st.caption(f"Created: {u.get('created_at')}\nLast login: {u.get('last_login')}")
+
+                b1, b2, _ = st.columns(3)
+                with b1:
+                    if st.button("Save Profile", key=f"um_save_{u['user_id']}"):
+                        ok1 = db.update_user_profile(u['user_id'], full_name, email, dept)
+                        ok2 = db.set_user_role(u['user_id'], role)
+                        ok3 = db.set_user_active(u['user_id'], active)
+                        if ok1 and ok2 and ok3:
+                            st.success("Updated.")
+                        else:
+                            st.error("Failed to update some fields.")
+                with b2:
+                    if st.button("Reset Password", key=f"um_reset_{u['user_id']}"):
+                        if (new_pw or "").strip():
+                            if db.reset_user_password(u['user_id'], new_pw.strip()):
+                                st.success("Password reset.")
+                            else:
+                                st.error("Failed to reset password.")
+                        else:
+                            st.warning("Enter a new password first.")
+
+    except Exception as e:
+        st.error(f"Error loading users: {str(e)}")
+
+    st.markdown("---")
+    st.subheader("Create New User")
+    with st.form("um_create_user_form"):
+        cu1, cu2 = st.columns(2)
+        with cu1:
+            c_username = st.text_input("Username")
+            c_fullname = st.text_input("Full name")
+            c_department = st.text_input("Department")
+        with cu2:
+            c_email = st.text_input("Email")
+            c_role = st.selectbox("Role", ["User", "Operator"])
+            c_active = st.checkbox("Active", value=True)
+        c_pw = st.text_input("Initial password", type="password")
+        submit_new = st.form_submit_button("Create User", type="primary")
+    if submit_new:
+        if not c_username or not c_pw:
+            st.warning("Username and password are required.")
+        else:
+            res = db.create_user(c_username.strip(), c_pw.strip(), c_fullname.strip(), c_email.strip(), c_department.strip(), c_role, 1 if c_active else 0)
+            if res.get('success'):
+                st.success("User created.")
+                st.rerun()
+            else:
+                st.error(f"Failed to create user: {res.get('error')}")
 
 def display_active_bundles_for_operator(db):
     """Show active bundles in operator-friendly format"""
