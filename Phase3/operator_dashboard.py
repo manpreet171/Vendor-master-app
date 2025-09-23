@@ -312,6 +312,11 @@ def display_user_management(db: DatabaseConnector):
             st.session_state.um_admin_user = None
             st.rerun()
 
+    # Show success after rerun if user was created
+    if st.session_state.get('um_user_created_success'):
+        st.success("User created.")
+        del st.session_state['um_user_created_success']
+
     st.subheader("All Users")
     try:
         users = db.list_users() or []
@@ -364,7 +369,7 @@ def display_user_management(db: DatabaseConnector):
 
     st.markdown("---")
     st.subheader("Create New User")
-    with st.form("create_user_form"):
+    with st.form("create_user_form", clear_on_submit=True):
         cu1, cu2 = st.columns(2)
         with cu1:
             c_username = st.text_input("Username")
@@ -382,7 +387,7 @@ def display_user_management(db: DatabaseConnector):
         else:
             res = db.create_user(c_username.strip(), c_pw.strip(), c_fullname.strip(), c_email.strip(), c_department.strip(), c_role, 1 if c_active else 0)
             if res.get('success'):
-                st.success("User created.")
+                st.session_state['um_user_created_success'] = True
                 st.rerun()
             else:
                 st.error(f"Failed to create user: {res.get('error')}")
