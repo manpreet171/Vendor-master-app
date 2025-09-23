@@ -6,6 +6,50 @@
 
 ## Development Progress Log
 
+### **September 23, 2025 - Admin User Management, UI Refresh, and Cloud Readiness**
+
+#### **✅ Completed Today:**
+- **Admin-Only User Management (Integrated in Operator Dashboard)**
+  - Added a new tab `👤 User Management` inside `Phase3/app.py` → `display_operator_dashboard()`.
+  - Access restricted to roles `Operator` or `Admin` (case-insensitive).
+- **CRUD Capabilities**
+  - View all users with clean summary (email, department, role, status, created, last login).
+  - Edit profile fields: full name, email, department.
+  - Change role: `User` ↔ `Operator`.
+  - Activate/Deactivate user.
+  - Reset password (admin sets a new password).
+  - Create new user (username, name, dept, email, role, active, initial password).
+  - Delete user (hard delete) with confirmation and FK-safe error messaging.
+- **Clean UI Redesign**
+  - Replaced cluttered expander form with a clean card/table layout.
+  - Separate, focused Edit form that appears only when needed.
+  - Clear Delete confirmation step with explicit buttons.
+  - Visual status indicators and improved spacing/typography.
+- **Form UX Improvements**
+  - `clear_on_submit=True` + `st.rerun()` flag pattern for instant refresh.
+  - Success toasts auto-dismiss after ~1 second for create/delete/update.
+- **Standalone Dashboard Parity**
+  - Mirrored user management behavior in `Phase3/operator_dashboard.py` (for local/alt use).
+
+#### **🗃️ Database Connector Updates (`Phase3/db_connector.py`):**
+- Added helpers powering the admin UI:
+  - `list_users`, `get_user_by_username`
+  - `create_user`, `update_user_profile`
+  - `set_user_role`, `set_user_active`
+  - `reset_user_password`, `delete_user`
+
+#### **☁️ Streamlit Cloud Notes (unchanged pattern from Phase 2):**
+- Root launcher: `streamlit_app_phase3.py` (Main file on Streamlit Cloud).
+- Root `requirements.txt` and `packages.txt` drive installs (`unixodbc`, `unixodbc-dev`).
+- Secrets (Streamlit → App → Secrets) use `[azure_sql]` block (server, db, user, pwd, driver).
+- Cron/email remains in GitHub Actions: `.github/workflows/smart_bundling.yml` (no change needed for Cloud).
+
+#### **📌 Follow-ups / Options:**
+- Upgrade to secure password hashing (e.g., `bcrypt/passlib`) with migration.
+- Add soft-delete (mark inactive) in place of hard delete if preferred.
+- Add search/filter and pagination for large user lists.
+- Export users to CSV, and audit logs for admin actions.
+
 ### **September 19, 2025 - Operator Dashboard Redesign & Approval Workflow**
 
 #### **✅ Completed Today:**
@@ -123,11 +167,25 @@
 - **Multi-Bundle Creation**: Separate bundles per vendor for maximum efficiency
 - **Enhanced Transparency System**: Complete bundling decision visibility with vendor analysis (Sept 19, 2024)
 
-#### **🔄 Next Phase (Phase 3D - Planned):**
-- **Automated Cron Jobs**: Implemented on Sept 19, 2025 (see workflow and cron runner)
-- **Email Notifications**: Brevo integration for status updates and vendor notifications
-- **Advanced Analytics**: Bundle performance metrics and reporting
-- **Production Deployment**: Streamlit Cloud deployment with secrets management
+#### **🔄 Next Phase (Phase 3D - Next Steps, updated Sept 23, 2025):**
+- **Authentication Hardening**
+  - Migrate to secure password hashing (bcrypt/passlib) and backfill existing users.
+  - Add password reset policy and minimum complexity checks.
+- **Admin UX Enhancements**
+  - Add search, filters, and pagination for large user lists.
+  - Add CSV export of users and basic audit logs for admin actions (create/update/delete).
+  - Convert hard delete to soft delete (mark inactive) with a safeguard to allow hard delete only when there are no linked records.
+- **Email & Cron Improvements** (cron and email already implemented)
+  - Escalate items with <100% coverage in the summary email (clear section for operator follow‑up).
+  - Optional: attach CSV of per‑vendor bundle items; add Reply‑To and CC defaults.
+- **Analytics & Reporting**
+  - Bundle performance dashboard: coverage rate, vendor count per run, total pieces, cycle times.
+  - Request SLA tracking from Pending → Completed.
+- **Observability & Health**
+  - Add structured logging, error reporting, and a `/health` panel (DB driver, server, connectivity).
+- **Deployment & Config**
+  - Finalize Streamlit Cloud app settings doc (Main file, packages, secrets) and add README quick start.
+  - Feature flags for operator features to enable safe rollouts.
 
 ## Business Logic & Value Proposition
 
@@ -1859,3 +1917,71 @@ Bundle 1: Master NY covers 1 items (7 pieces)
 - Implement automated cron job scheduling
 - Add email notifications to vendors with bundle details
 - Deploy to Streamlit Cloud with production configuration
+
+### **✅ Phase 3D Execution Checklist (owners, target dates, acceptance)**
+
+- **Authentication Hardening**
+  - Owner: Engineering (Backend)
+  - Target: 2025-09-28
+  - Acceptance:
+    - All new passwords stored with bcrypt/passlib.
+    - Existing users migrated; legacy logins continue to work post-migration.
+    - Enforced password policy (min length, complexity) on create/reset.
+
+- **Admin UX – Search/Filter/Pagination**
+  - Owner: Engineering (Frontend)
+  - Target: 2025-09-29
+  - Acceptance:
+    - Search by username/full name/email.
+    - Filter by role and active status.
+    - Pagination or lazy-load for >100 users without lag.
+
+- **Soft Delete (Deactivate instead of Hard Delete)**
+  - Owner: Engineering (Backend)
+  - Target: 2025-09-29
+  - Acceptance:
+    - “Delete” changes to “Deactivate” unless no linked records.
+    - Visibility toggle to show/hide inactive users.
+    - Hard delete only allowed when user has no related orders.
+
+- **Email Summary – Coverage Escalations**
+  - Owner: Engineering (Cron/Email)
+  - Target: 2025-09-27
+  - Acceptance:
+    - If coverage < 100%, email shows a clear “Uncovered Items” section.
+    - Links or identifiers provided for quick operator follow-up.
+
+- **Optional: Attach CSV to Operator Email**
+  - Owner: Engineering (Cron/Email)
+  - Target: 2025-09-30
+  - Acceptance:
+    - Per-vendor CSV attachment with columns: Item | Dimensions | Qty.
+    - Email still delivers if attachment generation fails (graceful fallback).
+
+- **Analytics Dashboard**
+  - Owner: Engineering (Frontend/Data)
+  - Target: 2025-10-02
+  - Acceptance:
+    - Metrics: coverage %, vendor count per run, total pieces, cycle time.
+    - Historical trends over last 10 runs.
+
+- **Observability & Health Panel**
+  - Owner: Engineering (Backend)
+  - Target: 2025-09-27
+  - Acceptance:
+    - /health section shows DB driver in use, server, connection status.
+    - Structured logs for cron and app with error stacks captured.
+
+- **Streamlit Cloud Readme & App Settings**
+  - Owner: Operations
+  - Target: 2025-09-26
+  - Acceptance:
+    - README includes: Main file path, packages, secrets TOML template, troubleshooting.
+    - App re-deploy steps verified end-to-end.
+
+- **Feature Flags for Operator Features**
+  - Owner: Engineering (Backend)
+  - Target: 2025-10-01
+  - Acceptance:
+    - Flags to enable/disable new admin features without code changes.
+    - Defaults documented in README and .env.template.
