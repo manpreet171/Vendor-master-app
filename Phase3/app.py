@@ -1078,63 +1078,102 @@ def display_user_management_admin(db):
         del st.session_state['um_user_created_success']
         st.rerun()
 
-    # List and manage users
+    # Clean table-based user management
     try:
         users = db.list_users() or []
         if not users:
             st.info("No users found.")
-        for u in users:
-            with st.expander(f"{u['username']} — {u.get('full_name') or ''}"):
-                c1, c2, c3, c4 = st.columns(4)
-                with c1:
-                    full_name = st.text_input("Full name", value=u.get('full_name') or "", key=f"um_name_{u['user_id']}")
-                with c2:
-                    email = st.text_input("Email", value=u.get('email') or "", key=f"um_email_{u['user_id']}")
-                with c3:
-                    dept = st.text_input("Department", value=u.get('department') or "", key=f"um_dept_{u['user_id']}")
-                with c4:
-                    role = st.selectbox("Role", options=["User", "Operator"], index=0 if (u.get('user_role') or "User") == "User" else 1, key=f"um_role_{u['user_id']}")
-
-                c5, c6, c7 = st.columns(3)
-                with c5:
-                    active = st.checkbox("Active", value=bool(u.get('is_active')), key=f"um_active_{u['user_id']}")
-                with c6:
-                    new_pw = st.text_input("Reset password", type="password", key=f"um_pw_{u['user_id']}")
-                with c7:
-                    st.caption(f"Created: {u.get('created_at')}\nLast login: {u.get('last_login')}")
-
-                b1, b2, b3 = st.columns(3)
-                with b1:
-                    if st.button("Save Profile", key=f"um_save_{u['user_id']}"):
-                        ok1 = db.update_user_profile(u['user_id'], full_name, email, dept)
-                        ok2 = db.set_user_role(u['user_id'], role)
-                        ok3 = db.set_user_active(u['user_id'], active)
-                        if ok1 and ok2 and ok3:
-                            st.success("Updated.")
-                        else:
-                            st.error("Failed to update some fields.")
-                with b2:
-                    if st.button("Reset Password", key=f"um_reset_{u['user_id']}"):
-                        if (new_pw or "").strip():
-                            if db.reset_user_password(u['user_id'], new_pw.strip()):
-                                st.success("Password reset.")
-                            else:
-                                st.error("Failed to reset password.")
-                        else:
-                            st.warning("Enter a new password first.")
-                with b3:
-                    confirm_del = st.checkbox("Confirm delete", key=f"um_confirm_{u['user_id']}")
-                    if st.button("Delete User", key=f"um_delete_{u['user_id']}"):
-                        if confirm_del:
-                            if db.delete_user(u['user_id']):
-                                _del = st.empty()
-                                _del.success("User deleted.")
-                                time.sleep(1)
+        else:
+            # Display users in a clean table format
+            st.subheader(f"All Users ({len(users)})")
+            
+            # Create a clean table display
+            for i, u in enumerate(users):
+                with st.container():
+                    st.markdown(f"**{u['username']}** - {u.get('full_name') or 'No name'}")
+                    
+                    # User info in clean columns
+                    col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
+                    with col1:
+                        st.write(f"📧 {u.get('email') or 'No email'}")
+                        st.write(f"🏢 {u.get('department') or 'No department'}")
+                    with col2:
+                        status = "🟢 Active" if u.get('is_active') else "🔴 Inactive"
+                        st.write(f"Status: {status}")
+                        st.write(f"Role: {u.get('user_role') or 'User'}")
+                    with col3:
+                        st.write(f"Created: {str(u.get('created_at', ''))[:10]}")
+                        st.write(f"Last login: {str(u.get('last_login', 'Never'))[:10]}")
+                    with col4:
+                        # Action buttons
+                        if st.button("✏️ Edit", key=f"edit_{u['user_id']}", use_container_width=True):
+                            st.session_state[f'editing_user_{u["user_id"]}'] = True
+                            st.rerun()
+                        
+                        if st.button("🗑️ Delete", key=f"del_{u['user_id']}", use_container_width=True):
+                            st.session_state[f'confirm_delete_{u["user_id"]}'] = True
+                            st.rerun()
+                    
+                    # Edit form (appears when Edit is clicked)
+                    if st.session_state.get(f'editing_user_{u["user_id"]}'):
+                        st.markdown("---")
+                        with st.form(f"edit_form_{u['user_id']}"):
+                            st.write("**Edit User**")
+                            ec1, ec2 = st.columns(2)
+                            with ec1:
+                                edit_name = st.text_input("Full Name", value=u.get('full_name') or "")
+                                edit_email = st.text_input("Email", value=u.get('email') or "")
+                                edit_dept = st.text_input("Department", value=u.get('department') or "")
+                            with ec2:
+                                edit_role = st.selectbox("Role", ["User", "Operator"], 
+                                                       index=0 if (u.get('user_role') or "User") == "User" else 1)
+                                edit_active = st.checkbox("Active", value=bool(u.get('is_active')))
+                                edit_pw = st.text_input("New Password (optional)", type="password")
+                            
+                            eb1, eb2 = st.columns(2)
+                            with eb1:
+                                if st.form_submit_button("💾 Save Changes", type="primary"):
+                                    ok1 = db.update_user_profile(u['user_id'], edit_name, edit_email, edit_dept)
+                                    ok2 = db.set_user_role(u['user_id'], edit_role)
+                                    ok3 = db.set_user_active(u['user_id'], edit_active)
+                                    
+                                    if edit_pw.strip():
+                                        ok4 = db.reset_user_password(u['user_id'], edit_pw.strip())
+                                    else:
+                                        ok4 = True
+                                    
+                                    if ok1 and ok2 and ok3 and ok4:
+                                        del st.session_state[f'editing_user_{u["user_id"]}']
+                                        st.success("User updated successfully!")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("Failed to update user.")
+                            with eb2:
+                                if st.form_submit_button("❌ Cancel"):
+                                    del st.session_state[f'editing_user_{u["user_id"]}']
+                                    st.rerun()
+                    
+                    # Delete confirmation (appears when Delete is clicked)
+                    if st.session_state.get(f'confirm_delete_{u["user_id"]}'):
+                        st.markdown("---")
+                        st.warning(f"⚠️ Are you sure you want to delete user **{u['username']}**?")
+                        dc1, dc2 = st.columns(2)
+                        with dc1:
+                            if st.button("🗑️ Yes, Delete", key=f"confirm_del_{u['user_id']}", type="primary"):
+                                if db.delete_user(u['user_id']):
+                                    del st.session_state[f'confirm_delete_{u["user_id"]}']
+                                    st.success("User deleted successfully!")
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to delete user. They may have linked requests.")
+                        with dc2:
+                            if st.button("❌ Cancel", key=f"cancel_del_{u['user_id']}"):
+                                del st.session_state[f'confirm_delete_{u["user_id"]}']
                                 st.rerun()
-                            else:
-                                st.error("Failed to delete user. They may have linked requests.")
-                        else:
-                            st.warning("Please check 'Confirm delete' first.")
+                    
+                    st.markdown("---")
 
     except Exception as e:
         st.error(f"Error loading users: {str(e)}")
