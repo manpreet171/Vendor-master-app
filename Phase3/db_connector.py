@@ -606,3 +606,17 @@ class DatabaseConnector:
             if self.conn:
                 self.conn.rollback()
             return False
+
+    def delete_user(self, user_id: int) -> bool:
+        """Attempt to delete a user. Will fail if foreign key constraints exist."""
+        try:
+            query = """
+            DELETE FROM requirements_users WHERE user_id = ?
+            """
+            self.execute_insert(query, (user_id,))
+            self.conn.commit()
+            return True
+        except Exception:
+            if self.conn:
+                self.conn.rollback()
+            return False

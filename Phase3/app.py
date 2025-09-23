@@ -1070,10 +1070,13 @@ def display_user_management_admin(db):
     st.header("👤 User Management")
     st.caption("Create, edit, activate/deactivate users; change roles; reset passwords")
 
-    # Show success after rerun if user was created
+    # Show success after rerun if user was created (show for 1s then clear)
     if st.session_state.get('um_user_created_success'):
-        st.success("User created.")
+        _ph = st.empty()
+        _ph.success("User created.")
+        time.sleep(1)
         del st.session_state['um_user_created_success']
+        st.rerun()
 
     # List and manage users
     try:
@@ -1100,7 +1103,7 @@ def display_user_management_admin(db):
                 with c7:
                     st.caption(f"Created: {u.get('created_at')}\nLast login: {u.get('last_login')}")
 
-                b1, b2, _ = st.columns(3)
+                b1, b2, b3 = st.columns(3)
                 with b1:
                     if st.button("Save Profile", key=f"um_save_{u['user_id']}"):
                         ok1 = db.update_user_profile(u['user_id'], full_name, email, dept)
@@ -1119,6 +1122,19 @@ def display_user_management_admin(db):
                                 st.error("Failed to reset password.")
                         else:
                             st.warning("Enter a new password first.")
+                with b3:
+                    confirm_del = st.checkbox("Confirm delete", key=f"um_confirm_{u['user_id']}")
+                    if st.button("Delete User", key=f"um_delete_{u['user_id']}"):
+                        if confirm_del:
+                            if db.delete_user(u['user_id']):
+                                _del = st.empty()
+                                _del.success("User deleted.")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("Failed to delete user. They may have linked requests.")
+                        else:
+                            st.warning("Please check 'Confirm delete' first.")
 
     except Exception as e:
         st.error(f"Error loading users: {str(e)}")
