@@ -3,6 +3,7 @@ import streamlit as st
 import os
 import json
 import time
+import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
 from db_connector import DatabaseConnector
@@ -1078,63 +1079,88 @@ def display_user_management_admin(db):
         del st.session_state['um_user_created_success']
         st.rerun()
 
-    # List and manage users
+    # List users in a compact table
     try:
         users = db.list_users() or []
         if not users:
             st.info("No users found.")
-        for u in users:
-            with st.expander(f"{u['username']} — {u.get('full_name') or ''}"):
-                c1, c2, c3, c4 = st.columns(4)
-                with c1:
-                    full_name = st.text_input("Full name", value=u.get('full_name') or "", key=f"um_name_{u['user_id']}")
-                with c2:
-                    email = st.text_input("Email", value=u.get('email') or "", key=f"um_email_{u['user_id']}")
-                with c3:
-                    dept = st.text_input("Department", value=u.get('department') or "", key=f"um_dept_{u['user_id']}")
-                with c4:
-                    role = st.selectbox("Role", options=["User", "Operator"], index=0 if (u.get('user_role') or "User") == "User" else 1, key=f"um_role_{u['user_id']}")
+        else:
+            table_rows = []
+            for u in users:
+                table_rows.append({
+                    "Username": u.get('username'),
+                    "Full name": u.get('full_name'),
+                    "Email": u.get('email'),
+                    "Department": u.get('department'),
+                    "Role": u.get('user_role'),
+                    "Active": bool(u.get('is_active')),
+                    "Created": str(u.get('created_at')),
+                    "Last login": str(u.get('last_login'))
+                })
+            df = pd.DataFrame(table_rows)
+            st.dataframe(df, use_container_width=True, hide_index=True)
 
-                c5, c6, c7 = st.columns(3)
-                with c5:
-                    active = st.checkbox("Active", value=bool(u.get('is_active')), key=f"um_active_{u['user_id']}")
-                with c6:
-                    new_pw = st.text_input("Reset password", type="password", key=f"um_pw_{u['user_id']}")
-                with c7:
-                    st.caption(f"Created: {u.get('created_at')}\nLast login: {u.get('last_login')}")
+        # Single, focused editor
+        st.markdown("### Edit User")
+        user_options = {f"{u['username']} — {u.get('full_name') or ''}": u['user_id'] for u in users}
+        selected_label = st.selectbox("Select a user to edit", ["— Select —", *user_options.keys()])
+        selected_id = user_options.get(selected_label)
 
-                b1, b2, b3 = st.columns(3)
-                with b1:
-                    if st.button("Save Profile", key=f"um_save_{u['user_id']}"):
-                        ok1 = db.update_user_profile(u['user_id'], full_name, email, dept)
-                        ok2 = db.set_user_role(u['user_id'], role)
-                        ok3 = db.set_user_active(u['user_id'], active)
-                        if ok1 and ok2 and ok3:
-                            st.success("Updated.")
+        if selected_id:
+            sel = next((x for x in users if x['user_id'] == selected_id), None)
+            if sel:
+                with st.form("um_edit_user_form", clear_on_submit=False):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        full_name = st.text_input("Full name", value=sel.get('full_name') or "")
+                        dept = st.text_input("Department", value=sel.get('department') or "")
+                        active = st.checkbox("Active", value=bool(sel.get('is_active')))
+                    with c2:
+                        email = st.text_input("Email", value=sel.get('email') or "")
+                        role = st.selectbox("Role", ["User", "Operator"], index=0 if (sel.get('user_role') or "User") == "User" else 1)
+                        new_pw = st.text_input("Reset password (optional)", type="password")
+
+                    b1, b2, b3 = st.columns(3)
+                    save_btn = b1.form_submit_button("Save Changes")
+                    reset_btn = b2.form_submit_button("Reset Password")
+                    delete_btn = b3.form_submit_button("Delete User")
+
+                # Handle actions
+                if save_btn:
+                    ok1 = db.update_user_profile(selected_id, full_name, email, dept)
+                    ok2 = db.set_user_role(selected_id, role)
+                    ok3 = db.set_user_active(selected_id, active)
+                    if ok1 and ok2 and ok3:
+                        toast = st.empty()
+                        toast.success("Saved")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("Failed to update some fields.")
+
+                if reset_btn:
+                    if (new_pw or "").strip():
+                        if db.reset_user_password(selected_id, new_pw.strip()):
+                            toast = st.empty()
+                            toast.success("Password reset")
+                            time.sleep(1)
+                            st.rerun()
                         else:
-                            st.error("Failed to update some fields.")
-                with b2:
-                    if st.button("Reset Password", key=f"um_reset_{u['user_id']}"):
-                        if (new_pw or "").strip():
-                            if db.reset_user_password(u['user_id'], new_pw.strip()):
-                                st.success("Password reset.")
-                            else:
-                                st.error("Failed to reset password.")
+                            st.error("Failed to reset password.")
+                    else:
+                        st.warning("Enter a new password first.")
+
+                if delete_btn:
+                    # Lightweight confirm step
+                    st.warning("Click Delete again to confirm.")
+                    if st.button("Confirm Delete", type="primary"):
+                        if db.delete_user(selected_id):
+                            toast = st.empty()
+                            toast.success("User deleted")
+                            time.sleep(1)
+                            st.rerun()
                         else:
-                            st.warning("Enter a new password first.")
-                with b3:
-                    confirm_del = st.checkbox("Confirm delete", key=f"um_confirm_{u['user_id']}")
-                    if st.button("Delete User", key=f"um_delete_{u['user_id']}"):
-                        if confirm_del:
-                            if db.delete_user(u['user_id']):
-                                _del = st.empty()
-                                _del.success("User deleted.")
-                                time.sleep(1)
-                                st.rerun()
-                            else:
-                                st.error("Failed to delete user. They may have linked requests.")
-                        else:
-                            st.warning("Please check 'Confirm delete' first.")
+                            st.error("Failed to delete user. They may have linked requests.")
 
     except Exception as e:
         st.error(f"Error loading users: {str(e)}")
