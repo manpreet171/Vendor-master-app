@@ -30,13 +30,53 @@
   - Success toasts auto-dismiss after ~1 second for create/delete/update.
 - **Standalone Dashboard Parity**
   - Mirrored user management behavior in `Phase3/operator_dashboard.py` (for local/alt use).
- - **Active Bundles – Vendor Options (View-Only)**
-   - For single-item bundles only, show "Other vendor options" dropdown listing all vendors for that item with email/phone.
-   - Default highlights the current bundle vendor. No update/commit action; purely informational for manual RFQs.
-   - Hidden for multi-item bundles and when only one vendor exists. No changes to bundling logic or database.
- - **Active Bundles – Cloud Bug Fix**
-   - Fixed malformed f-string in `display_active_bundles_for_operator()` that caused `name 'f' is not defined` in cloud.
-   - Corrected to a proper f-string for the “Pieces” line.
+- **Active Bundles – Vendor Options (View-Only)**
+  - For single-item bundles only, show "Other vendor options" dropdown listing all vendors for that item with email/phone.
+  - Default highlights the current bundle vendor. No update/commit action; purely informational for manual RFQs.
+  - Hidden for multi-item bundles and when only one vendor exists. No changes to bundling logic or database.
+- **Active Bundles – Cloud Bug Fix**
+  - Fixed malformed f-string in `display_active_bundles_for_operator()` that caused `name 'f' is not defined` in cloud.
+  - Corrected to a proper f-string for the “Pieces” line.
+
+#### **🧭 Future Plan (RFQ Automation via Cron):**
+- Integrate an automated RFQ step into the existing cron workflow to email vendors directly with per‑vendor bundle contents and request quotes.
+- Emails will include item tables (Item | Dimensions | Qty) and standardized subject/body.
+- System will automatically create and commit bundles on schedule (no manual bundling).
+- System will automatically email vendors per bundle and CC the operator for follow‑ups (no in‑app approval step).
+- Operator negotiates and places the order via the email thread.
+- After goods arrive in stores, the operator’s only manual action is to visit the dashboard and mark the bundle as "Completed".
+
+##### RFQ Email Policy (Logic)
+- Single‑item bundle AND that item has multiple vendors in the database:
+  - Send separate RFQ emails to ALL vendors that can supply that exact item (one email per vendor).
+  - Subject: `RFQ – SDGNY – {BundleName} – {ItemName} – {VendorName}`.
+  - Body: single‑row HTML table with Item | Dimensions | Qty; standard header/footer.
+  - To: vendor_email; CC: operator list; Reply‑To: operator.
+  - Tracking: record `(bundle_id, vendor_id, rfq_sent_at, message_id)` to avoid duplicates.
+- Multi‑item bundle:
+  - Send ONE RFQ email to the bundle’s selected vendor only (unchanged behavior).
+  - Body: multi‑row HTML table listing all items.
+
+##### Idempotency & Scheduling
+- Only include `requirements_orders.status = 'Pending'` in a run; move them to `In Progress` immediately post‑bundle.
+- Email dispatch runs right after bundle creation in the same cron; send only when `rfq_sent_at IS NULL` for that bundle/vendor.
+- Feature flags: `AUTO_COMMIT_BUNDLES`, `AUTO_SEND_RFQ` (default off in prod until rollout).
+
+##### Operator Workflow (Post‑Automation)
+- All RFQs CC the operator; negotiation and follow‑ups happen via email threads.
+- No manual creation or approval in app; the only manual step is to mark the bundle as `Completed` after goods arrive at stores.
+
+##### Safeguards
+- Missing vendor email: skip sending for that vendor; surface in cron summary and show a warning in bundle UI.
+- Partial coverage (<100%): cron summary includes a clear "Uncovered Items" section for operator action.
+- SMTP rate limiting: throttle between messages if required.
+- Errors/bounces: log failures and include counts in the next cron summary.
+
+##### Acceptance Criteria
+- For single‑item/multi‑vendor cases, N RFQs are sent (one per vendor) and logged without duplication across runs.
+- For multi‑item bundles, exactly one RFQ is sent to the selected vendor.
+- Operator is CC’d and can Reply‑All on every RFQ; Reply‑To set to operator address.
+- App shows RFQ sent timestamp/badge on bundles; operator can mark `Completed` post‑delivery.
 
 #### **🗃️ Database Connector Updates (`Phase3/db_connector.py`):**
 - Added helpers powering the admin UI:
