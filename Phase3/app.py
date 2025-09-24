@@ -1291,6 +1291,44 @@ def display_active_bundles_for_operator(db):
                 else:
                     st.write("No items found for this bundle")
 
+                # Read-only vendor options for single-item bundles
+                try:
+                    items = items_by_bundle.get(bundle.get('bundle_id'), [])
+                    if len(items) == 1:
+                        st.markdown("---")
+                        st.caption("Other vendor options for this item (view-only)")
+                        single_item = items[0]
+                        # Fetch all vendors for this item
+                        vendor_rows = db.get_item_vendors([single_item['item_id']]) or []
+                        # Build options list
+                        options = []
+                        default_index = 0
+                        for idx, vr in enumerate(vendor_rows):
+                            label_parts = [vr.get('vendor_name') or 'Unknown']
+                            email = vr.get('contact_email') or ''
+                            phone = vr.get('contact_phone') or ''
+                            meta = " — " + " | ".join([p for p in [email, phone] if p]) if (email or phone) else ""
+                            label = f"{label_parts[0]}{meta}"
+                            options.append(label)
+                            # Preselect current bundle vendor if names match
+                            if (bundle.get('vendor_name') or '').strip().lower() == (vr.get('vendor_name') or '').strip().lower():
+                                default_index = idx
+                        if len(options) > 1:
+                            sel = st.selectbox(
+                                "Vendor options",
+                                options,
+                                index=default_index,
+                                key=f"vendor_options_{bundle.get('bundle_id')}"
+                            )
+                            # Show selected details explicitly
+                            sel_row = vendor_rows[options.index(sel)] if options else None
+                            if sel_row:
+                                st.info(f"Selected: {sel_row.get('vendor_name')}  |  {sel_row.get('contact_email') or 'No email'}  |  {sel_row.get('contact_phone') or 'No phone'}")
+                        # If only one vendor, skip showing the selector entirely
+                except Exception as _e:
+                    # Fail silently to avoid breaking bundle view in cloud
+                    pass
+
                 st.markdown("---")
                 # Show related requests (traceability) using batched map
                 bundle_req_numbers = get_bundle_request_numbers_map(db, bundle_ids)

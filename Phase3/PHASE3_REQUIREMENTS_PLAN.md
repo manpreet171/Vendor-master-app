@@ -30,6 +30,13 @@
   - Success toasts auto-dismiss after ~1 second for create/delete/update.
 - **Standalone Dashboard Parity**
   - Mirrored user management behavior in `Phase3/operator_dashboard.py` (for local/alt use).
+ - **Active Bundles – Vendor Options (View-Only)**
+   - For single-item bundles only, show "Other vendor options" dropdown listing all vendors for that item with email/phone.
+   - Default highlights the current bundle vendor. No update/commit action; purely informational for manual RFQs.
+   - Hidden for multi-item bundles and when only one vendor exists. No changes to bundling logic or database.
+ - **Active Bundles – Cloud Bug Fix**
+   - Fixed malformed f-string in `display_active_bundles_for_operator()` that caused `name 'f' is not defined` in cloud.
+   - Corrected to a proper f-string for the “Pieces” line.
 
 #### **🗃️ Database Connector Updates (`Phase3/db_connector.py`):**
 - Added helpers powering the admin UI:
