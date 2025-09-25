@@ -49,16 +49,42 @@ def require_login():
                             st.error(f"Database connection failed: {db.connection_error}")
                             return
                         
-                        # Check for admin credentials first (from .env)
-                        admin_username = os.getenv('ADMIN_USERNAME', 'admin')
-                        admin_password = os.getenv('ADMIN_PASSWORD', 'admin123')
-                        
-                        if user.strip() == admin_username and pwd == admin_password:
-                            # Admin login - redirect to operator dashboard
+                        # 1) Check for Master/Operator credentials from Streamlit secrets (preferred)
+                        master_user = master_pass = operator_user = operator_pass = None
+                        try:
+                            master_user = st.secrets["app_roles"]["master"].get("username")
+                            master_pass = st.secrets["app_roles"]["master"].get("password")
+                        except Exception:
+                            pass
+                        try:
+                            operator_user = st.secrets["app_roles"]["operator"].get("username")
+                            operator_pass = st.secrets["app_roles"]["operator"].get("password")
+                        except Exception:
+                            pass
+
+                        # 2) Fallback to environment variables only if secrets are not configured
+                        if not master_user:
+                            master_user = os.getenv('MASTER_USERNAME')
+                            master_pass = os.getenv('MASTER_PASSWORD')
+                        if not operator_user:
+                            operator_user = os.getenv('OPERATOR_USERNAME')
+                            operator_pass = os.getenv('OPERATOR_PASSWORD')
+
+                        entered = user.strip()
+                        if master_user and entered == master_user and pwd == (master_pass or ''):
+                            # Master login via secrets/env
+                            st.session_state.logged_in = True
+                            st.session_state.user_role = 'master'
+                            st.session_state.user_id = 'master'
+                            st.session_state.username = master_user
+                            st.success("Logged in successfully as Master")
+                            st.rerun()
+                        elif operator_user and entered == operator_user and pwd == (operator_pass or ''):
+                            # Operator login via secrets/env
                             st.session_state.logged_in = True
                             st.session_state.user_role = 'operator'
-                            st.session_state.user_id = 'admin'
-                            st.session_state.username = 'admin'
+                            st.session_state.user_id = 'operator'
+                            st.session_state.username = operator_user
                             st.success("Logged in successfully as Operator")
                             st.rerun()
                         else:
@@ -98,8 +124,8 @@ def main():
     require_login()
     
     # Role-based routing
-    if st.session_state.user_role == 'operator':
-        # Load operator dashboard
+    if str(st.session_state.user_role or '').lower() in ('operator', 'admin', 'master'):
+        # Load operator/master dashboard
         display_operator_dashboard(db)
         return
     
@@ -910,32 +936,38 @@ def display_operator_dashboard(db):
         st.error("Database connection is not available. Please check settings.")
         return
 
-    # Allow both 'Operator' and 'Admin' roles, case-insensitive
+    # Allow 'Operator', 'Admin', and 'Master' roles, case-insensitive
     role_val = str(st.session_state.get('user_role') or '').lower()
-    if role_val not in ('operator', 'admin'):
+    if role_val not in ('operator', 'admin', 'master'):
         display_user_interface(db)
         return
 
     st.header("🎯 Operator Dashboard")
     st.write("Smart Procurement Management")
 
-    # Create simplified tabs for operators (main area)
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 User Requests", "🎯 Smart Recommendations", "📦 Active Bundles", "🧹 System Reset", "👤 User Management"])
-    
-    with tab1:
-        display_user_requests_for_operator(db)
-    
-    with tab2:
-        display_smart_recommendations(db)
-    
-    with tab3:
-        display_active_bundles_for_operator(db)
-    
-    with tab4:
-        display_system_reset(db)
-    
-    with tab5:
-        display_user_management_admin(db)
+    # Role-based tabs: Master sees admin tools; Operator/Admin see only operational tabs
+    if role_val == 'master':
+        tabs = st.tabs(["📋 User Requests", "🎯 Smart Recommendations", "📦 Active Bundles", "🤖 Manual Bundling", "🧹 System Reset", "👤 User Management"])
+        with tabs[0]:
+            display_user_requests_for_operator(db)
+        with tabs[1]:
+            display_smart_recommendations(db)
+        with tabs[2]:
+            display_active_bundles_for_operator(db)
+        with tabs[3]:
+            display_manual_bundling(db)
+        with tabs[4]:
+            display_system_reset(db)
+        with tabs[5]:
+            display_user_management_admin(db)
+    else:
+        tabs = st.tabs(["📋 User Requests", "🎯 Smart Recommendations", "📦 Active Bundles"])
+        with tabs[0]:
+            display_user_requests_for_operator(db)
+        with tabs[1]:
+            display_smart_recommendations(db)
+        with tabs[2]:
+            display_active_bundles_for_operator(db)
 
 def display_user_requests_for_operator(db):
     """Show all user requests in a clean, operator-friendly format"""
