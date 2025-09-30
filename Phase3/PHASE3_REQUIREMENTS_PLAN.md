@@ -70,12 +70,28 @@
 - ✅ **Non-Breaking:** Existing flows unchanged; project selection seamlessly integrated.
 - ✅ **Flexible:** Same item can be requested multiple times for different projects.
 
-#### **Next Phase (Pending):**
-- Add project info display in Operator Dashboard:
-  - User Requests view (show project per item).
-  - Active Bundles view (show project breakdown per item in bundles).
-  - Smart Recommendations view (include project context).
-- This will give operators full visibility into which projects need which materials.
+#### **Operator Dashboard Updates (Completed Same Day):**
+- **User Requests View:**
+  - Added 4th column displaying project number per item.
+  - Shows `📋 ProjectNumber` for each requested item.
+  - Displays "—" for items without project assignment.
+  - Clean table layout: Item Name | Quantity | Source | Project.
+- **Active Bundles View:**
+  - Enhanced per-user breakdown to include project information.
+  - Added `get_bundle_item_project_breakdown()` method in db_connector.py.
+  - Queries project breakdown by joining bundle_mapping → orders → order_items.
+  - Displays format: `User Name: X pcs (📋 Project1, Project2)`.
+  - Shows which specific projects each user's items belong to.
+  - Handles multiple projects per user gracefully with comma-separated list.
+- **Backend Changes:**
+  - Updated `get_all_pending_requests()` to include `project_number` in SELECT.
+  - New method `get_bundle_item_project_breakdown(bundle_id, item_id)` for project traceability.
+
+#### **Operator Benefits:**
+- ✅ **Full Visibility:** Operators see exactly which projects need which materials at every stage.
+- ✅ **Context for RFQs:** When emailing vendors, operators have project context for better communication.
+- ✅ **Traceability:** Can track material usage back to specific projects throughout the procurement cycle.
+- ✅ **Multi-Project Awareness:** Clearly shows when items span multiple projects in a single bundle.
 
 ### **September 23, 2025 - Admin User Management, UI Refresh, and Cloud Readiness**
 

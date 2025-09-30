@@ -170,6 +170,126 @@ class DatabaseConnector:
         """
         return self.execute_query(query, (bundle_id, item_id))
     
+    def detect_duplicate_projects_in_bundle(self, bundle_id):
+        """
+        Detect items where multiple users requested same item for same project.
+        Returns list of duplicates with format:
+        [{
+            'item_id': int,
+            'item_name': str,
+            'project_number': str,
+            'users': [{'user_id': int, 'quantity': int}, ...]
+        }]
+        """
+        query = """
+        SELECT 
+            roi.item_id,
+            i.item_name,
+            roi.project_number,
+            ro.user_id,
+            roi.quantity
+        FROM requirements_bundle_mapping rbm
+        JOIN requirements_orders ro ON rbm.req_id = ro.req_id
+        JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+        JOIN items i ON roi.item_id = i.item_id
+        WHERE rbm.bundle_id = ? AND roi.project_number IS NOT NULL
+        ORDER BY roi.item_id, roi.project_number
+        """
+        
+        results = self.execute_query(query, (bundle_id,))
+        if not results:
+            return []
+        
+        # Group by (item_id, project_number)
+        grouped = {}
+        for row in results:
+            key = (row['item_id'], row['project_number'])
+            if key not in grouped:
+                grouped[key] = {
+                    'item_id': row['item_id'],
+                    'item_name': row['item_name'],
+                    'project_number': row['project_number'],
+                    'users': []
+                }
+            grouped[key]['users'].append({
+                'user_id': row['user_id'],
+                'quantity': row['quantity']
+            })
+        
+        # Filter to only duplicates (multiple users for same item+project)
+        duplicates = [v for v in grouped.values() if len(v['users']) > 1]
+        return duplicates
+    
+    def update_bundle_item_user_quantity(self, bundle_id, item_id, user_id, new_quantity):
+        """
+        Update a specific user's quantity for an item in a bundle.
+        Updates the user_breakdown JSON in requirements_bundle_items.
+        """
+        try:
+            # Get current bundle item
+            query = """
+            SELECT user_breakdown, total_quantity
+            FROM requirements_bundle_items
+            WHERE bundle_id = ? AND item_id = ?
+            """
+            result = self.execute_query(query, (bundle_id, item_id))
+            
+            if not result:
+                return {'success': False, 'error': 'Bundle item not found'}
+            
+            # Parse user_breakdown JSON
+            import json
+            user_breakdown = json.loads(result[0]['user_breakdown']) if isinstance(result[0]['user_breakdown'], str) else result[0]['user_breakdown']
+            
+            # Update or remove user's quantity
+            old_qty = user_breakdown.get(str(user_id), 0)
+            if new_quantity > 0:
+                user_breakdown[str(user_id)] = new_quantity
+            else:
+                # Remove user if quantity is 0
+                user_breakdown.pop(str(user_id), None)
+            
+            # Recalculate total
+            new_total = sum(user_breakdown.values())
+            
+            # Update database
+            update_query = """
+            UPDATE requirements_bundle_items
+            SET user_breakdown = ?, total_quantity = ?
+            WHERE bundle_id = ? AND item_id = ?
+            """
+            self.execute_insert(update_query, (json.dumps(user_breakdown), new_total, bundle_id, item_id))
+            self.conn.commit()
+            
+            return {
+                'success': True,
+                'old_quantity': old_qty,
+                'new_quantity': new_quantity,
+                'new_total': new_total
+            }
+            
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            return {'success': False, 'error': str(e)}
+    
+    def mark_bundle_duplicates_reviewed(self, bundle_id):
+        """Mark bundle as having duplicates reviewed by operator"""
+        try:
+            query = """
+            UPDATE requirements_bundles
+            SET duplicates_reviewed = 1
+            WHERE bundle_id = ?
+            """
+            self.execute_insert(query, (bundle_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            print(f"Error marking duplicates reviewed: {str(e)}")
+            return False
+    
     def get_all_projects(self):
         """Get all projects from ProcoreProjectData for dropdown selection"""
         query = """

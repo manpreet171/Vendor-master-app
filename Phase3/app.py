@@ -1402,6 +1402,71 @@ def display_active_bundles_for_operator(db):
                 else:
                     st.write("No items found for this bundle")
 
+                # Duplicate Project Detection and Review
+                st.markdown("---")
+                duplicates = db.detect_duplicate_projects_in_bundle(bundle.get('bundle_id'))
+                duplicates_reviewed = bundle.get('duplicates_reviewed', 0)
+                
+                if duplicates:
+                    # Show warning header
+                    if not duplicates_reviewed:
+                        st.error(f"⚠️ **{len(duplicates)} DUPLICATE PROJECT(S) DETECTED - REVIEW REQUIRED**")
+                    else:
+                        st.success(f"✅ Duplicates Reviewed ({len(duplicates)} item(s))")
+                    
+                    # Display each duplicate with edit interface
+                    for dup in duplicates:
+                        with st.expander(f"🔍 Duplicate: {dup['item_name']} - Project {dup['project_number']}", expanded=not duplicates_reviewed):
+                            st.warning(f"Multiple users requested **{dup['item_name']}** for **Project {dup['project_number']}**")
+                            
+                            # Show each user's contribution with edit capability
+                            st.write("**User Contributions:**")
+                            for user_data in dup['users']:
+                                user_id = user_data['user_id']
+                                current_qty = user_data['quantity']
+                                uname = user_name_map.get(user_id, f"User {user_id}")
+                                
+                                col_name, col_qty, col_btn = st.columns([2, 1, 1])
+                                with col_name:
+                                    st.write(f"👤 **{uname}**")
+                                with col_qty:
+                                    new_qty = st.number_input(
+                                        "Quantity",
+                                        min_value=0,
+                                        value=current_qty,
+                                        key=f"dup_qty_{bundle.get('bundle_id')}_{dup['item_id']}_{user_id}",
+                                        help="Set to 0 to remove this user's contribution"
+                                    )
+                                with col_btn:
+                                    if new_qty != current_qty:
+                                        if st.button("Update", key=f"dup_update_{bundle.get('bundle_id')}_{dup['item_id']}_{user_id}"):
+                                            result = db.update_bundle_item_user_quantity(
+                                                bundle.get('bundle_id'),
+                                                dup['item_id'],
+                                                user_id,
+                                                new_qty
+                                            )
+                                            if result['success']:
+                                                if new_qty == 0:
+                                                    st.success(f"✅ Removed {uname}'s contribution")
+                                                else:
+                                                    st.success(f"✅ Updated {uname}: {result['old_quantity']} → {new_qty} pcs")
+                                                st.rerun()
+                                            else:
+                                                st.error(f"❌ Update failed: {result.get('error')}")
+                            
+                            st.info("💡 **Options:** Adjust quantities, remove a user (set to 0), or keep both as-is.")
+                    
+                    # Mark as Reviewed button
+                    if not duplicates_reviewed:
+                        st.markdown("---")
+                        if st.button("✅ Mark Duplicates as Reviewed", key=f"mark_reviewed_{bundle.get('bundle_id')}", type="primary"):
+                            if db.mark_bundle_duplicates_reviewed(bundle.get('bundle_id')):
+                                st.success("✅ Duplicates marked as reviewed!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to mark as reviewed")
+
                 # Read-only vendor options for single-item bundles
                 try:
                     items = items_by_bundle.get(bundle.get('bundle_id'), [])
@@ -1457,10 +1522,17 @@ def display_active_bundles_for_operator(db):
                             st.rerun()
                 with action_cols[1]:
                     if bundle['status'] in ('Approved', 'Active'):
-                        if st.button(f"🏁 Mark as Completed", key=f"complete_{bundle['bundle_id']}"):
-                            mark_bundle_completed(db, bundle.get('bundle_id'))
-                            st.success("Bundle marked as completed")
-                            st.rerun()
+                        # Check if duplicates exist and haven't been reviewed
+                        has_unreviewed_duplicates = duplicates and not duplicates_reviewed
+                        
+                        if has_unreviewed_duplicates:
+                            st.button(f"🏁 Mark as Completed", key=f"complete_{bundle['bundle_id']}", disabled=True)
+                            st.caption("⚠️ Review duplicates first")
+                        else:
+                            if st.button(f"🏁 Mark as Completed", key=f"complete_{bundle['bundle_id']}"):
+                                mark_bundle_completed(db, bundle.get('bundle_id'))
+                                st.success("Bundle marked as completed")
+                                st.rerun()
     
     except Exception as e:
         st.error(f"Error loading active bundles: {str(e)}")
@@ -1902,6 +1974,7 @@ def get_bundles_with_vendor_info(db):
             b.total_items,
             b.total_quantity,
             b.recommended_vendor_id,
+            b.duplicates_reviewed,
             v.vendor_name,
             v.vendor_email,
             v.vendor_phone,
