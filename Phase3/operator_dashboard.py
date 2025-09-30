@@ -423,7 +423,7 @@ def mark_bundle_completed(db, bundle_id):
         if mappings:
             req_ids = [mapping['req_id'] for mapping in mappings]
             
-            # Update all related requests to Completed
+            # Update all related requests to Completed++++++++
             placeholders = ','.join(['?' for _ in req_ids])
             requests_query = f"""
             UPDATE requirements_orders 

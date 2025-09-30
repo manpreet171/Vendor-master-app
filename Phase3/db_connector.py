@@ -159,13 +159,23 @@ class DatabaseConnector:
         """
         return self.execute_query(query, (item_id,))
     
+    def get_all_projects(self):
+        """Get all projects from ProcoreProjectData for dropdown selection"""
+        query = """
+        SELECT ProjectNumber, ProjectName, ProjectType, ProjectManager, Customer
+        FROM ProcoreProjectData
+        ORDER BY ProjectName
+        """
+        return self.execute_query(query)
+    
     def get_request_items(self, req_id):
         """Get items for a specific request"""
         query = """
         SELECT 
             ri.item_id,
             ri.quantity, 
-            ri.item_notes, 
+            ri.item_notes,
+            ri.project_number,
             i.item_name, 
             i.sku,
             i.source_sheet,
@@ -206,12 +216,18 @@ class DatabaseConnector:
             for item in cart_items:
                 item_query = """
                 INSERT INTO requirements_order_items 
-                (req_id, item_id, quantity, item_notes)
-                VALUES (?, ?, ?, ?)
+                (req_id, item_id, quantity, item_notes, project_number)
+                VALUES (?, ?, ?, ?, ?)
                 """
                 
                 item_notes = f"Category: {item.get('category', 'Unknown')}"
-                self.execute_insert(item_query, (req_id, item['item_id'], item['quantity'], item_notes))
+                self.execute_insert(item_query, (
+                    req_id, 
+                    item['item_id'], 
+                    item['quantity'], 
+                    item_notes,
+                    item.get('project_number')
+                ))
             
             # Commit the transaction
             self.conn.commit()

@@ -286,12 +286,15 @@ def display_boxhero_tab(db):
                     st.session_state.bh_step = 3
                     st.success("✅ Item selected!")
         
-        # Step 3: Quantity and Add to Cart
+        # Step 3: Project Selection, Quantity and Add to Cart
         if st.session_state.bh_step >= 3 and st.session_state.bh_selected_item:
-            st.subheader("Step 3: How many do you need?")
+            st.subheader("Step 3: Select Project and Quantity")
             
             # Just show the item name - simple
             st.info(f"Selected: **{st.session_state.bh_selected_item.get('item_name', 'Unknown Item')}**")
+            
+            # Project selection
+            project_number, project_name = display_project_selector(db, "bh")
             
             # Quantity input
             col1, col2 = st.columns([2, 1])
@@ -305,14 +308,18 @@ def display_boxhero_tab(db):
                 )
             
             with col2:
-                if st.button("🛒 Add to Cart", type="primary", key="bh_add_to_cart"):
-                    result = add_to_cart(st.session_state.bh_selected_item, quantity, "BoxHero")
-                    if result == "added":
-                        st.success("✅ Added to cart!")
-                        # Reset flow for next selection
-                        reset_boxhero_flow()
-                        st.rerun()
-                    # If result is "duplicate_pending" or "duplicate_in_progress", don't rerun - let user see the options
+                # Only enable Add to Cart if project is selected
+                if project_number:
+                    if st.button("🛒 Add to Cart", type="primary", key="bh_add_to_cart"):
+                        result = add_to_cart(st.session_state.bh_selected_item, quantity, "BoxHero", project_number, project_name)
+                        if result == "added":
+                            st.success("✅ Added to cart!")
+                            # Reset flow for next selection
+                            reset_boxhero_flow()
+                            st.rerun()
+                else:
+                    st.button("🛒 Add to Cart", type="primary", disabled=True, key="bh_add_to_cart_disabled")
+                    st.caption("⬆️ Please select a project first")
         
         # Reset button
         if st.session_state.bh_step > 1:
@@ -497,9 +504,9 @@ def display_raw_materials_tab(db):
                             st.session_state.rm_selected_item = item
                             st.session_state.rm_step = 4
         
-        # Step 4: Quantity and Add to Cart
+        # Step 4: Project Selection, Quantity and Add to Cart
         if st.session_state.rm_step >= 4 and st.session_state.rm_selected_item:
-            st.subheader("Step 4: How many do you need?")
+            st.subheader("Step 4: Select Project and Quantity")
             
             # Just show the material name - simple
             sel = st.session_state.rm_selected_item
@@ -513,6 +520,9 @@ def display_raw_materials_tab(db):
             dim_txt = f" ({' x '.join(dims)})" if dims else ""
             st.info(f"Selected: **{sel.get('item_name', 'Unknown Material')}**{dim_txt}")
             
+            # Project selection
+            project_number, project_name = display_project_selector(db, "rm")
+            
             # Quantity input
             col1, col2 = st.columns([2, 1])
             
@@ -525,14 +535,18 @@ def display_raw_materials_tab(db):
                 )
             
             with col2:
-                if st.button("🛒 Add to Cart", type="primary", key="rm_add_to_cart"):
-                    result = add_to_cart(st.session_state.rm_selected_item, quantity, "Raw Materials")
-                    if result == "added":
-                        st.success("✅ Added to cart!")
-                        # Reset flow for next selection
-                        reset_raw_materials_flow()
-                        st.rerun()
-                    # If result is "duplicate_pending" or "duplicate_in_progress", don't rerun - let user see the options
+                # Only enable Add to Cart if project is selected
+                if project_number:
+                    if st.button("🛒 Add to Cart", type="primary", key="rm_add_to_cart"):
+                        result = add_to_cart(st.session_state.rm_selected_item, quantity, "Raw Materials", project_number, project_name)
+                        if result == "added":
+                            st.success("✅ Added to cart!")
+                            # Reset flow for next selection
+                            reset_raw_materials_flow()
+                            st.rerun()
+                else:
+                    st.button("🛒 Add to Cart", type="primary", disabled=True, key="rm_add_to_cart_disabled")
+                    st.caption("⬆️ Please select a project first")
         
         # Reset button
         if st.session_state.rm_step > 1:
@@ -627,13 +641,45 @@ def display_item_card(item, col, category):
         
         st.markdown("---")
 
-def add_to_cart(item, quantity, category):
-    """Add item to cart - simple version"""
+def display_project_selector(db, key_suffix=""):
+    """Reusable project dropdown - returns selected project_number and project_name"""
     try:
-        # Check if item already in current cart
+        projects = db.get_all_projects()
+        if not projects:
+            st.warning("⚠️ No projects available. Please contact your administrator.")
+            return None, None
+        
+        # Build dropdown options: "ProjectNumber - ProjectName"
+        options_dict = {}
+        for p in projects:
+            label = f"{p['ProjectNumber']} - {p['ProjectName']}"
+            options_dict[label] = (p['ProjectNumber'], p['ProjectName'], p.get('ProjectType', 'N/A'))
+        
+        selected = st.selectbox(
+            "Select Project:",
+            ["-- Select a project --"] + list(options_dict.keys()),
+            key=f"project_select_{key_suffix}"
+        )
+        
+        if selected and selected != "-- Select a project --":
+            project_num, project_name, project_type = options_dict[selected]
+            # Show confirmation
+            st.success(f"✓ Project: {project_num} - {project_name} ({project_type})")
+            return project_num, project_name
+        
+        return None, None
+    except Exception as e:
+        st.error(f"Error loading projects: {str(e)}")
+        return None, None
+
+def add_to_cart(item, quantity, category, project_number=None, project_name=None):
+    """Add item to cart with project info"""
+    try:
+        # Check if item already in current cart with same project
         for cart_item in st.session_state.cart_items:
-            if cart_item['item_id'] == item['item_id']:
-                # Update quantity if item already exists in cart
+            if (cart_item['item_id'] == item['item_id'] and 
+                cart_item.get('project_number') == project_number):
+                # Update quantity if same item and same project
                 cart_item['quantity'] += quantity
                 return "added"
         
@@ -649,7 +695,9 @@ def add_to_cart(item, quantity, category):
             'height': item.get('height'),
             'width': item.get('width'),
             'thickness': item.get('thickness'),
-            'source_sheet': item.get('source_sheet', '')
+            'source_sheet': item.get('source_sheet', ''),
+            'project_number': project_number,
+            'project_name': project_name
         }
         
         st.session_state.cart_items.append(cart_item)
@@ -677,6 +725,9 @@ def display_cart_tab(db):
         with col1:
             st.write(f"**{cart_item['item_name']}**")
             st.caption(f"{cart_item['category']} • SKU: {cart_item.get('sku', 'N/A')}")
+            # Project info
+            if cart_item.get('project_number'):
+                st.caption(f"📋 Project: {cart_item['project_number']} - {cart_item.get('project_name', 'N/A')}")
             # Dimensions if available
             dims = []
             h = fmt_dim(cart_item.get('height'))
@@ -799,6 +850,10 @@ def display_my_requests_tab(db):
                         # Add SKU for BoxHero items
                         elif item.get('source_sheet') == 'BoxHero' and item.get('sku'):
                             item_desc += f" (SKU: {item['sku']})"
+                        
+                        # Add project info if available
+                        if item.get('project_number'):
+                            item_desc += f" | 📋 Project: {item['project_number']}"
                         
                         # Show quantity with edit option for pending requests
                         if request['status'] == 'Pending':
