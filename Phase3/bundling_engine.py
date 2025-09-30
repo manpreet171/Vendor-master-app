@@ -59,13 +59,21 @@ class SmartBundlingEngine:
             timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
             
             for i, bundle in enumerate(optimization_result['bundles'], 1):
+                # Find which requests contain items in this bundle
+                bundle_item_ids = [item['item_id'] for item in bundle['items_list']]
+                bundle_request_ids = list(set([
+                    req['req_id'] 
+                    for req in pending_requests 
+                    if req['item_id'] in bundle_item_ids
+                ]))
+                
                 bundle_data = {
                     'timestamp': f"{timestamp}-{i:02d}",
-                    'total_requests': len(request_ids),
+                    'total_requests': len(bundle_request_ids),
                     'total_items': bundle['total_quantity'],
                     'vendor_recommendations': [bundle],  # Single vendor per bundle
                     'items': bundle['items_list'],
-                    'request_ids': request_ids,
+                    'request_ids': bundle_request_ids,  # Only requests with items in THIS bundle
                     'bundle_number': i,
                     'vendor_name': bundle['vendor_name']
                 }
