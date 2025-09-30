@@ -1570,10 +1570,10 @@ def display_approval_checklist(db, bundle, bundle_items, duplicates, duplicates_
         key=f"check1_{bundle_id}"
     )
     
-    # Show items list
-    with st.expander("View items in this bundle", expanded=True):
-        for item in bundle_items:
-            st.write(f"• {item['item_name']} ({item['total_quantity']} pcs)")
+    # Show items list (no nested expander - use container instead)
+    st.markdown("**Items in this bundle:**")
+    for item in bundle_items:
+        st.write(f"• {item['item_name']} ({item['total_quantity']} pcs)")
     
     check2 = st.checkbox(
         f"**{vendor_name}** can supply ALL {len(bundle_items)} items in this bundle",
