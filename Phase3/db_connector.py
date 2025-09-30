@@ -223,68 +223,87 @@ class DatabaseConnector:
     def update_bundle_item_user_quantity(self, bundle_id, item_id, user_id, new_quantity):
         """
         Update a specific user's quantity for an item in a bundle.
-        Updates the user_breakdown JSON in requirements_bundle_items.
+        Updates the original order item and recalculates bundle totals.
         """
         try:
             import json
             
-            # Debug: Check what's in the table
-            debug_query = """
-            SELECT bundle_id, item_id, user_breakdown, total_quantity
-            FROM requirements_bundle_items
-            WHERE bundle_id = ?
+            # Step 1: Find the specific order item to update
+            find_query = """
+            SELECT roi.req_id, roi.quantity as current_qty
+            FROM requirements_bundle_mapping rbm
+            JOIN requirements_orders ro ON rbm.req_id = ro.req_id
+            JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+            WHERE rbm.bundle_id = ? 
+              AND roi.item_id = ? 
+              AND ro.user_id = ?
             """
-            debug_result = self.execute_query(debug_query, (bundle_id,))
-            print(f"DEBUG: Bundle {bundle_id} has {len(debug_result) if debug_result else 0} items")
-            if debug_result:
-                for dr in debug_result:
-                    print(f"  Item {dr['item_id']}: {dr['user_breakdown']}")
+            find_result = self.execute_query(find_query, (bundle_id, item_id, user_id))
             
-            # Get current bundle item
-            query = """
-            SELECT user_breakdown, total_quantity
-            FROM requirements_bundle_items
-            WHERE bundle_id = ? AND item_id = ?
-            """
-            result = self.execute_query(query, (bundle_id, item_id))
+            if not find_result:
+                return {'success': False, 'error': f'Order item not found for user {user_id}'}
             
-            if not result:
-                # More detailed error
-                return {'success': False, 'error': f'Bundle item not found (bundle_id={bundle_id}, item_id={item_id})'}
+            req_id = find_result[0]['req_id']
+            old_qty = find_result[0]['current_qty']
             
-            # Parse user_breakdown JSON
-            user_breakdown = json.loads(result[0]['user_breakdown']) if isinstance(result[0]['user_breakdown'], str) else result[0]['user_breakdown']
-            
-            print(f"DEBUG: Current user_breakdown: {user_breakdown}")
-            print(f"DEBUG: Updating user {user_id} from {user_breakdown.get(str(user_id), 0)} to {new_quantity}")
-            
-            # Update or remove user's quantity
-            old_qty = user_breakdown.get(str(user_id), 0)
+            # Step 2: Update the original order item
             if new_quantity > 0:
-                user_breakdown[str(user_id)] = new_quantity
+                update_order_query = """
+                UPDATE requirements_order_items
+                SET quantity = ?
+                WHERE req_id = ? AND item_id = ?
+                """
+                self.execute_insert(update_order_query, (new_quantity, req_id, item_id))
             else:
-                # Remove user if quantity is 0
-                user_breakdown.pop(str(user_id), None)
+                # Remove the item if quantity is 0
+                delete_order_query = """
+                DELETE FROM requirements_order_items
+                WHERE req_id = ? AND item_id = ?
+                """
+                self.execute_insert(delete_order_query, (req_id, item_id))
             
-            # Recalculate total
-            new_total = sum(user_breakdown.values())
-            
-            print(f"DEBUG: New user_breakdown: {user_breakdown}, new_total: {new_total}")
-            
-            # Update database
-            update_query = """
-            UPDATE requirements_bundle_items
-            SET user_breakdown = ?, total_quantity = ?
-            WHERE bundle_id = ? AND item_id = ?
+            # Step 3: Recalculate bundle item totals
+            # Get all remaining quantities for this item in the bundle
+            recalc_query = """
+            SELECT ro.user_id, roi.quantity
+            FROM requirements_bundle_mapping rbm
+            JOIN requirements_orders ro ON rbm.req_id = ro.req_id
+            JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+            WHERE rbm.bundle_id = ? AND roi.item_id = ?
             """
-            self.execute_insert(update_query, (json.dumps(user_breakdown), new_total, bundle_id, item_id))
+            recalc_result = self.execute_query(recalc_query, (bundle_id, item_id))
+            
+            if recalc_result:
+                # Rebuild user_breakdown
+                user_breakdown = {}
+                for row in recalc_result:
+                    uid = str(row['user_id'])
+                    user_breakdown[uid] = user_breakdown.get(uid, 0) + row['quantity']
+                
+                new_total = sum(user_breakdown.values())
+                
+                # Update bundle item
+                update_bundle_query = """
+                UPDATE requirements_bundle_items
+                SET user_breakdown = ?, total_quantity = ?
+                WHERE bundle_id = ? AND item_id = ?
+                """
+                self.execute_insert(update_bundle_query, (json.dumps(user_breakdown), new_total, bundle_id, item_id))
+            else:
+                # No items left, remove from bundle
+                delete_bundle_query = """
+                DELETE FROM requirements_bundle_items
+                WHERE bundle_id = ? AND item_id = ?
+                """
+                self.execute_insert(delete_bundle_query, (bundle_id, item_id))
+            
             self.conn.commit()
             
             return {
                 'success': True,
                 'old_quantity': old_qty,
                 'new_quantity': new_quantity,
-                'new_total': new_total
+                'new_total': new_total if recalc_result else 0
             }
             
         except Exception as e:
