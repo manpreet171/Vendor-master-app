@@ -1516,7 +1516,7 @@ def display_active_bundles_for_operator(db):
                     st.write("**From Requests:** " + ", ".join(req_list))
 
                 # Actions
-                action_cols = st.columns(2)
+                action_cols = st.columns(3)
                 with action_cols[0]:
                     if bundle['status'] == 'Active':
                         if st.button(f"✅ Approve Bundle", key=f"approve_{bundle['bundle_id']}"):
@@ -1524,6 +1524,11 @@ def display_active_bundles_for_operator(db):
                             st.success("Bundle approved")
                             st.rerun()
                 with action_cols[1]:
+                    if bundle['status'] in ('Active', 'Approved'):
+                        if st.button(f"⚠️ Report Issue", key=f"report_{bundle['bundle_id']}"):
+                            st.session_state[f'reporting_issue_{bundle["bundle_id"]}'] = True
+                            st.rerun()
+                with action_cols[2]:
                     if bundle['status'] in ('Approved', 'Active'):
                         # Check if duplicates exist and haven't been reviewed
                         has_unreviewed_duplicates = duplicates and not duplicates_reviewed
@@ -1536,9 +1541,100 @@ def display_active_bundles_for_operator(db):
                                 mark_bundle_completed(db, bundle.get('bundle_id'))
                                 st.success("Bundle marked as completed")
                                 st.rerun()
+                
+                # Report Issue Flow
+                if st.session_state.get(f'reporting_issue_{bundle["bundle_id"]}'):
+                    st.markdown("---")
+                    display_issue_resolution_flow(db, bundle, items_by_bundle.get(bundle.get('bundle_id'), []))
     
     except Exception as e:
         st.error(f"Error loading active bundles: {str(e)}")
+
+def display_issue_resolution_flow(db, bundle, bundle_items):
+    """Display UI flow for resolving bundle issues (vendor can't supply items)"""
+    st.subheader("⚠️ Report Bundle Issue")
+    
+    bundle_id = bundle['bundle_id']
+    vendor_name = bundle.get('vendor_name', 'Unknown Vendor')
+    vendor_id = bundle.get('recommended_vendor_id')
+    
+    # Step 1: Select problematic items
+    if not st.session_state.get(f'selected_problem_items_{bundle_id}'):
+        st.write(f"**Which items can {vendor_name} NOT provide?**")
+        st.caption("Select items that are unavailable from this vendor")
+        
+        selected_items = []
+        for item in bundle_items:
+            if st.checkbox(
+                f"{item['item_name']} ({item['total_quantity']} pcs)",
+                key=f"issue_item_{bundle_id}_{item['item_id']}"
+            ):
+                selected_items.append(item['item_id'])
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Find Alternative Vendors", key=f"find_alt_{bundle_id}", type="primary"):
+                if selected_items:
+                    st.session_state[f'selected_problem_items_{bundle_id}'] = selected_items
+                    st.rerun()
+                else:
+                    st.warning("Please select at least one item")
+        with col2:
+            if st.button("Cancel", key=f"cancel_issue_{bundle_id}"):
+                del st.session_state[f'reporting_issue_{bundle_id}']
+                st.rerun()
+    
+    # Step 2: Show alternative vendors for each selected item
+    else:
+        selected_item_ids = st.session_state[f'selected_problem_items_{bundle_id}']
+        
+        for item in bundle_items:
+            if item['item_id'] in selected_item_ids:
+                st.markdown(f"### 🔄 Alternative Vendors for {item['item_name']}")
+                st.write(f"Current: **{vendor_name}** ❌ Not available")
+                
+                # Get alternative vendors
+                alt_vendors = db.get_alternative_vendors_for_item(item['item_id'], vendor_id)
+                
+                if alt_vendors:
+                    st.write("**Select new vendor:**")
+                    
+                    for vendor in alt_vendors:
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            st.write(f"**{vendor['vendor_name']}**")
+                            if vendor.get('vendor_email'):
+                                st.write(f"📧 {vendor['vendor_email']}")
+                            if vendor.get('vendor_phone'):
+                                st.write(f"📞 {vendor['vendor_phone']}")
+                        with col2:
+                            if st.button(
+                                "Move Here",
+                                key=f"move_{bundle_id}_{item['item_id']}_{vendor['vendor_id']}"
+                            ):
+                                # Move item to this vendor
+                                result = db.move_item_to_vendor(
+                                    bundle_id,
+                                    item['item_id'],
+                                    vendor['vendor_id']
+                                )
+                                
+                                if result['success']:
+                                    st.success(f"✅ {result['message']}")
+                                    # Clear session state
+                                    del st.session_state[f'reporting_issue_{bundle_id}']
+                                    del st.session_state[f'selected_problem_items_{bundle_id}']
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ Failed: {result.get('error')}")
+                        
+                        st.markdown("---")
+                else:
+                    st.warning(f"⚠️ No alternative vendors found for {item['item_name']}")
+        
+        if st.button("← Back", key=f"back_issue_{bundle_id}"):
+            del st.session_state[f'selected_problem_items_{bundle_id}']
+            st.rerun()
 
 def display_user_interface(db):
     """Regular user interface for non-operator users"""
@@ -2059,7 +2155,7 @@ def get_bundle_request_numbers_map(db, bundle_ids):
         return {}
 
 def mark_bundle_completed(db, bundle_id):
-    """Mark a bundle as completed and update related requests"""
+    """Mark a bundle as completed and update related requests (with multi-bundle check)"""
     try:
         # Update bundle status
         bundle_query = """
@@ -2079,14 +2175,23 @@ def mark_bundle_completed(db, bundle_id):
         if mappings:
             req_ids = [mapping['req_id'] for mapping in mappings]
             
-            # Update all related requests to Completed
-            placeholders = ','.join(['?' for _ in req_ids])
-            requests_query = f"""
-            UPDATE requirements_orders 
-            SET status = 'Completed'
-            WHERE req_id IN ({placeholders})
-            """
-            db.execute_insert(requests_query, req_ids)
+            # Check each request to see if ALL its bundles are completed
+            for req_id in req_ids:
+                # Get all bundles for this request
+                all_bundles = db.get_bundles_for_request(req_id)
+                
+                # Check if any bundles are still incomplete
+                incomplete_bundles = [b for b in all_bundles if b['status'] != 'Completed']
+                
+                if len(incomplete_bundles) == 0:
+                    # All bundles completed - mark request as completed
+                    update_request_query = """
+                    UPDATE requirements_orders 
+                    SET status = 'Completed'
+                    WHERE req_id = ?
+                    """
+                    db.execute_insert(update_request_query, (req_id,))
+                # else: Request still has pending bundles - keep status as 'In Progress'
         
         db.conn.commit()
         return True

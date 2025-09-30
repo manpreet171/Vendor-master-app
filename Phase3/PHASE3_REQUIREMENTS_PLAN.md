@@ -185,6 +185,313 @@ Operator changes User 2 to 4 → Total becomes 8 pieces
 - ✅ Review flag persists and enables completion.
 - ✅ Bundle items display reflects updated quantities immediately.
 
+---
+
+## **September 30, 2025 (Evening) - Bundle Issue Resolution & Item-Level Vendor Change**
+
+### **Problem Statement:**
+
+**Real-World Scenario:**
+Operator calls recommended vendor and discovers they cannot supply certain items in the bundle. Current system has no way to handle partial vendor availability without canceling the entire bundle and re-bundling (which would create the same bundle again due to vendor coverage algorithm).
+
+**Example:**
+```
+Bundle 1 - S&F Supplies (4 items)
+  • ACRYLITE P99 (9 pcs)
+  • Action Tac (1 pc)
+  • Bestine Solvent (2 pcs)
+  • Shurtape Tape (4 pcs)
+
+Operator calls S&F: "We have 3 items, but ACRYLITE is out of stock"
+
+Problem: How to handle this without losing the 3 available items?
+```
+
+### **Solution: Item-Level Vendor Change with Smart Bundle Consolidation**
+
+**Approach:**
+Instead of canceling entire bundle, allow operator to move specific problematic items to alternative vendors. System intelligently checks if target vendor already has a bundle and consolidates items there, or creates new bundle if needed.
+
+**Key Innovation:**
+- Item-level granularity (not bundle-level)
+- Smart bundle consolidation (reuse existing vendor bundles)
+- No infinite loop (doesn't recreate same failed bundle)
+- Preserves operator's work (duplicate reviews, edits stay intact)
+
+### **Operator Workflow:**
+
+**Step 1: Report Issue**
+```
+Operator clicks: [⚠️ Report Issue]
+
+System asks: "What's the problem?"
+○ Vendor can't supply some items
+○ Price too high
+○ Lead time too long
+○ Other
+```
+
+**Step 2: Select Problematic Items**
+```
+Which items can S&F Supplies NOT provide?
+
+☑ ACRYLITE P99 (9 pcs)
+☐ Action Tac (1 pc)
+☐ Bestine Solvent (2 pcs)
+☐ Shurtape Tape (4 pcs)
+
+[Find Alternative Vendors]
+```
+
+**Step 3: Choose Alternative Vendor**
+```
+Alternative Vendors for ACRYLITE P99:
+
+○ Canal Plastics Center
+  📧 sales@cpcnyc.com
+  
+○ E&T Plastic
+  📧 jdemasi@e-tplastics.com | 📞 (718) 729-6226
+  
+○ Laird Plastics
+  📧 mhollander@lairdplastics.com | 📞 516 334 1124
+
+[Move to Selected Vendor]
+```
+
+**Step 4: System Processes Move**
+```
+System checks: Does Canal Plastics already have a bundle?
+
+CASE A: Yes, Bundle 2 exists for Canal
+  → Add ACRYLITE to existing Bundle 2
+  → Link requests to Bundle 2
+  → Remove ACRYLITE from Bundle 1
+
+CASE B: No bundle exists for Canal
+  → Create new Bundle 2 for Canal
+  → Add ACRYLITE to Bundle 2
+  → Link requests to Bundle 2
+  → Remove ACRYLITE from Bundle 1
+```
+
+### **Technical Implementation:**
+
+**Backend Functions (`db_connector.py`):**
+
+**1. Get Alternative Vendors for Item:**
+```python
+def get_alternative_vendors_for_item(item_id, exclude_vendor_id):
+    """Get vendors who can supply this item, excluding current vendor"""
+    query = """
+    SELECT v.vendor_id, v.vendor_name, v.vendor_email, v.vendor_phone
+    FROM vendors v
+    JOIN item_vendor_mapping ivm ON v.vendor_id = ivm.vendor_id
+    WHERE ivm.item_id = ? AND v.vendor_id != ?
+    """
+    return execute_query(query, (item_id, exclude_vendor_id))
+```
+
+**2. Check for Existing Vendor Bundle:**
+```python
+def get_active_bundle_for_vendor(vendor_id):
+    """Check if vendor already has an active bundle"""
+    query = """
+    SELECT bundle_id, bundle_name, total_items, total_quantity
+    FROM requirements_bundles
+    WHERE recommended_vendor_id = ? 
+      AND status IN ('Active', 'Approved')
+    ORDER BY bundle_id DESC
+    """
+    return execute_query(query, (vendor_id,))
+```
+
+**3. Move Item to Vendor (Smart Consolidation):**
+```python
+def move_item_to_vendor(current_bundle_id, item_id, new_vendor_id):
+    """
+    Move item from current bundle to vendor's bundle.
+    If vendor bundle exists, add item there. Otherwise create new bundle.
+    """
+    # Get item data from current bundle
+    item_data = get_bundle_item(current_bundle_id, item_id)
+    
+    # Check if vendor already has a bundle
+    existing_bundle = get_active_bundle_for_vendor(new_vendor_id)
+    
+    if existing_bundle:
+        # Add to existing bundle
+        target_bundle_id = existing_bundle['bundle_id']
+        add_item_to_bundle(target_bundle_id, item_data)
+        update_bundle_totals(target_bundle_id, +item_data['quantity'])
+    else:
+        # Create new bundle for vendor
+        target_bundle_id = create_new_bundle(new_vendor_id, [item_data])
+    
+    # Link requests to target bundle
+    link_requests_to_bundle(current_bundle_id, target_bundle_id)
+    
+    # Remove item from current bundle
+    remove_item_from_bundle(current_bundle_id, item_id)
+    update_bundle_totals(current_bundle_id, -item_data['quantity'])
+    
+    # Clean up empty bundles
+    if get_bundle_item_count(current_bundle_id) == 0:
+        delete_empty_bundle(current_bundle_id)
+```
+
+### **Critical Issue: Multi-Bundle Request Completion**
+
+**Problem:**
+When a request is split across multiple bundles, completing one bundle should NOT mark the entire request as complete.
+
+**Example:**
+```
+John's Request:
+  - ACRYLITE (4 pcs) → Bundle 2 (Canal)
+  - Action Tac (1 pc) → Bundle 1 (S&F)
+  - Bestine (2 pcs) → Bundle 1 (S&F)
+
+requirements_bundle_mapping:
+  bundle_id=1, req_id=1  ← John linked to Bundle 1
+  bundle_id=2, req_id=1  ← John ALSO linked to Bundle 2
+
+If operator completes Bundle 1:
+  ❌ OLD LOGIC: Marks John's request as "Completed" (WRONG!)
+  ✅ NEW LOGIC: Keeps John's request "In Progress" until Bundle 2 also completed
+```
+
+**Solution: Smart Completion Logic**
+```python
+def mark_bundle_completed(bundle_id):
+    """Mark bundle complete and update requests only if ALL their bundles are done"""
+    
+    # Update bundle status
+    UPDATE requirements_bundles SET status = 'Completed' WHERE bundle_id = ?
+    
+    # Get all requests in this bundle
+    request_ids = get_requests_for_bundle(bundle_id)
+    
+    for req_id in request_ids:
+        # Check if request has items in OTHER bundles
+        all_bundles = get_bundles_for_request(req_id)
+        incomplete_bundles = [b for b in all_bundles 
+                             if b.status != 'Completed']
+        
+        if len(incomplete_bundles) == 0:
+            # All bundles for this request are completed
+            UPDATE requirements_orders 
+            SET status = 'Completed'
+            WHERE req_id = ?
+        else:
+            # Request still has pending bundles - keep In Progress
+            pass
+```
+
+### **Edge Cases Handled:**
+
+**1. Empty Bundle Cleanup:**
+```python
+# After moving last item from bundle
+if bundle has 0 items:
+    DELETE FROM requirements_bundle_mapping WHERE bundle_id = ?
+    DELETE FROM requirements_bundle_items WHERE bundle_id = ?
+    DELETE FROM requirements_bundles WHERE bundle_id = ?
+```
+
+**2. Duplicate Request Links:**
+```python
+# Prevent linking same request to bundle twice
+if not exists(bundle_id, req_id):
+    INSERT INTO requirements_bundle_mapping (bundle_id, req_id)
+```
+
+**3. Request Status Tracking:**
+```python
+# User sees: "Your request is split across 2 bundles"
+# Shows: Bundle 1 (Completed ✅), Bundle 2 (Pending ⏳)
+```
+
+### **Database Impact:**
+
+**No Schema Changes Required!**
+- ✅ `requirements_bundles` - existing
+- ✅ `requirements_bundle_items` - existing
+- ✅ `requirements_bundle_mapping` - existing (already supports many-to-many)
+- ✅ `requirements_orders` - existing
+- ✅ `requirements_order_items` - existing
+
+**Why it works:** The many-to-many relationship between bundles and requests already supports one request being in multiple bundles. We're just using it properly now.
+
+### **Cron Job Impact:**
+
+**✅ NO IMPACT!**
+- Cron job only processes `Pending` requests
+- After bundling, requests are `In Progress`
+- Item moves happen to `In Progress` requests
+- Cron job never touches `In Progress` requests
+- **No conflicts or interference**
+
+### **UI Changes:**
+
+**Active Bundles View:**
+```
+📦 BUNDLE-001 - S&F Supplies
+
+Items: 3 items, 7 pieces
+Status: 🟡 Active
+
+Actions:
+[⚠️ Report Issue]  [🏁 Mark as Completed]
+
+New: "Report Issue" button opens item-level vendor change flow
+```
+
+**User Dashboard (My Requests):**
+```
+Request #123 - Status: In Progress
+
+Your items are being sourced from 2 vendors:
+  📦 Bundle 1 (S&F Supplies) - Completed ✅
+  📦 Bundle 2 (Canal Plastics) - Pending ⏳
+
+2 of 3 items delivered
+```
+
+### **Benefits:**
+
+- ✅ **Surgical Fix:** Only changes problematic items, keeps working items intact
+- ✅ **No Infinite Loop:** Doesn't recreate same failed bundle
+- ✅ **Smart Consolidation:** Reuses existing vendor bundles when possible
+- ✅ **Preserves Work:** Duplicate reviews and edits stay intact
+- ✅ **Operator Control:** Clear step-by-step flow with alternatives shown
+- ✅ **No Schema Changes:** Works with existing database structure
+- ✅ **Cron-Safe:** Doesn't interfere with automatic bundling
+- ✅ **Accurate Status:** Requests only marked complete when ALL bundles done
+
+### **Testing Scenarios:**
+
+```
+✅ Test 1: Move item to existing vendor bundle (consolidation)
+✅ Test 2: Move item to new vendor (bundle creation)
+✅ Test 3: Complete bundle with split requests (status logic)
+✅ Test 4: Empty bundle cleanup after moving all items
+✅ Test 5: Duplicate detection still works after item moves
+✅ Test 6: Cron job doesn't interfere with moved items
+✅ Test 7: User sees accurate status for split requests
+```
+
+### **Implementation Status:**
+
+**Planned for Next Session:**
+- Add "Report Issue" button to Active Bundles
+- Implement item selection UI
+- Add alternative vendor display
+- Create move_item_to_vendor() function
+- Update mark_bundle_completed() with multi-bundle check
+- Add empty bundle cleanup logic
+- Update user dashboard to show multi-bundle requests
+
 ### **September 23, 2025 - Admin User Management, UI Refresh, and Cloud Readiness**
 
 #### **✅ Completed Today:**

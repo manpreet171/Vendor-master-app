@@ -332,6 +332,225 @@ class DatabaseConnector:
             print(f"Error marking duplicates reviewed: {str(e)}")
             return False
     
+    # ========== Bundle Issue Resolution Functions ==========
+    
+    def get_alternative_vendors_for_item(self, item_id, exclude_vendor_id):
+        """Get vendors who can supply this item, excluding current vendor"""
+        query = """
+        SELECT v.vendor_id, v.vendor_name, v.vendor_email, v.vendor_phone
+        FROM vendors v
+        JOIN item_vendor_mapping ivm ON v.vendor_id = ivm.vendor_id
+        WHERE ivm.item_id = ? AND v.vendor_id != ?
+        ORDER BY v.vendor_name
+        """
+        return self.execute_query(query, (item_id, exclude_vendor_id))
+    
+    def get_active_bundle_for_vendor(self, vendor_id):
+        """Check if vendor already has an active/approved bundle"""
+        query = """
+        SELECT bundle_id, bundle_name, total_items, total_quantity
+        FROM requirements_bundles
+        WHERE recommended_vendor_id = ? 
+          AND status IN ('Active', 'Approved')
+        ORDER BY bundle_id DESC
+        """
+        results = self.execute_query(query, (vendor_id,))
+        return results[0] if results else None
+    
+    def get_bundles_for_request(self, req_id):
+        """Get all bundles that contain items from this request"""
+        query = """
+        SELECT DISTINCT b.bundle_id, b.bundle_name, b.status, b.recommended_vendor_id
+        FROM requirements_bundles b
+        JOIN requirements_bundle_mapping rbm ON b.bundle_id = rbm.bundle_id
+        WHERE rbm.req_id = ?
+        ORDER BY b.bundle_id
+        """
+        return self.execute_query(query, (req_id,))
+    
+    def move_item_to_vendor(self, current_bundle_id, item_id, new_vendor_id):
+        """
+        Move item from current bundle to vendor's bundle.
+        If vendor bundle exists, add item there. Otherwise create new bundle.
+        Returns: {'success': bool, 'target_bundle_id': int, 'message': str}
+        """
+        try:
+            import json
+            from datetime import datetime
+            
+            # Step 1: Get item data from current bundle
+            item_query = """
+            SELECT item_id, total_quantity, user_breakdown
+            FROM requirements_bundle_items
+            WHERE bundle_id = ? AND item_id = ?
+            """
+            item_result = self.execute_query(item_query, (current_bundle_id, item_id))
+            
+            if not item_result:
+                return {'success': False, 'error': 'Item not found in bundle'}
+            
+            item_data = item_result[0]
+            
+            # Step 2: Check if vendor already has a bundle
+            existing_bundle = self.get_active_bundle_for_vendor(new_vendor_id)
+            
+            if existing_bundle:
+                # CASE A: Add to existing bundle
+                target_bundle_id = existing_bundle['bundle_id']
+                
+                # Add item to existing bundle
+                insert_query = """
+                INSERT INTO requirements_bundle_items 
+                (bundle_id, item_id, total_quantity, user_breakdown)
+                VALUES (?, ?, ?, ?)
+                """
+                self.execute_insert(insert_query, (
+                    target_bundle_id,
+                    item_data['item_id'],
+                    item_data['total_quantity'],
+                    item_data['user_breakdown']
+                ))
+                
+                # Update bundle totals
+                update_bundle_query = """
+                UPDATE requirements_bundles
+                SET total_items = total_items + 1,
+                    total_quantity = total_quantity + ?
+                WHERE bundle_id = ?
+                """
+                self.execute_insert(update_bundle_query, (
+                    item_data['total_quantity'],
+                    target_bundle_id
+                ))
+                
+                message = f"Item added to existing bundle {existing_bundle['bundle_name']}"
+                
+            else:
+                # CASE B: Create new bundle
+                # Get vendor info
+                vendor_query = """
+                SELECT vendor_name FROM vendors WHERE vendor_id = ?
+                """
+                vendor_result = self.execute_query(vendor_query, (new_vendor_id,))
+                
+                if not vendor_result:
+                    return {'success': False, 'error': 'Vendor not found'}
+                
+                vendor_name = vendor_result[0]['vendor_name']
+                
+                # Create new bundle
+                timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+                bundle_name = f"BUNDLE-{timestamp}"
+                
+                create_bundle_query = """
+                INSERT INTO requirements_bundles 
+                (bundle_name, recommended_vendor_id, total_items, total_quantity, status, duplicates_reviewed)
+                VALUES (?, ?, 1, ?, 'Active', 0)
+                """
+                self.execute_insert(create_bundle_query, (
+                    bundle_name,
+                    new_vendor_id,
+                    item_data['total_quantity']
+                ))
+                
+                # Get new bundle ID
+                target_bundle_id = self.execute_query(
+                    "SELECT MAX(bundle_id) as bundle_id FROM requirements_bundles"
+                )[0]['bundle_id']
+                
+                # Add item to new bundle
+                insert_query = """
+                INSERT INTO requirements_bundle_items 
+                (bundle_id, item_id, total_quantity, user_breakdown)
+                VALUES (?, ?, ?, ?)
+                """
+                self.execute_insert(insert_query, (
+                    target_bundle_id,
+                    item_data['item_id'],
+                    item_data['total_quantity'],
+                    item_data['user_breakdown']
+                ))
+                
+                message = f"Created new bundle {bundle_name} for {vendor_name}"
+            
+            # Step 3: Link requests from current bundle to target bundle
+            # Get requests from current bundle
+            get_requests_query = """
+            SELECT DISTINCT req_id 
+            FROM requirements_bundle_mapping 
+            WHERE bundle_id = ?
+            """
+            requests = self.execute_query(get_requests_query, (current_bundle_id,))
+            
+            if requests:
+                for req in requests:
+                    req_id = req['req_id']
+                    
+                    # Check if already linked
+                    check_query = """
+                    SELECT COUNT(*) as count 
+                    FROM requirements_bundle_mapping 
+                    WHERE bundle_id = ? AND req_id = ?
+                    """
+                    exists = self.execute_query(check_query, (target_bundle_id, req_id))[0]['count']
+                    
+                    if exists == 0:
+                        # Link it
+                        insert_mapping_query = """
+                        INSERT INTO requirements_bundle_mapping (bundle_id, req_id)
+                        VALUES (?, ?)
+                        """
+                        self.execute_insert(insert_mapping_query, (target_bundle_id, req_id))
+            
+            # Step 4: Remove item from current bundle
+            delete_query = """
+            DELETE FROM requirements_bundle_items
+            WHERE bundle_id = ? AND item_id = ?
+            """
+            self.execute_insert(delete_query, (current_bundle_id, item_id))
+            
+            # Update current bundle totals
+            update_current_query = """
+            UPDATE requirements_bundles
+            SET total_items = total_items - 1,
+                total_quantity = total_quantity - ?
+            WHERE bundle_id = ?
+            """
+            self.execute_insert(update_current_query, (
+                item_data['total_quantity'],
+                current_bundle_id
+            ))
+            
+            # Step 5: Check if current bundle is now empty
+            check_empty_query = """
+            SELECT COUNT(*) as count 
+            FROM requirements_bundle_items 
+            WHERE bundle_id = ?
+            """
+            item_count = self.execute_query(check_empty_query, (current_bundle_id,))[0]['count']
+            
+            if item_count == 0:
+                # Delete empty bundle
+                self.execute_insert("DELETE FROM requirements_bundle_mapping WHERE bundle_id = ?", (current_bundle_id,))
+                self.execute_insert("DELETE FROM requirements_bundles WHERE bundle_id = ?", (current_bundle_id,))
+                message += " (Original bundle was empty and removed)"
+            
+            self.conn.commit()
+            
+            return {
+                'success': True,
+                'target_bundle_id': target_bundle_id,
+                'message': message
+            }
+            
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            print(f"ERROR in move_item_to_vendor: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'error': str(e)}
+    
     def get_all_projects(self):
         """Get all projects from ProcoreProjectData for dropdown selection"""
         query = """
