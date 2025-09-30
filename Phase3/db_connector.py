@@ -197,6 +197,8 @@ class DatabaseConnector:
         """
         
         results = self.execute_query(query, (bundle_id,))
+        print(f"DEBUG: Duplicate detection for bundle {bundle_id} found {len(results) if results else 0} items with projects")
+        
         if not results:
             return []
         
@@ -218,6 +220,10 @@ class DatabaseConnector:
         
         # Filter to only duplicates (multiple users for same item+project)
         duplicates = [v for v in grouped.values() if len(v['users']) > 1]
+        print(f"DEBUG: Bundle {bundle_id} has {len(duplicates)} duplicate(s)")
+        for dup in duplicates:
+            print(f"  - Item {dup['item_id']} ({dup['item_name']}) Project {dup['project_number']}: {len(dup['users'])} users")
+        
         return duplicates
     
     def update_bundle_item_user_quantity(self, bundle_id, item_id, user_id, new_quantity):
