@@ -483,14 +483,225 @@ Your items are being sourced from 2 vendors:
 
 ### **Implementation Status:**
 
-**Planned for Next Session:**
-- Add "Report Issue" button to Active Bundles
-- Implement item selection UI
-- Add alternative vendor display
-- Create move_item_to_vendor() function
-- Update mark_bundle_completed() with multi-bundle check
-- Add empty bundle cleanup logic
-- Update user dashboard to show multi-bundle requests
+**✅ COMPLETED (September 30, 2025 - Evening Session):**
+- ✅ Added "Report Issue" button to Active Bundles (3rd button alongside Approve and Complete)
+- ✅ Implemented item selection UI with checkboxes
+- ✅ Added alternative vendor display with contact info
+- ✅ Created `move_item_to_vendor()` function with smart consolidation
+- ✅ Updated `mark_bundle_completed()` with multi-bundle check
+- ✅ Added empty bundle cleanup logic
+- ✅ Fixed table name inconsistency (ItemVendorMap vs item_vendor_mapping)
+- ✅ All edge cases handled (multi-bundle completion, empty bundles, duplicate links)
+- ✅ Tested successfully on Streamlit Cloud
+
+**✅ COMPLETED (September 30, 2025 - Late Evening):**
+- ✅ Enhanced "Approve Bundle" with confirmation checklist
+- ✅ Added 4-point verification before approval:
+  - Vendor contact confirmation
+  - All items availability confirmation
+  - Duplicate resolution check (conditional)
+  - Pricing and terms acceptance
+- ✅ Smart validation: Blocks approval if duplicates unreviewed
+- ✅ Clear feedback on blocking issues
+- ✅ Professional approval workflow with accountability
+
+**Pending for Future:**
+- User dashboard update to show multi-bundle requests (when user interface is built)
+
+---
+
+## **September 30, 2025 (Late Evening) - Enhanced Bundle Approval with Confirmation Checklist**
+
+### **Problem Statement:**
+
+The original "Approve Bundle" button was a simple one-click action with no verification. Operators could accidentally approve bundles without:
+- Confirming vendor availability
+- Verifying all items can be supplied
+- Resolving duplicate project issues
+- Checking pricing and terms
+
+This created risk of approving bundles that couldn't be fulfilled.
+
+### **Solution: Mandatory Approval Checklist**
+
+**Approach:**
+Transform "Approve Bundle" into a gated workflow with mandatory confirmations before approval. Operator must explicitly verify all critical aspects before the bundle can be approved.
+
+### **Approval Checklist Components:**
+
+**1. Vendor Contact Confirmation:**
+```
+☐ I have contacted [Vendor Name] and confirmed they can supply these items
+```
+- Ensures operator actually spoke to vendor
+- Not just relying on system recommendations
+
+**2. Item Availability Confirmation:**
+```
+☐ [Vendor Name] can supply ALL X items in this bundle
+   [View items in this bundle] (expandable list)
+```
+- Shows complete item list for verification
+- Confirms vendor has everything, not just some items
+
+**3. Duplicate Resolution Check (Conditional):**
+```
+☐ All duplicate project issues have been reviewed and resolved
+```
+- **If duplicates exist AND reviewed:** Auto-checked ✅
+- **If duplicates exist AND NOT reviewed:** Disabled with warning ⚠️
+- **If no duplicates:** Auto-passed (hidden)
+
+**4. Pricing & Terms Confirmation:**
+```
+☐ Pricing and delivery terms are acceptable
+```
+- Confirms commercial terms are agreed
+- Prevents approval without price discussion
+
+### **Smart Validation Logic:**
+
+**Blocking Conditions:**
+- If ANY checkbox unchecked → "Confirm & Approve" button disabled
+- If duplicates exist AND not reviewed → Duplicate checkbox disabled + warning shown
+- Clear feedback on what's blocking approval
+
+**Approval Flow:**
+```
+Operator clicks "Approve Bundle"
+  ↓
+Checklist appears with 4 items
+  ↓
+Operator checks items one by one
+  ↓
+If duplicates unreviewed:
+  → Warning shown
+  → Must scroll up and review duplicates first
+  → Return to checklist
+  ↓
+All items checked
+  ↓
+"Confirm & Approve" button enables
+  ↓
+Click → Bundle approved → Status: Active → Approved
+```
+
+### **UI Implementation:**
+
+**Before Approval (Checklist):**
+```
+📋 Bundle Approval Checklist
+
+Before approving this bundle with S&F Supplies, please confirm:
+All items must be checked before approval
+
+☑ I have contacted S&F Supplies and confirmed they can supply these items
+
+[View items in this bundle] ▼
+  • ACRYLITE P99 (9 pcs)
+  • Action Tac (1 pc)
+  • Bestine Solvent (2 pcs)
+
+☑ S&F Supplies can supply ALL 3 items in this bundle
+
+☐ All duplicate project issues have been reviewed and resolved
+   ⚠️ 1 duplicate project(s) detected - Must be reviewed first
+   👆 Please scroll up and mark duplicates as reviewed first
+
+☑ Pricing and delivery terms are acceptable
+
+---
+
+[✅ Confirm & Approve Bundle] (disabled)  [Cancel]
+⚠️ Review duplicates before approving
+```
+
+**After Duplicate Review:**
+```
+📋 Bundle Approval Checklist
+
+☑ I have contacted S&F Supplies and confirmed they can supply these items
+☑ S&F Supplies can supply ALL 3 items in this bundle
+☑ All duplicate project issues have been reviewed and resolved ✅
+☑ Pricing and delivery terms are acceptable
+
+[✅ Confirm & Approve Bundle] (enabled)  [Cancel]
+```
+
+### **Technical Implementation:**
+
+**Function: `display_approval_checklist()`**
+```python
+def display_approval_checklist(db, bundle, bundle_items, duplicates, duplicates_reviewed):
+    # Show 4 checkboxes
+    check1 = st.checkbox("Contacted vendor...")
+    check2 = st.checkbox("Can supply all items...")
+    
+    # Conditional duplicate check
+    if duplicates:
+        if duplicates_reviewed:
+            check3 = True (auto-checked)
+        else:
+            check3 = False (disabled with warning)
+    else:
+        check3 = True (no duplicates)
+    
+    check4 = st.checkbox("Pricing acceptable...")
+    
+    # Validation
+    all_checked = check1 and check2 and check3 and check4
+    
+    if all_checked:
+        [Confirm & Approve] (enabled)
+    else:
+        [Confirm & Approve] (disabled)
+```
+
+### **Benefits:**
+
+- ✅ **Accountability:** Operator explicitly confirms each verification step
+- ✅ **Quality Gate:** Prevents premature approval without proper checks
+- ✅ **Duplicate Enforcement:** Cannot approve until duplicates reviewed
+- ✅ **Error Prevention:** Reduces mistakes from rushing through approvals
+- ✅ **Audit Trail:** Clear record that operator verified all aspects
+- ✅ **Professional Workflow:** Proper confirmation process like real procurement
+- ✅ **Clear Feedback:** Shows exactly what's blocking approval
+
+### **Integration with Existing Features:**
+
+**Works seamlessly with:**
+- Duplicate Detection System (blocks approval if unreviewed)
+- Report Issue Flow (can report issues before approving)
+- Bundle Completion (approved bundles can be completed)
+
+**Workflow:**
+```
+Bundle Created (Active)
+  ↓
+Operator reviews duplicates (if any)
+  ↓
+Operator clicks "Approve Bundle"
+  ↓
+Checklist appears
+  ↓
+All confirmations checked
+  ↓
+Bundle Approved
+  ↓
+Goods received
+  ↓
+Mark as Completed
+```
+
+### **Testing Scenarios:**
+
+```
+✅ Test 1: Approve bundle with no duplicates (all checks pass)
+✅ Test 2: Try to approve with unreviewed duplicates (blocked)
+✅ Test 3: Review duplicates then approve (succeeds)
+✅ Test 4: Cancel approval checklist (returns to bundle view)
+✅ Test 5: Partial checklist (button stays disabled)
+```
 
 ### **September 23, 2025 - Admin User Management, UI Refresh, and Cloud Readiness**
 

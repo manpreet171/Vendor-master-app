@@ -1520,8 +1520,7 @@ def display_active_bundles_for_operator(db):
                 with action_cols[0]:
                     if bundle['status'] == 'Active':
                         if st.button(f"✅ Approve Bundle", key=f"approve_{bundle['bundle_id']}"):
-                            mark_bundle_approved(db, bundle.get('bundle_id'))
-                            st.success("Bundle approved")
+                            st.session_state[f'approving_bundle_{bundle["bundle_id"]}'] = True
                             st.rerun()
                 with action_cols[1]:
                     if bundle['status'] in ('Active', 'Approved'):
@@ -1542,6 +1541,11 @@ def display_active_bundles_for_operator(db):
                                 st.success("Bundle marked as completed")
                                 st.rerun()
                 
+                # Approval Checklist Flow
+                if st.session_state.get(f'approving_bundle_{bundle["bundle_id"]}'):
+                    st.markdown("---")
+                    display_approval_checklist(db, bundle, items_by_bundle.get(bundle.get('bundle_id'), []), duplicates, duplicates_reviewed)
+                
                 # Report Issue Flow
                 if st.session_state.get(f'reporting_issue_{bundle["bundle_id"]}'):
                     st.markdown("---")
@@ -1549,6 +1553,83 @@ def display_active_bundles_for_operator(db):
     
     except Exception as e:
         st.error(f"Error loading active bundles: {str(e)}")
+
+def display_approval_checklist(db, bundle, bundle_items, duplicates, duplicates_reviewed):
+    """Display approval checklist before approving bundle"""
+    st.subheader("📋 Bundle Approval Checklist")
+    
+    bundle_id = bundle['bundle_id']
+    vendor_name = bundle.get('vendor_name', 'Unknown Vendor')
+    
+    st.write(f"**Before approving this bundle with {vendor_name}, please confirm:**")
+    st.caption("All items must be checked before approval")
+    
+    # Checklist items
+    check1 = st.checkbox(
+        f"I have contacted **{vendor_name}** and confirmed they can supply these items",
+        key=f"check1_{bundle_id}"
+    )
+    
+    # Show items list
+    with st.expander("View items in this bundle", expanded=True):
+        for item in bundle_items:
+            st.write(f"• {item['item_name']} ({item['total_quantity']} pcs)")
+    
+    check2 = st.checkbox(
+        f"**{vendor_name}** can supply ALL {len(bundle_items)} items in this bundle",
+        key=f"check2_{bundle_id}"
+    )
+    
+    # Duplicate check (conditional)
+    if duplicates:
+        if duplicates_reviewed:
+            check3 = st.checkbox(
+                f"All duplicate project issues have been reviewed and resolved ✅",
+                value=True,
+                disabled=True,
+                key=f"check3_{bundle_id}"
+            )
+        else:
+            st.warning(f"⚠️ **{len(duplicates)} duplicate project(s) detected** - Must be reviewed before approval")
+            check3 = st.checkbox(
+                f"All duplicate project issues have been reviewed and resolved",
+                value=False,
+                disabled=True,
+                key=f"check3_{bundle_id}"
+            )
+            st.caption("👆 Please scroll up and mark duplicates as reviewed first")
+    else:
+        check3 = True  # No duplicates, auto-pass
+    
+    check4 = st.checkbox(
+        "Pricing and delivery terms are acceptable",
+        key=f"check4_{bundle_id}"
+    )
+    
+    st.markdown("---")
+    
+    # Validation
+    all_checked = check1 and check2 and check3 and check4
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if all_checked:
+            if st.button("✅ Confirm & Approve Bundle", key=f"confirm_approve_{bundle_id}", type="primary"):
+                mark_bundle_approved(db, bundle_id)
+                del st.session_state[f'approving_bundle_{bundle_id}']
+                st.success(f"✅ Bundle approved with {vendor_name}!")
+                st.rerun()
+        else:
+            st.button("✅ Confirm & Approve Bundle", key=f"confirm_approve_{bundle_id}", disabled=True)
+            if not check3 and duplicates and not duplicates_reviewed:
+                st.caption("⚠️ Review duplicates before approving")
+            else:
+                st.caption("⚠️ Please confirm all items above")
+    
+    with col2:
+        if st.button("Cancel", key=f"cancel_approve_{bundle_id}"):
+            del st.session_state[f'approving_bundle_{bundle_id}']
+            st.rerun()
 
 def display_issue_resolution_flow(db, bundle, bundle_items):
     """Display UI flow for resolving bundle issues (vendor can't supply items)"""
