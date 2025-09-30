@@ -226,6 +226,20 @@ class DatabaseConnector:
         Updates the user_breakdown JSON in requirements_bundle_items.
         """
         try:
+            import json
+            
+            # Debug: Check what's in the table
+            debug_query = """
+            SELECT bundle_id, item_id, user_breakdown, total_quantity
+            FROM requirements_bundle_items
+            WHERE bundle_id = ?
+            """
+            debug_result = self.execute_query(debug_query, (bundle_id,))
+            print(f"DEBUG: Bundle {bundle_id} has {len(debug_result) if debug_result else 0} items")
+            if debug_result:
+                for dr in debug_result:
+                    print(f"  Item {dr['item_id']}: {dr['user_breakdown']}")
+            
             # Get current bundle item
             query = """
             SELECT user_breakdown, total_quantity
@@ -235,11 +249,14 @@ class DatabaseConnector:
             result = self.execute_query(query, (bundle_id, item_id))
             
             if not result:
-                return {'success': False, 'error': 'Bundle item not found'}
+                # More detailed error
+                return {'success': False, 'error': f'Bundle item not found (bundle_id={bundle_id}, item_id={item_id})'}
             
             # Parse user_breakdown JSON
-            import json
             user_breakdown = json.loads(result[0]['user_breakdown']) if isinstance(result[0]['user_breakdown'], str) else result[0]['user_breakdown']
+            
+            print(f"DEBUG: Current user_breakdown: {user_breakdown}")
+            print(f"DEBUG: Updating user {user_id} from {user_breakdown.get(str(user_id), 0)} to {new_quantity}")
             
             # Update or remove user's quantity
             old_qty = user_breakdown.get(str(user_id), 0)
@@ -251,6 +268,8 @@ class DatabaseConnector:
             
             # Recalculate total
             new_total = sum(user_breakdown.values())
+            
+            print(f"DEBUG: New user_breakdown: {user_breakdown}, new_total: {new_total}")
             
             # Update database
             update_query = """
@@ -271,6 +290,9 @@ class DatabaseConnector:
         except Exception as e:
             if self.conn:
                 self.conn.rollback()
+            print(f"ERROR in update_bundle_item_user_quantity: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {'success': False, 'error': str(e)}
     
     def mark_bundle_duplicates_reviewed(self, bundle_id):
