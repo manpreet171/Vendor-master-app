@@ -338,8 +338,8 @@ class DatabaseConnector:
         """Get vendors who can supply this item, excluding current vendor"""
         query = """
         SELECT v.vendor_id, v.vendor_name, v.vendor_email, v.vendor_phone
-        FROM vendors v
-        JOIN item_vendor_mapping ivm ON v.vendor_id = ivm.vendor_id
+        FROM Vendors v
+        JOIN ItemVendorMap ivm ON v.vendor_id = ivm.vendor_id
         WHERE ivm.item_id = ? AND v.vendor_id != ?
         ORDER BY v.vendor_name
         """
