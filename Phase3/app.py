@@ -1407,14 +1407,11 @@ def display_active_bundles_for_operator(db):
                 duplicates = db.detect_duplicate_projects_in_bundle(bundle.get('bundle_id'))
                 duplicates_reviewed = bundle.get('duplicates_reviewed', 0)
                 
-                if duplicates:
-                    # Show warning header
-                    if not duplicates_reviewed:
-                        st.error(f"⚠️ **{len(duplicates)} DUPLICATE PROJECT(S) DETECTED - REVIEW REQUIRED**")
-                    else:
-                        st.success(f"✅ Duplicates Reviewed ({len(duplicates)} item(s))")
+                if duplicates and not duplicates_reviewed:
+                    # Show warning and edit interface ONLY if duplicates exist AND not yet reviewed
+                    st.error(f"⚠️ **{len(duplicates)} DUPLICATE PROJECT(S) DETECTED - REVIEW REQUIRED**")
                     
-                    # Display each duplicate with edit interface (using containers instead of expanders)
+                    # Display each duplicate with edit interface
                     for idx, dup in enumerate(duplicates):
                         st.markdown(f"**🔍 Duplicate {idx+1}: {dup['item_name']} - Project {dup['project_number']}**")
                         st.warning(f"Multiple users requested this item for the same project")
@@ -1461,14 +1458,17 @@ def display_active_bundles_for_operator(db):
                             st.markdown("---")
                     
                     # Mark as Reviewed button
-                    if not duplicates_reviewed:
-                        st.markdown("---")
-                        if st.button("✅ Mark Duplicates as Reviewed", key=f"mark_reviewed_{bundle.get('bundle_id')}", type="primary"):
-                            if db.mark_bundle_duplicates_reviewed(bundle.get('bundle_id')):
-                                st.success("✅ Duplicates marked as reviewed!")
-                                st.rerun()
-                            else:
-                                st.error("❌ Failed to mark as reviewed")
+                    st.markdown("---")
+                    if st.button("✅ Mark Duplicates as Reviewed", key=f"mark_reviewed_{bundle.get('bundle_id')}", type="primary"):
+                        if db.mark_bundle_duplicates_reviewed(bundle.get('bundle_id')):
+                            st.success("✅ Duplicates marked as reviewed!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to mark as reviewed")
+                
+                elif duplicates and duplicates_reviewed:
+                    # Just show a success message if duplicates were reviewed
+                    st.success(f"✅ Duplicates Reviewed - {len(duplicates)} item(s) were checked")
 
                 # Read-only vendor options for single-item bundles
                 try:
