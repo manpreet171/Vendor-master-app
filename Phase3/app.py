@@ -649,23 +649,26 @@ def display_project_selector(db, key_suffix=""):
             st.warning("⚠️ No projects available. Please contact your administrator.")
             return None, None
         
-        # Build dropdown options: "ProjectNumber - ProjectName"
+        # Build dropdown options: Show only ProjectNumber
         options_dict = {}
         for p in projects:
-            label = f"{p['ProjectNumber']} - {p['ProjectName']}"
-            options_dict[label] = (p['ProjectNumber'], p['ProjectName'], p.get('ProjectType', 'N/A'))
+            options_dict[p['ProjectNumber']] = {
+                'number': p['ProjectNumber'],
+                'name': p['ProjectName'],
+                'type': p.get('ProjectType', 'N/A')
+            }
         
         selected = st.selectbox(
-            "Select Project:",
+            "Select Project Number:",
             ["-- Select a project --"] + list(options_dict.keys()),
             key=f"project_select_{key_suffix}"
         )
         
         if selected and selected != "-- Select a project --":
-            project_num, project_name, project_type = options_dict[selected]
-            # Show confirmation
-            st.success(f"✓ Project: {project_num} - {project_name} ({project_type})")
-            return project_num, project_name
+            project_info = options_dict[selected]
+            # Show confirmation with name and type
+            st.success(f"✓ Project: {project_info['number']} - {project_info['name']} ({project_info['type']})")
+            return project_info['number'], project_info['name']
         
         return None, None
     except Exception as e:

@@ -6,6 +6,77 @@
 
 ## Development Progress Log
 
+### **September 30, 2025 - Project Tracking Integration**
+
+#### **✅ Completed Today:**
+- **Project Selection Per Item**
+  - Integrated project tracking from `ProcoreProjectData` table into the requirements workflow.
+  - Each item in the cart is now mapped to a specific project (ProjectNumber from Procore).
+  - Users can add items from multiple projects in a single cart; project is tracked per-item, not per-cart.
+
+#### **Database Changes:**
+- **requirements_order_items table:**
+  - Added `project_number VARCHAR(50) NULL` column.
+  - Added foreign key constraint linking to `ProcoreProjectData(ProjectNumber)`.
+  - Allows tracking which project each requested item belongs to.
+
+#### **Backend Changes (`Phase3/db_connector.py`):**
+- **New Method:**
+  - `get_all_projects()` - Fetches all projects from ProcoreProjectData (ProjectNumber, ProjectName, ProjectType, ProjectManager, Customer) ordered by ProjectName.
+- **Modified Methods:**
+  - `submit_cart_as_order()` - Now inserts `project_number` for each item in requirements_order_items.
+  - `get_request_items()` - Now retrieves `project_number` alongside item details.
+
+#### **UI Changes (`Phase3/app.py`):**
+- **New Helper Function:**
+  - `display_project_selector(db, key_suffix)` - Reusable project dropdown component.
+    - Shows "ProjectNumber - ProjectName" in dropdown.
+    - Displays confirmation with ProjectType after selection.
+    - Returns `(project_number, project_name)` tuple.
+    - Shows warning if no projects available.
+- **Modified Functions:**
+  - `add_to_cart()` - Now accepts `project_number` and `project_name` parameters; stores them in cart item dict.
+  - Cart duplicate check now considers both `item_id` and `project_number` (same item with different projects = separate cart entries).
+- **BoxHero Items Tab:**
+  - Step 3 renamed to "Select Project and Quantity".
+  - Project selector added before quantity input.
+  - "Add to Cart" button disabled until project is selected.
+  - Shows helpful caption: "⬆️ Please select a project first" when disabled.
+- **Raw Materials Tab:**
+  - Step 4 renamed to "Select Project and Quantity".
+  - Project selector added before quantity input.
+  - Same validation as BoxHero (button disabled without project).
+- **My Cart Tab:**
+  - Now displays project info per item: `📋 Project: {ProjectNumber} - {ProjectName}`.
+  - Project shown between category/SKU line and dimensions.
+- **My Requests Tab:**
+  - Item descriptions now include project info: `| 📋 Project: {ProjectNumber}`.
+  - Visible for all request statuses (Pending, In Progress, Completed).
+
+#### **User Experience Flow:**
+1. User selects item type and name (unchanged).
+2. **NEW:** User selects project from dropdown (required step).
+3. System shows project confirmation with type.
+4. User enters quantity.
+5. User clicks "Add to Cart" (only enabled after project selection).
+6. Item added to cart with project association.
+7. Cart displays project info clearly per item.
+8. On submit, project is stored with each item in the database.
+
+#### **Key Features:**
+- ✅ **Per-Item Project Tracking:** Each item can belong to a different project within the same cart.
+- ✅ **Validation:** Cannot add items without selecting a project (button disabled).
+- ✅ **Visibility:** Project info shown in Cart and My Requests for full traceability.
+- ✅ **Non-Breaking:** Existing flows unchanged; project selection seamlessly integrated.
+- ✅ **Flexible:** Same item can be requested multiple times for different projects.
+
+#### **Next Phase (Pending):**
+- Add project info display in Operator Dashboard:
+  - User Requests view (show project per item).
+  - Active Bundles view (show project breakdown per item in bundles).
+  - Smart Recommendations view (include project context).
+- This will give operators full visibility into which projects need which materials.
+
 ### **September 23, 2025 - Admin User Management, UI Refresh, and Cloud Readiness**
 
 #### **✅ Completed Today:**
