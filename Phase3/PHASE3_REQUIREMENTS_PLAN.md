@@ -511,6 +511,8 @@ Your items are being sourced from 2 vendors:
 - ✅ Enhanced `move_item_to_vendor()` to recalculate from source order items
 - ✅ Ensures duplicate-reviewed quantities persist across bundle moves
 - ✅ Operators never need to review same duplicate twice
+- ✅ Disabled "Report Issue" button for Approved bundles (only shows for Active)
+- ✅ Cleaner workflow: Approved bundles only show "Mark as Completed" button
 
 **Pending for Future:**
 - User dashboard update to show multi-bundle requests (when user interface is built)

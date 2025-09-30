@@ -1515,20 +1515,19 @@ def display_active_bundles_for_operator(db):
                 if req_list:
                     st.write("**From Requests:** " + ", ".join(req_list))
 
-                # Actions
-                action_cols = st.columns(3)
-                with action_cols[0]:
-                    if bundle['status'] == 'Active':
+                # Actions - Dynamic based on status
+                if bundle['status'] == 'Active':
+                    # Active: Show all 3 buttons
+                    action_cols = st.columns(3)
+                    with action_cols[0]:
                         if st.button(f"✅ Approve Bundle", key=f"approve_{bundle['bundle_id']}"):
                             st.session_state[f'approving_bundle_{bundle["bundle_id"]}'] = True
                             st.rerun()
-                with action_cols[1]:
-                    if bundle['status'] in ('Active', 'Approved'):
+                    with action_cols[1]:
                         if st.button(f"⚠️ Report Issue", key=f"report_{bundle['bundle_id']}"):
                             st.session_state[f'reporting_issue_{bundle["bundle_id"]}'] = True
                             st.rerun()
-                with action_cols[2]:
-                    if bundle['status'] in ('Approved', 'Active'):
+                    with action_cols[2]:
                         # Check if duplicates exist and haven't been reviewed
                         has_unreviewed_duplicates = duplicates and not duplicates_reviewed
                         
@@ -1540,6 +1539,19 @@ def display_active_bundles_for_operator(db):
                                 mark_bundle_completed(db, bundle.get('bundle_id'))
                                 st.success("Bundle marked as completed")
                                 st.rerun()
+                
+                elif bundle['status'] == 'Approved':
+                    # Approved: Only show completion button (no Report Issue)
+                    has_unreviewed_duplicates = duplicates and not duplicates_reviewed
+                    
+                    if has_unreviewed_duplicates:
+                        st.button(f"🏁 Mark as Completed", key=f"complete_{bundle['bundle_id']}", disabled=True)
+                        st.caption("⚠️ Review duplicates first")
+                    else:
+                        if st.button(f"🏁 Mark as Completed", key=f"complete_{bundle['bundle_id']}"):
+                            mark_bundle_completed(db, bundle.get('bundle_id'))
+                            st.success("Bundle marked as completed")
+                            st.rerun()
                 
                 # Approval Checklist Flow
                 if st.session_state.get(f'approving_bundle_{bundle["bundle_id"]}'):
