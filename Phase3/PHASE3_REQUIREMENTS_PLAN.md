@@ -504,9 +504,130 @@ Your items are being sourced from 2 vendors:
 - ✅ Smart validation: Blocks approval if duplicates unreviewed
 - ✅ Clear feedback on blocking issues
 - ✅ Professional approval workflow with accountability
+- ✅ Fixed nested expander issue in approval checklist
+
+**✅ COMPLETED (September 30, 2025 - Night):**
+- ✅ Fixed duplicate persistence issue when moving items between bundles
+- ✅ Enhanced `move_item_to_vendor()` to recalculate from source order items
+- ✅ Ensures duplicate-reviewed quantities persist across bundle moves
+- ✅ Operators never need to review same duplicate twice
 
 **Pending for Future:**
 - User dashboard update to show multi-bundle requests (when user interface is built)
+
+---
+
+## **September 30, 2025 (Night) - Duplicate Persistence Fix for Bundle Moves**
+
+### **Problem Statement:**
+
+When operator resolves duplicates in a bundle, then moves that item to a different vendor, the duplicate appears again in the new bundle with the OLD quantities (before resolution).
+
+**Example:**
+```
+Step 1: Bundle 1 - S&F Supplies
+  • ACRYLITE (9 pcs)
+     - User A: 4 pcs (📋 25-1559)
+     - User B: 5 pcs (📋 25-1559)  ← DUPLICATE
+
+Operator reviews duplicate, changes User B from 5 → 4 pcs
+Total becomes 8 pcs
+Marks as reviewed ✅
+
+Step 2: S&F doesn't have ACRYLITE, operator moves to Canal
+
+Bundle 2 - Canal Plastics (NEW)
+  • ACRYLITE (9 pcs)  ← OLD quantity!
+     - User A: 4 pcs
+     - User B: 5 pcs  ← OLD quantity, not 4!
+
+Duplicate appears again! Operator's work lost!
+```
+
+### **Root Cause:**
+
+The `move_item_to_vendor()` function was copying `user_breakdown` JSON from the bundle table, which contained the original (pre-review) quantities. When operator updated duplicates, it updated `requirements_order_items` (source data) but the bundle's cached `user_breakdown` still had old values.
+
+### **Solution: Recalculate from Source**
+
+**Changed:** Instead of copying bundle's `user_breakdown`, recalculate fresh from source `requirements_order_items`.
+
+**Before (Incorrect):**
+```python
+# Get item data from bundle (has old quantities)
+item_query = """
+SELECT item_id, total_quantity, user_breakdown
+FROM requirements_bundle_items
+WHERE bundle_id = ? AND item_id = ?
+"""
+item_data = execute_query(item_query)  # Uses cached values
+```
+
+**After (Correct):**
+```python
+# Recalculate from SOURCE order items
+recalc_query = """
+SELECT roi.item_id, ro.user_id, roi.quantity
+FROM requirements_bundle_mapping rbm
+JOIN requirements_orders ro ON rbm.req_id = ro.req_id
+JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+WHERE rbm.bundle_id = ? AND roi.item_id = ?
+"""
+results = execute_query(recalc_query)
+
+# Build fresh user_breakdown from source data
+user_breakdown = {}
+total_quantity = 0
+for row in results:
+    user_breakdown[str(row['user_id'])] = row['quantity']
+    total_quantity += row['quantity']
+
+item_data = {
+    'item_id': item_id,
+    'total_quantity': total_quantity,  # Reflects updated quantities
+    'user_breakdown': json.dumps(user_breakdown)
+}
+```
+
+### **Result:**
+
+**Now when item moves:**
+```
+Bundle 1 - S&F (after duplicate review)
+  • ACRYLITE (8 pcs)
+     - User A: 4 pcs
+     - User B: 4 pcs  ← Updated
+
+Move to Canal →
+
+Bundle 2 - Canal (NEW)
+  • ACRYLITE (8 pcs)  ← Correct total!
+     - User A: 4 pcs
+     - User B: 4 pcs  ← Correct quantity!
+
+No duplicate detected! ✅
+Operator's work preserved! ✅
+```
+
+### **Benefits:**
+
+- ✅ **Duplicate reviews persist** across bundle moves
+- ✅ **Source of truth** is always `requirements_order_items`
+- ✅ **No duplicate work** for operators
+- ✅ **Accurate quantities** in all bundles
+- ✅ **Data consistency** maintained
+
+### **Technical Details:**
+
+**Modified Function:** `move_item_to_vendor()` in `db_connector.py`
+
+**Key Change:** Lines 381-411 now query source order items and rebuild user_breakdown fresh, ensuring latest quantities are used.
+
+**Why This Works:**
+- When operator updates duplicate quantities, `update_bundle_item_user_quantity()` updates `requirements_order_items`
+- When moving item, we now read from `requirements_order_items` (not bundle cache)
+- New bundle gets the post-review quantities automatically
+- No duplicate appears because quantities now match
 
 ---
 

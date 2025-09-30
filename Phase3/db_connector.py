@@ -378,18 +378,37 @@ class DatabaseConnector:
             import json
             from datetime import datetime
             
-            # Step 1: Get item data from current bundle
-            item_query = """
-            SELECT item_id, total_quantity, user_breakdown
-            FROM requirements_bundle_items
-            WHERE bundle_id = ? AND item_id = ?
+            # Step 1: Recalculate item data from SOURCE order items (not bundle)
+            # This ensures we get the latest quantities after duplicate reviews
+            recalc_query = """
+            SELECT 
+                roi.item_id,
+                ro.user_id,
+                roi.quantity
+            FROM requirements_bundle_mapping rbm
+            JOIN requirements_orders ro ON rbm.req_id = ro.req_id
+            JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+            WHERE rbm.bundle_id = ? AND roi.item_id = ?
             """
-            item_result = self.execute_query(item_query, (current_bundle_id, item_id))
+            recalc_results = self.execute_query(recalc_query, (current_bundle_id, item_id))
             
-            if not item_result:
+            if not recalc_results:
                 return {'success': False, 'error': 'Item not found in bundle'}
             
-            item_data = item_result[0]
+            # Build fresh user_breakdown from source data
+            user_breakdown = {}
+            total_quantity = 0
+            for row in recalc_results:
+                user_id = str(row['user_id'])
+                quantity = row['quantity']
+                user_breakdown[user_id] = quantity
+                total_quantity += quantity
+            
+            item_data = {
+                'item_id': item_id,
+                'total_quantity': total_quantity,
+                'user_breakdown': json.dumps(user_breakdown)
+            }
             
             # Step 2: Check if vendor already has a bundle
             existing_bundle = self.get_active_bundle_for_vendor(new_vendor_id)
