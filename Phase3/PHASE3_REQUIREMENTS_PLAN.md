@@ -93,6 +93,98 @@
 - ✅ **Traceability:** Can track material usage back to specific projects throughout the procurement cycle.
 - ✅ **Multi-Project Awareness:** Clearly shows when items span multiple projects in a single bundle.
 
+#### **Duplicate Project Detection & Review System (Completed Same Day):**
+
+**Problem Statement:**
+- Multiple users may request the same item for the same project, creating potential duplicates in bundles.
+- Operators need to review and resolve these duplicates before completing orders.
+
+**Solution Implemented:**
+- **Automatic Detection:** System detects when different users request same item for same project within a bundle.
+- **Visual Warnings:** Red banner alerts operators to duplicates requiring review.
+- **Inline Editing:** Operators can adjust quantities or remove user contributions directly.
+- **Mandatory Review:** "Mark as Completed" button disabled until duplicates are reviewed.
+- **Flexible Resolution:** Operators can keep both, adjust quantities, or remove duplicates.
+
+**Database Changes:**
+- Added `duplicates_reviewed BIT DEFAULT 0` to `requirements_bundles` table.
+- Tracks whether operator has reviewed duplicate items in each bundle.
+
+**Backend Implementation (`db_connector.py`):**
+- **New Methods:**
+  - `detect_duplicate_projects_in_bundle(bundle_id)` - Queries and groups items by (item_id, project_number), returns duplicates where multiple users exist.
+  - `update_bundle_item_user_quantity(bundle_id, item_id, user_id, new_quantity)` - Updates source order items, recalculates bundle totals, handles zero quantities.
+  - `mark_bundle_duplicates_reviewed(bundle_id)` - Sets duplicates_reviewed flag to 1.
+- **Bug Fix in Bundling Engine (`bundling_engine.py`):**
+  - Fixed `requirements_bundle_mapping` to only link requests containing items in each specific bundle.
+  - Previously, all bundles were incorrectly mapped to all requests, causing duplicates to appear in every bundle.
+  - Now correctly filters: `bundle_request_ids = [req_id for req in pending_requests if req['item_id'] in bundle_item_ids]`
+
+**UI Implementation (`app.py` - Active Bundles View):**
+- **Detection Display:**
+  - Shows `⚠️ X DUPLICATE PROJECT(S) DETECTED - REVIEW REQUIRED` banner only in affected bundles.
+  - Lists each duplicate with item name and project number.
+  - After review: Shows `✅ Duplicates Reviewed - X item(s) were checked`.
+- **Edit Interface:**
+  - Per-user quantity input with real-time validation.
+  - "Update" button appears when quantity changes.
+  - Option to set quantity to 0 to remove user's contribution.
+  - Success/error feedback on updates.
+- **Review Workflow:**
+  - "Mark Duplicates as Reviewed" button (primary action).
+  - After marking reviewed, duplicate section collapses to success message.
+  - "Mark as Completed" button disabled with caption "⚠️ Review duplicates first" until reviewed.
+- **Non-Breaking Design:**
+  - Uses flat layout (no nested expanders) for Streamlit compatibility.
+  - Only displays in bundles with actual duplicates.
+  - Bundles without duplicates show no duplicate section.
+
+**Operator Workflow:**
+1. Open bundle in Active Bundles tab.
+2. If duplicates exist, see red warning banner.
+3. Review each duplicate item showing multiple users.
+4. **Decision Options:**
+   - Keep both (acknowledge and mark reviewed).
+   - Adjust quantity for one or both users.
+   - Remove one user entirely (set to 0).
+5. Click "Update" to save changes (page refreshes with new totals).
+6. Click "Mark Duplicates as Reviewed" when satisfied.
+7. "Mark as Completed" button becomes enabled.
+
+**Key Features:**
+- ✅ **Automatic Detection:** No manual checking required.
+- ✅ **Bundle-Specific:** Only shows in bundles with duplicates.
+- ✅ **Real-Time Updates:** Bundle totals recalculate immediately after edits.
+- ✅ **Mandatory Review:** Prevents accidental completion without review.
+- ✅ **Flexible Resolution:** Operator decides best approach per case.
+- ✅ **Data Integrity:** Updates source order items, maintains consistency across tables.
+- ✅ **Non-Destructive:** Can keep both requests if intentional.
+
+**Example Scenario:**
+```
+Bundle 1 - S&F Supplies
+  • ACRYLITE P99 — 9 pieces
+     - User 1: 4 pcs (📋 25-1559)
+     - User 2: 5 pcs (📋 25-1559)  ← Same project!
+
+⚠️ 1 DUPLICATE DETECTED
+🔍 Duplicate: ACRYLITE P99 - Project 25-1559
+   User 1: [4] [Update]
+   User 2: [5] [Update]
+
+Operator changes User 2 to 4 → Total becomes 8 pieces
+[✅ Mark Duplicates as Reviewed]
+✅ Duplicates Reviewed
+[🏁 Mark as Completed] ← Now enabled
+```
+
+**Testing Results:**
+- ✅ Duplicates only appear in correct bundles (not all bundles).
+- ✅ Quantity updates work correctly and recalculate totals.
+- ✅ Zero quantity removes user from bundle.
+- ✅ Review flag persists and enables completion.
+- ✅ Bundle items display reflects updated quantities immediately.
+
 ### **September 23, 2025 - Admin User Management, UI Refresh, and Cloud Readiness**
 
 #### **✅ Completed Today:**
