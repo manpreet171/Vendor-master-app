@@ -159,6 +159,17 @@ class DatabaseConnector:
         """
         return self.execute_query(query, (item_id,))
     
+    def get_bundle_item_project_breakdown(self, bundle_id, item_id):
+        """Get project breakdown for a specific item in a bundle"""
+        query = """
+        SELECT roi.project_number, roi.quantity, ro.user_id
+        FROM requirements_bundle_mapping rbm
+        JOIN requirements_orders ro ON rbm.req_id = ro.req_id
+        JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+        WHERE rbm.bundle_id = ? AND roi.item_id = ?
+        """
+        return self.execute_query(query, (bundle_id, item_id))
+    
     def get_all_projects(self):
         """Get all projects from ProcoreProjectData for dropdown selection"""
         query = """
@@ -319,7 +330,8 @@ class DatabaseConnector:
         """Get all pending requests for bundling"""
         query = """
         SELECT ro.req_id, ro.req_number, ro.user_id, ro.req_date, ro.total_items,
-               roi.item_id, roi.quantity, i.item_name, i.sku, i.source_sheet
+               roi.item_id, roi.quantity, roi.project_number, 
+               i.item_name, i.sku, i.source_sheet
         FROM requirements_orders ro
         JOIN requirements_order_items roi ON ro.req_id = roi.req_id
         JOIN items i ON roi.item_id = i.item_id

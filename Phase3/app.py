@@ -1055,7 +1055,8 @@ def display_user_requests_for_operator(db):
             requests_by_user[user_key]['items'].append({
                 'item_name': req['item_name'],
                 'quantity': req['quantity'],
-                'source_sheet': req['source_sheet']
+                'source_sheet': req['source_sheet'],
+                'project_number': req.get('project_number')
             })
             requests_by_user[user_key]['total_pieces'] += req['quantity']
         
@@ -1069,13 +1070,18 @@ def display_user_requests_for_operator(db):
                 
                 # Create a clean table of items
                 for i, item in enumerate(req_data['items'], 1):
-                    col1, col2, col3 = st.columns([3, 1, 1])
+                    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
                     with col1:
                         st.write(f"{i}. **{item['item_name']}**")
                     with col2:
                         st.write(f"**{item['quantity']} pieces**")
                     with col3:
                         st.write(f"*{item['source_sheet']}*")
+                    with col4:
+                        if item.get('project_number'):
+                            st.write(f"📋 {item['project_number']}")
+                        else:
+                            st.write("—")
         
         st.markdown("---")
         st.info("💡 **Next Step:** Go to 'Smart Recommendations' tab to see how to bundle these efficiently!")
@@ -1369,15 +1375,30 @@ def display_active_bundles_for_operator(db):
                                 dims.append(sval)
                         dim_txt = f" ({' x '.join(dims)})" if dims else ""
                         st.write(f"• **{it['item_name']}**{dim_txt} — {it['total_quantity']} pieces")
-                        # Show per-user breakdown if available
+                        # Show per-user breakdown with project info
                         try:
                             breakdown = json.loads(it.get('user_breakdown') or '{}') if isinstance(it.get('user_breakdown'), str) else it.get('user_breakdown') or {}
                         except Exception:
                             breakdown = {}
                         if breakdown:
+                            # Get project breakdown for this item
+                            project_breakdown = db.get_bundle_item_project_breakdown(bundle.get('bundle_id'), it['item_id'])
+                            # Create a map of (user_id, project_number) -> quantity
+                            project_map = {}
+                            for pb in project_breakdown or []:
+                                key = (pb['user_id'], pb.get('project_number'))
+                                project_map[key] = project_map.get(key, 0) + pb['quantity']
+                            
+                            # Display breakdown with project info
                             for uid, qty in breakdown.items():
                                 uname = user_name_map.get(int(uid), f"User {uid}") if str(uid).isdigit() else f"User {uid}"
-                                st.write(f"   - {uname}: {qty} pcs")
+                                # Find projects for this user
+                                user_projects = [k[1] for k in project_map.keys() if k[0] == int(uid) and k[1]]
+                                if user_projects:
+                                    projects_str = ", ".join(set(user_projects))
+                                    st.write(f"   - {uname}: {qty} pcs (📋 {projects_str})")
+                                else:
+                                    st.write(f"   - {uname}: {qty} pcs")
                 else:
                     st.write("No items found for this bundle")
 
