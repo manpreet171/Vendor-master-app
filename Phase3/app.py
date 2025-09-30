@@ -1414,48 +1414,51 @@ def display_active_bundles_for_operator(db):
                     else:
                         st.success(f"✅ Duplicates Reviewed ({len(duplicates)} item(s))")
                     
-                    # Display each duplicate with edit interface
-                    for dup in duplicates:
-                        with st.expander(f"🔍 Duplicate: {dup['item_name']} - Project {dup['project_number']}", expanded=not duplicates_reviewed):
-                            st.warning(f"Multiple users requested **{dup['item_name']}** for **Project {dup['project_number']}**")
+                    # Display each duplicate with edit interface (using containers instead of expanders)
+                    for idx, dup in enumerate(duplicates):
+                        st.markdown(f"**🔍 Duplicate {idx+1}: {dup['item_name']} - Project {dup['project_number']}**")
+                        st.warning(f"Multiple users requested this item for the same project")
+                        
+                        # Show each user's contribution with edit capability
+                        st.write("**User Contributions:**")
+                        for user_data in dup['users']:
+                            user_id = user_data['user_id']
+                            current_qty = user_data['quantity']
+                            uname = user_name_map.get(user_id, f"User {user_id}")
                             
-                            # Show each user's contribution with edit capability
-                            st.write("**User Contributions:**")
-                            for user_data in dup['users']:
-                                user_id = user_data['user_id']
-                                current_qty = user_data['quantity']
-                                uname = user_name_map.get(user_id, f"User {user_id}")
-                                
-                                col_name, col_qty, col_btn = st.columns([2, 1, 1])
-                                with col_name:
-                                    st.write(f"👤 **{uname}**")
-                                with col_qty:
-                                    new_qty = st.number_input(
-                                        "Quantity",
-                                        min_value=0,
-                                        value=current_qty,
-                                        key=f"dup_qty_{bundle.get('bundle_id')}_{dup['item_id']}_{user_id}",
-                                        help="Set to 0 to remove this user's contribution"
-                                    )
-                                with col_btn:
-                                    if new_qty != current_qty:
-                                        if st.button("Update", key=f"dup_update_{bundle.get('bundle_id')}_{dup['item_id']}_{user_id}"):
-                                            result = db.update_bundle_item_user_quantity(
-                                                bundle.get('bundle_id'),
-                                                dup['item_id'],
-                                                user_id,
-                                                new_qty
-                                            )
-                                            if result['success']:
-                                                if new_qty == 0:
-                                                    st.success(f"✅ Removed {uname}'s contribution")
-                                                else:
-                                                    st.success(f"✅ Updated {uname}: {result['old_quantity']} → {new_qty} pcs")
-                                                st.rerun()
+                            col_name, col_qty, col_btn = st.columns([2, 1, 1])
+                            with col_name:
+                                st.write(f"👤 **{uname}**")
+                            with col_qty:
+                                new_qty = st.number_input(
+                                    "Quantity",
+                                    min_value=0,
+                                    value=current_qty,
+                                    key=f"dup_qty_{bundle.get('bundle_id')}_{dup['item_id']}_{user_id}",
+                                    help="Set to 0 to remove this user's contribution"
+                                )
+                            with col_btn:
+                                if new_qty != current_qty:
+                                    if st.button("Update", key=f"dup_update_{bundle.get('bundle_id')}_{dup['item_id']}_{user_id}"):
+                                        result = db.update_bundle_item_user_quantity(
+                                            bundle.get('bundle_id'),
+                                            dup['item_id'],
+                                            user_id,
+                                            new_qty
+                                        )
+                                        if result['success']:
+                                            if new_qty == 0:
+                                                st.success(f"✅ Removed {uname}'s contribution")
                                             else:
-                                                st.error(f"❌ Update failed: {result.get('error')}")
-                            
-                            st.info("💡 **Options:** Adjust quantities, remove a user (set to 0), or keep both as-is.")
+                                                st.success(f"✅ Updated {uname}: {result['old_quantity']} → {new_qty} pcs")
+                                            st.rerun()
+                                        else:
+                                            st.error(f"❌ Update failed: {result.get('error')}")
+                        
+                        st.caption("💡 **Options:** Adjust quantities, remove a user (set to 0), or keep both as-is.")
+                        
+                        if idx < len(duplicates) - 1:
+                            st.markdown("---")
                     
                     # Mark as Reviewed button
                     if not duplicates_reviewed:
