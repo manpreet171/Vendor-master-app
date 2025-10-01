@@ -431,6 +431,7 @@ def mark_bundle_completed(db, bundle_id):
             WHERE req_id IN ({placeholders})
             """
             db.execute_insert(requests_query, req_ids)
+            
         
         db.conn.commit()
         return True

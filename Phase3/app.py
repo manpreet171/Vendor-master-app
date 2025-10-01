@@ -1093,7 +1093,7 @@ def display_operator_dashboard(db):
 
     # Role-based tabs: Master sees admin tools; Operator/Admin see only operational tabs
     if role_val == 'master':
-        tabs = st.tabs(["📋 User Requests", "🎯 Smart Recommendations", "📦 Active Bundles", "🤖 Manual Bundling", "🧹 System Reset", "👤 User Management"])
+        tabs = st.tabs(["📋 User Requests", "🎯 Smart Recommendations", "📦 Active Bundles", "📊 Analytics", "🤖 Manual Bundling", "🧹 System Reset", "👤 User Management"])
         with tabs[0]:
             display_user_requests_for_operator(db)
         with tabs[1]:
@@ -1101,19 +1101,23 @@ def display_operator_dashboard(db):
         with tabs[2]:
             display_active_bundles_for_operator(db)
         with tabs[3]:
-            display_manual_bundling(db)
+            display_analytics_dashboard(db)
         with tabs[4]:
-            display_system_reset(db)
+            display_manual_bundling(db)
         with tabs[5]:
+            display_system_reset(db)
+        with tabs[6]:
             display_user_management_admin(db)
     else:
-        tabs = st.tabs(["📋 User Requests", "🎯 Smart Recommendations", "📦 Active Bundles"])
+        tabs = st.tabs(["📋 User Requests", "🎯 Smart Recommendations", "📦 Active Bundles", "📊 Analytics"])
         with tabs[0]:
             display_user_requests_for_operator(db)
         with tabs[1]:
             display_smart_recommendations(db)
         with tabs[2]:
             display_active_bundles_for_operator(db)
+        with tabs[3]:
+            display_analytics_dashboard(db)
 
 def display_user_requests_for_operator(db):
     """Show all user requests in a clean, operator-friendly format"""
@@ -1955,6 +1959,198 @@ def display_order_placement_form(db, bundle):
             if f'item_costs_{bundle_id}' in st.session_state:
                 del st.session_state[f'item_costs_{bundle_id}']
             st.rerun()
+
+def display_analytics_dashboard(db):
+    """Analytics Dashboard with simple, meaningful insights"""
+    st.header("📊 Analytics Dashboard")
+    st.caption("Understand your procurement patterns and optimize operations")
+    
+    try:
+        # Date range selector
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.write("**Showing data from the last 30 days**")
+        with col2:
+            if st.button("🔄 Refresh Data"):
+                st.rerun()
+        
+        st.markdown("---")
+        
+        # Analytics Section 1: Request Status Overview
+        st.subheader("📋 Request Status Overview")
+        st.caption("💡 **What this shows:** Current state of all requests - helps you see what needs attention")
+        
+        status_query = """
+        SELECT status, COUNT(*) as count
+        FROM requirements_orders
+        WHERE created_at >= DATEADD(day, -30, GETDATE())
+        GROUP BY status
+        ORDER BY count DESC
+        """
+        status_data = db.execute_query(status_query)
+        
+        if status_data:
+            cols = st.columns(len(status_data))
+            for idx, row in enumerate(status_data):
+                with cols[idx]:
+                    icon = "🟡" if row['status'] == 'Pending' else "🔵" if row['status'] == 'In Progress' else "✅" if row['status'] == 'Ordered' else "🎉"
+                    st.metric(f"{icon} {row['status']}", row['count'])
+            
+            st.caption("**💬 What to do:** If too many 'Pending' requests, process them faster. If too many 'In Progress', check for bottlenecks.")
+        else:
+            st.info("No request data available for the last 30 days")
+        
+        st.markdown("---")
+        
+        # Analytics Section 2: Top Requested Items
+        st.subheader("📦 Top Requested Items")
+        st.caption("💡 **What this shows:** Most popular items - consider keeping these in stock or negotiating bulk prices")
+        
+        top_items_query = """
+        SELECT TOP 10
+            i.item_name,
+            COUNT(DISTINCT roi.req_id) as request_count,
+            SUM(roi.quantity) as total_quantity
+        FROM requirements_order_items roi
+        JOIN Items i ON roi.item_id = i.item_id
+        JOIN requirements_orders ro ON roi.req_id = ro.req_id
+        WHERE ro.created_at >= DATEADD(day, -30, GETDATE())
+        GROUP BY i.item_name
+        ORDER BY request_count DESC
+        """
+        top_items = db.execute_query(top_items_query)
+        
+        if top_items:
+            for idx, item in enumerate(top_items, 1):
+                col1, col2, col3 = st.columns([3, 1, 1])
+                with col1:
+                    st.write(f"**{idx}. {item['item_name']}**")
+                with col2:
+                    st.write(f"{item['request_count']} requests")
+                with col3:
+                    st.write(f"{item['total_quantity']} pcs")
+            
+            st.caption(f"**💬 Action:** Top item '{top_items[0]['item_name']}' was requested {top_items[0]['request_count']} times. Consider bulk ordering or keeping in stock.")
+        else:
+            st.info("No item data available")
+        
+        st.markdown("---")
+        
+        # Analytics Section 3: Most Used Vendors
+        st.subheader("🏪 Most Used Vendors")
+        st.caption("💡 **What this shows:** Which vendors you order from most - use this for price negotiations")
+        
+        vendor_query = """
+        SELECT TOP 10
+            v.vendor_name,
+            COUNT(*) as order_count,
+            CAST(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM requirements_bundles WHERE status IN ('Ordered', 'Completed')) AS INT) as percentage
+        FROM requirements_bundles b
+        JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
+        WHERE b.status IN ('Ordered', 'Completed')
+        GROUP BY v.vendor_name
+        ORDER BY order_count DESC
+        """
+        vendor_data = db.execute_query(vendor_query)
+        
+        if vendor_data:
+            for idx, vendor in enumerate(vendor_data, 1):
+                col1, col2, col3 = st.columns([3, 1, 1])
+                with col1:
+                    st.write(f"**{idx}. {vendor['vendor_name']}**")
+                with col2:
+                    st.write(f"{vendor['order_count']} orders")
+                with col3:
+                    st.write(f"{vendor['percentage']}%")
+            
+            st.caption(f"**💬 Action:** '{vendor_data[0]['vendor_name']}' gets {vendor_data[0]['percentage']}% of your orders. Negotiate volume discounts!")
+        else:
+            st.info("No vendor data available")
+        
+        st.markdown("---")
+        
+        # Analytics Section 4: Items by Vendor
+        st.subheader("📋 Items by Vendor")
+        st.caption("💡 **What this shows:** What each vendor supplies most - helps find cheaper alternatives")
+        
+        # Vendor selector
+        if vendor_data:
+            selected_vendor = st.selectbox(
+                "Select a vendor to see their most supplied items:",
+                [v['vendor_name'] for v in vendor_data]
+            )
+            
+            items_by_vendor_query = """
+            SELECT TOP 5
+                i.item_name,
+                COUNT(*) as times_ordered,
+                SUM(bi.total_quantity) as total_pieces
+            FROM requirements_bundle_items bi
+            JOIN requirements_bundles b ON bi.bundle_id = b.bundle_id
+            JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
+            JOIN Items i ON bi.item_id = i.item_id
+            WHERE b.status IN ('Ordered', 'Completed')
+                AND v.vendor_name = ?
+            GROUP BY i.item_name
+            ORDER BY times_ordered DESC
+            """
+            vendor_items = db.execute_query(items_by_vendor_query, (selected_vendor,))
+            
+            if vendor_items:
+                st.write(f"**Top items from {selected_vendor}:**")
+                for idx, item in enumerate(vendor_items, 1):
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    with col1:
+                        st.write(f"{idx}. {item['item_name']}")
+                    with col2:
+                        st.write(f"{item['times_ordered']}× ordered")
+                    with col3:
+                        st.write(f"{item['total_pieces']} pcs")
+                
+                st.caption(f"**💬 Action:** Check if other vendors offer '{vendor_items[0]['item_name']}' at better prices.")
+            else:
+                st.info(f"No items found for {selected_vendor}")
+        
+        st.markdown("---")
+        
+        # Analytics Section 5: Recent Cost Updates
+        st.subheader("💰 Recent Cost Updates")
+        st.caption("💡 **What this shows:** Latest price changes - monitor for price increases")
+        
+        cost_query = """
+        SELECT TOP 10
+            i.item_name,
+            v.vendor_name,
+            ivm.cost,
+            ivm.last_cost_update
+        FROM ItemVendorMap ivm
+        JOIN Items i ON ivm.item_id = i.item_id
+        JOIN Vendors v ON ivm.vendor_id = v.vendor_id
+        WHERE ivm.last_cost_update IS NOT NULL
+        ORDER BY ivm.last_cost_update DESC
+        """
+        cost_data = db.execute_query(cost_query)
+        
+        if cost_data:
+            for item in cost_data:
+                col1, col2, col3 = st.columns([3, 2, 1])
+                with col1:
+                    st.write(f"**{item['item_name']}**")
+                with col2:
+                    st.write(f"{item['vendor_name']}")
+                with col3:
+                    update_date = item['last_cost_update'].strftime('%b %d') if hasattr(item['last_cost_update'], 'strftime') else str(item['last_cost_update'])[:10]
+                    st.write(f"${item['cost']:.2f}")
+                st.caption(f"   Updated: {update_date}")
+            
+            st.caption("**💬 Action:** If prices increased, check alternative vendors for better rates.")
+        else:
+            st.info("No cost data available")
+        
+    except Exception as e:
+        st.error(f"Error loading analytics: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
 
 def display_user_interface(db):
     """Regular user interface for non-operator users"""
