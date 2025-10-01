@@ -570,6 +570,121 @@ class DatabaseConnector:
             traceback.print_exc()
             return {'success': False, 'error': str(e)}
     
+    # ========== Order Placement Functions ==========
+    
+    def get_bundle_item_costs(self, bundle_id):
+        """Get current costs for all items in bundle from ItemVendorMap"""
+        query = """
+        SELECT 
+            bi.item_id,
+            i.item_name,
+            bi.total_quantity,
+            ivm.cost,
+            ivm.last_cost_update,
+            v.vendor_id
+        FROM requirements_bundle_items bi
+        JOIN Items i ON bi.item_id = i.item_id
+        JOIN requirements_bundles b ON bi.bundle_id = b.bundle_id
+        JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
+        LEFT JOIN ItemVendorMap ivm ON bi.item_id = ivm.item_id AND v.vendor_id = ivm.vendor_id
+        WHERE bi.bundle_id = ?
+        ORDER BY i.item_name
+        """
+        return self.execute_query(query, (bundle_id,))
+    
+    def save_order_placement(self, bundle_id, po_number, item_costs):
+        """
+        Save order placement: PO number and update item costs
+        item_costs: dict {item_id: cost}
+        Returns: {'success': bool, 'message': str}
+        """
+        try:
+            from datetime import datetime
+            
+            # Step 1: Get vendor_id from bundle
+            vendor_query = """
+            SELECT recommended_vendor_id 
+            FROM requirements_bundles 
+            WHERE bundle_id = ?
+            """
+            vendor_result = self.execute_query(vendor_query, (bundle_id,))
+            
+            if not vendor_result:
+                return {'success': False, 'error': 'Bundle not found'}
+            
+            vendor_id = vendor_result[0]['recommended_vendor_id']
+            
+            # Step 2: Update bundle with PO info and status
+            update_bundle_query = """
+            UPDATE requirements_bundles
+            SET po_number = ?,
+                po_date = ?,
+                status = 'Ordered'
+            WHERE bundle_id = ?
+            """
+            self.execute_insert(update_bundle_query, (po_number, datetime.now(), bundle_id))
+            
+            # Step 3: Update costs in ItemVendorMap
+            for item_id, cost in item_costs.items():
+                # Check if mapping exists
+                check_query = """
+                SELECT map_id FROM ItemVendorMap 
+                WHERE item_id = ? AND vendor_id = ?
+                """
+                existing = self.execute_query(check_query, (item_id, vendor_id))
+                
+                if existing:
+                    # Update existing
+                    update_cost_query = """
+                    UPDATE ItemVendorMap
+                    SET cost = ?,
+                        last_cost_update = ?
+                    WHERE item_id = ? AND vendor_id = ?
+                    """
+                    self.execute_insert(update_cost_query, (cost, datetime.now(), item_id, vendor_id))
+                else:
+                    # Insert new mapping
+                    insert_cost_query = """
+                    INSERT INTO ItemVendorMap (item_id, vendor_id, cost, last_cost_update)
+                    VALUES (?, ?, ?, ?)
+                    """
+                    self.execute_insert(insert_cost_query, (item_id, vendor_id, cost, datetime.now()))
+            
+            self.conn.commit()
+            
+            return {
+                'success': True,
+                'message': f'Order placed successfully with PO# {po_number}'
+            }
+            
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            print(f"ERROR in save_order_placement: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'error': str(e)}
+    
+    def get_order_details(self, bundle_id):
+        """Get order details (PO number, date, costs) for a bundle"""
+        query = """
+        SELECT 
+            b.po_number,
+            b.po_date,
+            bi.item_id,
+            i.item_name,
+            bi.total_quantity,
+            ivm.cost,
+            ivm.last_cost_update
+        FROM requirements_bundles b
+        JOIN requirements_bundle_items bi ON b.bundle_id = bi.bundle_id
+        JOIN Items i ON bi.item_id = i.item_id
+        LEFT JOIN ItemVendorMap ivm ON bi.item_id = ivm.item_id AND b.recommended_vendor_id = ivm.vendor_id
+        WHERE b.bundle_id = ?
+        ORDER BY i.item_name
+        """
+        return self.execute_query(query, (bundle_id,))
+    
     def get_all_projects(self):
         """Get all projects from ProcoreProjectData for dropdown selection"""
         query = """

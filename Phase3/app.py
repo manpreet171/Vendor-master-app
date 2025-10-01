@@ -1360,11 +1360,32 @@ def display_active_bundles_for_operator(db):
                     st.write(f"**Pieces:** {bundle.get('total_quantity', 'N/A')}")
                 with col3:
                     st.write(f"**Status:** {get_status_badge(bundle['status'])}")
+                
+                # Show PO details if Ordered
+                if bundle['status'] == 'Ordered' and bundle.get('po_number'):
+                    st.markdown("---")
+                    st.info("📦 **Order Details**")
+                    po_col1, po_col2 = st.columns(2)
+                    with po_col1:
+                        st.write(f"**PO Number:** {bundle['po_number']}")
+                    with po_col2:
+                        if bundle.get('po_date'):
+                            po_date = bundle['po_date'].strftime('%Y-%m-%d') if hasattr(bundle['po_date'], 'strftime') else str(bundle['po_date'])[:10]
+                            st.write(f"**Order Date:** {po_date}")
 
                 st.markdown("---")
                 st.write("**Items in this bundle:**")
                 # Use batched items
                 items = items_by_bundle.get(bundle.get('bundle_id'), [])
+                
+                # Get costs if Ordered status
+                item_costs_map = {}
+                if bundle['status'] == 'Ordered':
+                    order_details = db.get_order_details(bundle.get('bundle_id'))
+                    for detail in order_details or []:
+                        if detail.get('cost'):
+                            item_costs_map[detail['item_id']] = detail['cost']
+                
                 if items:
                     for it in items:
                         # Build dimension text if available
@@ -1374,7 +1395,14 @@ def display_active_bundles_for_operator(db):
                             if sval and sval.lower() not in ("n/a", "none", "null"):
                                 dims.append(sval)
                         dim_txt = f" ({' x '.join(dims)})" if dims else ""
-                        st.write(f"• **{it['item_name']}**{dim_txt} — {it['total_quantity']} pieces")
+                        
+                        # Show cost if Ordered
+                        cost_txt = ""
+                        if bundle['status'] == 'Ordered' and it['item_id'] in item_costs_map:
+                            cost = item_costs_map[it['item_id']]
+                            cost_txt = f" @ ${cost:.2f}/pc"
+                        
+                        st.write(f"• **{it['item_name']}**{dim_txt} — {it['total_quantity']} pieces{cost_txt}")
                         # Show per-user breakdown with project info
                         try:
                             breakdown = json.loads(it.get('user_breakdown') or '{}') if isinstance(it.get('user_breakdown'), str) else it.get('user_breakdown') or {}
@@ -1541,17 +1569,22 @@ def display_active_bundles_for_operator(db):
                                 st.rerun()
                 
                 elif bundle['status'] == 'Approved':
-                    # Approved: Only show completion button (no Report Issue)
-                    has_unreviewed_duplicates = duplicates and not duplicates_reviewed
-                    
-                    if has_unreviewed_duplicates:
-                        st.button(f"🏁 Mark as Completed", key=f"complete_{bundle['bundle_id']}", disabled=True)
-                        st.caption("⚠️ Review duplicates first")
-                    else:
-                        if st.button(f"🏁 Mark as Completed", key=f"complete_{bundle['bundle_id']}"):
-                            mark_bundle_completed(db, bundle.get('bundle_id'))
-                            st.success("Bundle marked as completed")
+                    # Approved: Show Order Placed button (completion disabled until ordered)
+                    action_cols = st.columns(2)
+                    with action_cols[0]:
+                        if st.button(f"📦 Order Placed", key=f"order_{bundle['bundle_id']}", type="primary"):
+                            st.session_state[f'placing_order_{bundle["bundle_id"]}'] = True
                             st.rerun()
+                    with action_cols[1]:
+                        st.button(f"🏁 Mark as Completed", key=f"complete_{bundle['bundle_id']}", disabled=True)
+                        st.caption("⚠️ Place order first")
+                
+                elif bundle['status'] == 'Ordered':
+                    # Ordered: Only show completion button
+                    if st.button(f"🏁 Mark as Completed", key=f"complete_{bundle['bundle_id']}", type="primary"):
+                        mark_bundle_completed(db, bundle.get('bundle_id'))
+                        st.success("Bundle marked as completed")
+                        st.rerun()
                 
                 # Approval Checklist Flow
                 if st.session_state.get(f'approving_bundle_{bundle["bundle_id"]}'):
@@ -1562,6 +1595,11 @@ def display_active_bundles_for_operator(db):
                 if st.session_state.get(f'reporting_issue_{bundle["bundle_id"]}'):
                     st.markdown("---")
                     display_issue_resolution_flow(db, bundle, items_by_bundle.get(bundle.get('bundle_id'), []))
+                
+                # Order Placement Flow
+                if st.session_state.get(f'placing_order_{bundle["bundle_id"]}'):
+                    st.markdown("---")
+                    display_order_placement_form(db, bundle)
     
     except Exception as e:
         st.error(f"Error loading active bundles: {str(e)}")
@@ -1729,6 +1767,99 @@ def display_issue_resolution_flow(db, bundle, bundle_items):
             del st.session_state[f'selected_problem_items_{bundle_id}']
             st.rerun()
 
+def display_order_placement_form(db, bundle):
+    """Display form for placing order (PO number + item costs)"""
+    st.subheader("📦 Order Placement")
+    
+    bundle_id = bundle['bundle_id']
+    vendor_name = bundle.get('vendor_name', 'Unknown Vendor')
+    
+    st.write(f"**Place order with {vendor_name}**")
+    st.caption("Enter PO number and unit costs for all items")
+    
+    # Get items with current costs
+    items = db.get_bundle_item_costs(bundle_id)
+    
+    if not items:
+        st.error("No items found in bundle")
+        return
+    
+    # PO Number input
+    po_number = st.text_input(
+        "PO Number *",
+        key=f"po_number_{bundle_id}",
+        placeholder="e.g., PO-2025-001"
+    )
+    
+    st.markdown("---")
+    st.write("**Enter unit costs for each item:**")
+    
+    # Store costs in session state
+    if f'item_costs_{bundle_id}' not in st.session_state:
+        st.session_state[f'item_costs_{bundle_id}'] = {}
+    
+    # Display each item with cost input
+    for item in items:
+        st.markdown(f"**{item['item_name']}** ({item['total_quantity']} pieces)")
+        
+        # Show last recorded cost
+        if item.get('cost'):
+            last_cost = f"${item['cost']:.2f}"
+            if item.get('last_cost_update'):
+                update_date = item['last_cost_update'].strftime('%Y-%m-%d') if hasattr(item['last_cost_update'], 'strftime') else str(item['last_cost_update'])[:10]
+                st.caption(f"Last recorded cost: {last_cost} (updated: {update_date})")
+            else:
+                st.caption(f"Last recorded cost: {last_cost}")
+        else:
+            st.caption("Last recorded cost: N/A")
+        
+        # Cost input
+        cost_value = st.number_input(
+            f"Unit Cost ($) *",
+            min_value=0.01,
+            step=0.01,
+            format="%.2f",
+            key=f"cost_{bundle_id}_{item['item_id']}",
+            value=float(item['cost']) if item.get('cost') else 0.0
+        )
+        
+        st.session_state[f'item_costs_{bundle_id}'][item['item_id']] = cost_value
+        st.markdown("---")
+    
+    # Validation and save
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("✅ Confirm Order Placement", key=f"confirm_order_{bundle_id}", type="primary"):
+            # Validate
+            if not po_number or not po_number.strip():
+                st.error("⚠️ PO Number is required")
+            elif any(cost <= 0 for cost in st.session_state[f'item_costs_{bundle_id}'].values()):
+                st.error("⚠️ All item costs must be greater than 0")
+            else:
+                # Save order
+                result = db.save_order_placement(
+                    bundle_id,
+                    po_number.strip(),
+                    st.session_state[f'item_costs_{bundle_id}']
+                )
+                
+                if result['success']:
+                    st.success(f"✅ {result['message']}")
+                    # Clean up session state
+                    del st.session_state[f'placing_order_{bundle_id}']
+                    del st.session_state[f'item_costs_{bundle_id}']
+                    st.rerun()
+                else:
+                    st.error(f"❌ Failed: {result.get('error')}")
+    
+    with col2:
+        if st.button("Cancel", key=f"cancel_order_{bundle_id}"):
+            del st.session_state[f'placing_order_{bundle_id}']
+            if f'item_costs_{bundle_id}' in st.session_state:
+                del st.session_state[f'item_costs_{bundle_id}']
+            st.rerun()
+
 def display_user_interface(db):
     """Regular user interface for non-operator users"""
     st.header("🏠 User Dashboard")
@@ -1741,7 +1872,85 @@ def display_user_interface(db):
         st.info("Item browsing interface would go here")
     
     with tab2:
-        st.info("User requests interface would go here")
+        display_user_requests(db)
+
+def display_user_requests(db):
+    """Display user's requests with order status and PO numbers"""
+    user_id = st.session_state.get('user_id')
+    
+    if not user_id:
+        st.warning("Please log in to view your requests")
+        return
+    
+    try:
+        # Get user's requests
+        query = """
+        SELECT 
+            ro.req_id,
+            ro.req_number,
+            ro.status,
+            ro.created_at
+        FROM requirements_orders ro
+        WHERE ro.user_id = ?
+        ORDER BY ro.created_at DESC
+        """
+        requests = db.execute_query(query, (user_id,))
+        
+        if not requests:
+            st.info("You haven't submitted any requests yet")
+            return
+        
+        st.write(f"**Your Requests ({len(requests)})**")
+        
+        for req in requests:
+            with st.expander(f"📋 Request #{req['req_number']} - {req['status']}", expanded=False):
+                # Get items for this request
+                items_query = """
+                SELECT i.item_name, roi.quantity
+                FROM requirements_order_items roi
+                JOIN Items i ON roi.item_id = i.item_id
+                WHERE roi.req_id = ?
+                """
+                items = db.execute_query(items_query, (req['req_id'],))
+                
+                st.write("**Items:**")
+                for item in items or []:
+                    st.write(f"• {item['item_name']} ({item['quantity']} pcs)")
+                
+                # Get bundles for this request
+                bundles_query = """
+                SELECT DISTINCT
+                    b.bundle_id,
+                    b.bundle_name,
+                    b.status,
+                    b.po_number,
+                    b.po_date,
+                    v.vendor_name
+                FROM requirements_bundle_mapping rbm
+                JOIN requirements_bundles b ON rbm.bundle_id = b.bundle_id
+                LEFT JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
+                WHERE rbm.req_id = ?
+                ORDER BY b.bundle_id
+                """
+                bundles = db.execute_query(bundles_query, (req['req_id'],))
+                
+                if bundles:
+                    st.markdown("---")
+                    st.write("**Order Status:**")
+                    
+                    for bundle in bundles:
+                        status_icon = "✅" if bundle['status'] == 'Ordered' else "⏳"
+                        st.write(f"{status_icon} **{bundle['status']}**")
+                        
+                        # Show PO number if ordered
+                        if bundle['status'] == 'Ordered' and bundle.get('po_number'):
+                            st.write(f"   📦 PO#: {bundle['po_number']}")
+                            if bundle.get('po_date'):
+                                po_date = bundle['po_date'].strftime('%Y-%m-%d') if hasattr(bundle['po_date'], 'strftime') else str(bundle['po_date'])[:10]
+                                st.write(f"   📅 Order Date: {po_date}")
+                
+    except Exception as e:
+        st.error(f"Error loading requests: {str(e)}")
 
 def display_bundle_overview(db):
     """Display overview of all bundles"""

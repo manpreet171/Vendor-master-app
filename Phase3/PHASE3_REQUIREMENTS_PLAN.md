@@ -519,6 +519,538 @@ Your items are being sourced from 2 vendors:
 
 ---
 
+## **October 1, 2025 - Order Placement & Cost Management System**
+
+### **Problem Statement:**
+
+After operator approves a bundle (confirms vendor availability and pricing), they need to actually place the order with the vendor. During this process, operator obtains:
+1. **PO Number** - Purchase order number from the system
+2. **Actual Unit Costs** - Real prices quoted by vendor (may differ from system estimates)
+
+**Current Gap:**
+- No way to record PO numbers for tracking
+- No way to update actual costs after vendor quotes
+- No visibility into order placement status
+- Users don't know if orders are placed
+- Historical cost data not tracked
+
+**Business Impact:**
+- Can't track which orders are placed vs pending
+- Cost estimates in system become stale
+- No audit trail of cost updates
+- Users have no transparency on order status
+
+### **Solution: Order Placement & Cost Management System**
+
+**Approach:**
+Add mandatory "Order Placed" step between Approval and Completion where operator records PO number and updates actual costs from vendor. System tracks cost history and provides transparency to users.
+
+### **Key Design Decisions:**
+
+**1. Database Strategy - Minimal Changes**
+- Store PO info in existing `requirements_bundles` table (no new tables)
+- Update costs in existing `ItemVendorMap` table (benefits all future bundles)
+- Add cost update tracking for audit trail
+- **Result:** Only 3 columns added across 2 tables
+
+**2. Mandatory Order Placement**
+- Cannot complete bundle without placing order
+- Ensures PO numbers always captured
+- Ensures costs always updated
+- Quality gate for data integrity
+
+**3. Cost Update Strategy**
+- Update master `ItemVendorMap` table (not bundle-specific)
+- Benefits all future bundles with updated costs
+- Track last update date for reference
+- Show operators last recorded cost when entering new cost
+
+**4. User Transparency**
+- Users see "Ordered" status (not just "In Progress")
+- Users see PO number for reference/tracking
+- Users DON'T see vendor names or costs (internal info)
+- Clear indication order is placed with vendor
+
+**5. No Editing After Save**
+- PO and costs locked after confirmation
+- Prevents accidental changes
+- Maintains data integrity
+- Operators can view (read-only) but not edit
+
+### **Complete Workflow:**
+
+```
+Bundle Created (Active)
+  ↓
+Operator reviews duplicates (if any)
+  ↓
+Operator clicks "Approve Bundle"
+  ↓ (Approval Checklist)
+Confirms vendor, items, duplicates, pricing
+  ↓
+Bundle Approved
+  ↓
+Operator calls vendor, places order
+  ↓
+Operator clicks "Order Placed"
+  ↓ (Order Placement Form)
+Enters PO number + actual unit costs
+  ↓
+System saves PO, updates costs, status → Ordered
+  ↓
+Goods received from vendor
+  ↓
+Operator clicks "Mark as Completed"
+  ↓
+Bundle Completed
+  ↓
+All bundles for request completed → Request Completed
+```
+
+### **Status Flow:**
+
+**Bundle Status:**
+```
+Active → Approved → Ordered → Completed
+```
+
+**Request Status:**
+```
+Pending → In Progress → Completed
+```
+(No "Partially Ordered" - keeping simple)
+
+### **Button States by Status:**
+
+**Status: Active**
+```
+[✅ Approve Bundle]  [⚠️ Report Issue]  [🏁 Complete (disabled)]
+```
+
+**Status: Approved**
+```
+[📦 Order Placed]  [🏁 Complete (disabled)]
+```
+- Completion blocked until order placed
+- Forces operator to record PO and costs
+
+**Status: Ordered**
+```
+[🏁 Mark as Completed]
+```
+- Only action is completion
+- PO and costs already saved (read-only)
+
+### **Database Changes:**
+
+**1. requirements_bundles:**
+```sql
+ALTER TABLE requirements_bundles
+ADD po_number VARCHAR(50) NULL,
+    po_date DATETIME NULL;
+```
+
+**Fields:**
+- `po_number` - Purchase order number (e.g., "PO-2025-001")
+- `po_date` - Date order was placed
+
+**Why in bundles table:**
+- One PO per bundle (one vendor per bundle)
+- Direct linkage for easy retrieval
+- No new table needed
+- Simple queries
+
+**2. ItemVendorMap:**
+```sql
+ALTER TABLE ItemVendorMap
+ADD last_cost_update DATETIME NULL;
+```
+
+**Fields:**
+- `last_cost_update` - When cost was last updated
+
+**Why minimal:**
+- Don't need "updated_by" (not required)
+- Don't need "source_po" (not meaningful across bundles)
+- Just need update date for reference
+
+**Why update ItemVendorMap:**
+- Master cost table for all vendor-item combinations
+- Updated costs benefit ALL future bundles
+- Single source of truth for costs
+- Historical tracking with date
+
+### **Technical Implementation:**
+
+**Backend Functions (`db_connector.py`):**
+
+**1. Get Bundle Item Costs:**
+```python
+def get_bundle_item_costs(self, bundle_id):
+    """Get current costs for all items in bundle from ItemVendorMap"""
+    query = """
+    SELECT 
+        bi.item_id,
+        i.item_name,
+        bi.total_quantity,
+        ivm.cost,
+        ivm.last_cost_update,
+        v.vendor_id
+    FROM requirements_bundle_items bi
+    JOIN Items i ON bi.item_id = i.item_id
+    JOIN requirements_bundles b ON bi.bundle_id = b.bundle_id
+    JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
+    LEFT JOIN ItemVendorMap ivm ON bi.item_id = ivm.item_id 
+                                AND v.vendor_id = ivm.vendor_id
+    WHERE bi.bundle_id = ?
+    ORDER BY i.item_name
+    """
+```
+
+**Returns:**
+- Item ID, name, quantity
+- Current cost from ItemVendorMap (or NULL)
+- Last update date (for reference)
+- Vendor ID
+
+**2. Save Order Placement:**
+```python
+def save_order_placement(self, bundle_id, po_number, item_costs):
+    """
+    Save order placement: PO number and update item costs
+    item_costs: dict {item_id: cost}
+    """
+    # Step 1: Update bundle
+    UPDATE requirements_bundles
+    SET po_number = ?,
+        po_date = GETDATE(),
+        status = 'Ordered'
+    WHERE bundle_id = ?
+    
+    # Step 2: Update costs in ItemVendorMap
+    for item_id, cost in item_costs.items():
+        if mapping exists:
+            UPDATE ItemVendorMap
+            SET cost = ?,
+                last_cost_update = GETDATE()
+            WHERE item_id = ? AND vendor_id = ?
+        else:
+            INSERT INTO ItemVendorMap 
+            (item_id, vendor_id, cost, last_cost_update)
+            VALUES (?, ?, ?, GETDATE())
+```
+
+**Logic:**
+- Updates bundle with PO and date
+- Changes status to 'Ordered'
+- Updates or inserts costs in ItemVendorMap
+- Sets last_cost_update to current date
+- Transaction-safe (rollback on error)
+
+**3. Get Order Details:**
+```python
+def get_order_details(self, bundle_id):
+    """Get order details (PO number, date, costs) for read-only view"""
+    query = """
+    SELECT 
+        b.po_number,
+        b.po_date,
+        bi.item_id,
+        i.item_name,
+        bi.total_quantity,
+        ivm.cost,
+        ivm.last_cost_update
+    FROM requirements_bundles b
+    JOIN requirements_bundle_items bi ON b.bundle_id = bi.bundle_id
+    JOIN Items i ON bi.item_id = i.item_id
+    LEFT JOIN ItemVendorMap ivm ON bi.item_id = ivm.item_id 
+                                AND b.recommended_vendor_id = ivm.vendor_id
+    WHERE b.bundle_id = ?
+    """
+```
+
+**Returns:**
+- PO number and date
+- All items with costs
+- For displaying order details after save
+
+### **UI Implementation:**
+
+**Order Placement Form (`display_order_placement_form`):**
+
+```
+📦 Order Placement
+
+Place order with S&F Supplies
+Enter PO number and unit costs for all items
+
+PO Number *: [_____________]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Enter unit costs for each item:
+
+ACRYLITE P99 (9 pieces)
+Last recorded cost: $130.00 (updated: 2025-09-15)
+Unit Cost ($) *: [130.00]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Action Tac (1 piece)
+Last recorded cost: N/A
+Unit Cost ($) *: [0.00]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Bestine Solvent (2 pieces)
+Last recorded cost: $28.50 (updated: 2025-08-20)
+Unit Cost ($) *: [28.50]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[✅ Confirm Order Placement]  [Cancel]
+```
+
+**Features:**
+- PO number input (required, text field)
+- Cost input for each item (required, number > 0)
+- Shows last recorded cost as reference
+- Shows last update date if available
+- Pre-fills with existing costs (operator can update)
+- Validation before save
+- Clear error messages
+
+**Validation Rules:**
+```python
+if not po_number or not po_number.strip():
+    error("PO Number is required")
+
+if any(cost <= 0 for cost in item_costs.values()):
+    error("All item costs must be greater than 0")
+```
+
+### **User View Enhancement:**
+
+**What Users See:**
+
+**Before Order Placed:**
+```
+My Request #123
+Status: In Progress
+
+Items:
+• ACRYLITE P99 (4 pcs)
+• Action Tac (1 pc)
+
+Bundle: Processing...
+```
+
+**After Order Placed:**
+```
+My Request #123
+Status: In Progress
+
+Items:
+• ACRYLITE P99 (4 pcs)
+• Action Tac (1 pc)
+
+📦 Order Status: Ordered ✅
+   PO#: PO-2025-001
+   Order Date: 2025-10-01
+```
+
+**What Users DON'T See:**
+- ❌ Vendor name (internal info)
+- ❌ Unit costs (internal info)
+- ❌ Total amount (internal info)
+
+**What Users DO See:**
+- ✅ Order status ("Ordered")
+- ✅ PO number (for reference/tracking)
+- ✅ Order date (for tracking)
+
+**Why This Approach:**
+- Users get transparency (order is placed)
+- Users can reference PO if needed
+- Internal pricing stays confidential
+- Clear communication without over-sharing
+
+### **Benefits:**
+
+**For Operators:**
+- ✅ **Mandatory PO capture** - Never lose PO numbers
+- ✅ **Cost updates** - Keep system costs current
+- ✅ **Historical tracking** - See when costs last updated
+- ✅ **Quality gate** - Can't complete without order placement
+- ✅ **Read-only after save** - Prevents accidental changes
+- ✅ **Pre-filled costs** - Shows last known costs for reference
+
+**For Users:**
+- ✅ **Transparency** - Know when order is placed
+- ✅ **PO reference** - Can track with vendor if needed
+- ✅ **Clear status** - "Ordered" vs "In Progress"
+- ✅ **Order date** - Know when order was placed
+
+**For System:**
+- ✅ **Data quality** - All orders have PO and costs
+- ✅ **Cost accuracy** - Costs updated with real vendor quotes
+- ✅ **Audit trail** - Track when costs updated
+- ✅ **Future benefits** - Updated costs help future bundles
+- ✅ **Minimal changes** - Only 3 columns added
+- ✅ **No new tables** - Reuses existing structure
+
+### **Edge Cases Handled:**
+
+**1. Item with No Existing Cost:**
+```
+Last recorded cost: N/A
+Unit Cost ($) *: [0.00]  ← Operator must enter
+```
+- Shows "N/A" for last cost
+- Operator must enter new cost
+- Validation ensures cost > 0
+
+**2. Cost Update Tracking:**
+```
+Last recorded cost: $130.00 (updated: 2025-09-15)
+```
+- Shows when cost was last updated
+- Helps operator decide if update needed
+- Provides context for pricing
+
+**3. Multiple Items, One Vendor:**
+```
+All items in bundle use same vendor
+Each item has separate cost
+All costs updated in one transaction
+```
+- Transaction-safe (all or nothing)
+- Rollback on error
+- Data consistency maintained
+
+**4. Bundle Status Progression:**
+```
+Active → Approved → Ordered → Completed
+```
+- Linear progression (no skipping)
+- Each status has specific actions
+- Clear workflow enforcement
+
+### **Implementation Status:**
+
+**✅ COMPLETED (October 1, 2025 - Afternoon):**
+
+**Database:**
+- ✅ Added `po_number`, `po_date` to `requirements_bundles`
+- ✅ Added `last_cost_update` to `ItemVendorMap`
+- ✅ Queries tested and verified
+
+**Backend (db_connector.py):**
+- ✅ `get_bundle_item_costs()` - Get items with current costs
+- ✅ `save_order_placement()` - Save PO and update costs
+- ✅ `get_order_details()` - Get order details (read-only)
+
+**UI (app.py):**
+- ✅ Updated button logic for all statuses
+- ✅ Added "Order Placed" button for Approved status
+- ✅ Created `display_order_placement_form()` with:
+  - PO number input
+  - Cost inputs for each item
+  - Last cost reference display
+  - Validation logic
+  - Save functionality
+- ✅ Disabled completion until order placed
+- ✅ Session state management
+
+**Pending:**
+- ⏳ Read-only view for Ordered bundles (show PO/costs)
+- ⏳ User dashboard update (show PO number and order status)
+- ⏳ Testing on Streamlit Cloud
+
+### **Testing Scenarios:**
+
+```
+✅ Test 1: Place order with all new costs
+✅ Test 2: Place order with existing costs (pre-filled)
+✅ Test 3: Validation - empty PO number
+✅ Test 4: Validation - zero/negative costs
+✅ Test 5: Cost update in ItemVendorMap
+✅ Test 6: Bundle status change to Ordered
+✅ Test 7: Completion blocked until ordered
+✅ Test 8: Item with no existing cost (N/A)
+✅ Test 9: Multiple items, all costs saved
+✅ Test 10: Transaction rollback on error
+```
+
+### **Data Flow Example:**
+
+**Scenario: Operator Places Order**
+
+**Step 1: Bundle Approved**
+```
+Bundle 1 - S&F Supplies
+Status: Approved
+Items: ACRYLITE (9), Action Tac (1), Bestine (2)
+```
+
+**Step 2: Operator Clicks "Order Placed"**
+```
+Form appears with:
+- PO Number field (empty)
+- ACRYLITE cost: $130.00 (last: $130.00, 2025-09-15)
+- Action Tac cost: $0.00 (last: N/A)
+- Bestine cost: $28.50 (last: $28.50, 2025-08-20)
+```
+
+**Step 3: Operator Enters Data**
+```
+PO Number: PO-2025-001
+ACRYLITE: $135.00 (price increased)
+Action Tac: $45.00 (new item, first time)
+Bestine: $28.50 (same price)
+```
+
+**Step 4: System Saves**
+```sql
+-- Update bundle
+UPDATE requirements_bundles
+SET po_number = 'PO-2025-001',
+    po_date = '2025-10-01 13:15:00',
+    status = 'Ordered'
+WHERE bundle_id = 1
+
+-- Update costs
+UPDATE ItemVendorMap 
+SET cost = 135.00, last_cost_update = '2025-10-01 13:15:00'
+WHERE item_id = 150 AND vendor_id = 45
+
+INSERT INTO ItemVendorMap 
+VALUES (151, 45, 45.00, '2025-10-01 13:15:00')
+
+UPDATE ItemVendorMap 
+SET cost = 28.50, last_cost_update = '2025-10-01 13:15:00'
+WHERE item_id = 152 AND vendor_id = 45
+```
+
+**Step 5: Result**
+```
+Bundle 1 - S&F Supplies
+Status: Ordered ✅
+PO#: PO-2025-001
+Order Date: 2025-10-01
+
+ItemVendorMap updated:
+- ACRYLITE + S&F: $135.00 (was $130.00)
+- Action Tac + S&F: $45.00 (new)
+- Bestine + S&F: $28.50 (unchanged)
+
+All future bundles with these items will see updated costs!
+```
+
+---
+
+**Pending for Future:**
+- User dashboard update to show multi-bundle requests (when user interface is built)
+
+---
+
 ## **September 30, 2025 (Night) - Duplicate Persistence Fix for Bundle Moves**
 
 ### **Problem Statement:**
