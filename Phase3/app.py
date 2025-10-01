@@ -1932,11 +1932,9 @@ def display_user_requests(db):
                     b.bundle_name,
                     b.status,
                     b.po_number,
-                    b.po_date,
-                    v.vendor_name
+                    b.po_date
                 FROM requirements_bundle_mapping rbm
                 JOIN requirements_bundles b ON rbm.bundle_id = b.bundle_id
-                LEFT JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
                 WHERE rbm.req_id = ?
                 ORDER BY b.bundle_id
                 """
@@ -1944,11 +1942,42 @@ def display_user_requests(db):
                 
                 if bundles:
                     st.markdown("---")
-                    st.write("**Order Status:**")
                     
-                    for bundle in bundles:
+                    # Count ordered bundles
+                    ordered_count = sum(1 for b in bundles if b['status'] in ('Ordered', 'Completed'))
+                    total_count = len(bundles)
+                    
+                    # Show message based on number of bundles and status
+                    if len(bundles) > 1:
+                        st.write(f"**Your items are being sourced from {len(bundles)} bundles:**")
+                        
+                        # Show progress message
+                        if ordered_count == 0:
+                            st.caption("⏳ Orders are being processed...")
+                        elif ordered_count < total_count:
+                            st.info(f"📦 {ordered_count} of {total_count} orders placed")
+                        else:
+                            st.success(f"✅ All items ordered! {total_count} PO(s) issued")
+                    else:
+                        st.write("**Order Status:**")
+                    
+                    for idx, bundle in enumerate(bundles, 1):
                         status_icon = "✅" if bundle['status'] == 'Ordered' else "⏳"
-                        st.write(f"{status_icon} **{bundle['status']}**")
+                        
+                        # Get items in this bundle for this request
+                        bundle_items_query = """
+                        SELECT DISTINCT
+                            i.item_name,
+                            roi.quantity
+                        FROM requirements_order_items roi
+                        JOIN Items i ON roi.item_id = i.item_id
+                        JOIN requirements_bundle_items bi ON roi.item_id = bi.item_id
+                        WHERE roi.req_id = ? AND bi.bundle_id = ?
+                        """
+                        bundle_items = db.execute_query(bundle_items_query, (req['req_id'], bundle['bundle_id']))
+                        
+                        # Display bundle info
+                        st.write(f"{status_icon} **Bundle {idx} - {bundle['status']}**")
                         
                         # Show PO number if ordered
                         if bundle['status'] == 'Ordered' and bundle.get('po_number'):
@@ -1956,6 +1985,13 @@ def display_user_requests(db):
                             if bundle.get('po_date'):
                                 po_date = bundle['po_date'].strftime('%Y-%m-%d') if hasattr(bundle['po_date'], 'strftime') else str(bundle['po_date'])[:10]
                                 st.write(f"   📅 Order Date: {po_date}")
+                        
+                        # Show items in this bundle
+                        if bundle_items:
+                            items_text = ", ".join([f"{bi['item_name']} ({bi['quantity']} pcs)" for bi in bundle_items])
+                            st.write(f"   📋 Items: {items_text}")
+                        
+                        st.write("")  # Add spacing between bundles
                 
     except Exception as e:
         st.error(f"Error loading requests: {str(e)}")

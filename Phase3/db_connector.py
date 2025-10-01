@@ -650,6 +650,33 @@ class DatabaseConnector:
                     """
                     self.execute_insert(insert_cost_query, (item_id, vendor_id, cost, datetime.now()))
             
+            # Step 4: Update request status if all bundles are ordered
+            # Get all requests linked to this bundle
+            requests_query = """
+            SELECT DISTINCT req_id 
+            FROM requirements_bundle_mapping 
+            WHERE bundle_id = ?
+            """
+            requests = self.execute_query(requests_query, (bundle_id,))
+            
+            for req in requests:
+                req_id = req['req_id']
+                
+                # Get all bundles for this request
+                all_bundles = self.get_bundles_for_request(req_id)
+                
+                # Check if ALL bundles are ordered or completed
+                all_ordered = all(b['status'] in ('Ordered', 'Completed') for b in all_bundles)
+                
+                if all_ordered:
+                    # All bundles ordered - update request status
+                    update_request_query = """
+                    UPDATE requirements_orders
+                    SET status = 'Ordered'
+                    WHERE req_id = ?
+                    """
+                    self.execute_insert(update_request_query, (req_id,))
+            
             self.conn.commit()
             
             return {
