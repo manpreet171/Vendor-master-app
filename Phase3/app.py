@@ -2494,6 +2494,8 @@ def get_bundles_with_vendor_info(db):
             b.total_quantity,
             b.recommended_vendor_id,
             b.duplicates_reviewed,
+            b.po_number,
+            b.po_date,
             v.vendor_name,
             v.vendor_email,
             v.vendor_phone,

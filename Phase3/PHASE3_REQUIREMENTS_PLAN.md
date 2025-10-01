@@ -959,9 +959,16 @@ Active → Approved → Ordered → Completed
 - ✅ Disabled completion until order placed
 - ✅ Session state management
 
+**✅ COMPLETED (October 1, 2025 - Late Afternoon):**
+- ✅ Read-only view for Ordered bundles (show PO/costs in operator view)
+- ✅ User dashboard update (show PO numbers and order status)
+- ✅ Multi-bundle progress messages for users
+- ✅ Request status auto-update when all bundles ordered
+- ✅ Fixed number input default value issue (N/A costs)
+- ✅ Enhanced user view with bundle grouping and PO tracking
+- ✅ Delivery progress tracking (partial/complete)
+
 **Pending:**
-- ⏳ Read-only view for Ordered bundles (show PO/costs)
-- ⏳ User dashboard update (show PO number and order status)
 - ⏳ Testing on Streamlit Cloud
 
 ### **Testing Scenarios:**
@@ -1043,6 +1050,289 @@ ItemVendorMap updated:
 
 All future bundles with these items will see updated costs!
 ```
+
+---
+
+## **October 1, 2025 (Late Afternoon) - User View Enhancements & Status Tracking**
+
+### **Problem Statement:**
+
+After implementing order placement, users needed visibility into:
+1. Which items are in which bundle (for multi-bundle requests)
+2. PO numbers for tracking with vendors
+3. Order placement status
+4. Delivery progress (partial vs complete)
+
+Without this, users couldn't track their orders effectively.
+
+### **Solution: Enhanced User Dashboard with Bundle Tracking**
+
+**Implemented comprehensive user view showing:**
+- Bundle grouping for multi-bundle requests
+- PO numbers and order dates
+- Items per bundle
+- Progress messages (orders placed, deliveries)
+- Status updates (Ordered, Completed)
+
+### **Implementation Details:**
+
+**1. Operator View - Read-Only PO Display:**
+
+When bundle status is "Ordered", operators see PO details in bundle view:
+
+```
+📦 Order Details
+PO Number: PO-2025-001
+Order Date: 2025-10-01
+
+Items in this bundle:
+• ACRYLITE P99 — 9 pieces @ $135.00/pc
+• Action Tac — 1 piece @ $45.00/pc
+• Bestine Solvent — 2 pieces @ $28.50/pc
+```
+
+**Why:**
+- Operators can reference PO later
+- Operators can see costs entered
+- No editing allowed (data integrity)
+
+**2. User View - Bundle Grouping with PO Numbers:**
+
+Updated `display_my_requests_tab()` to show bundle information:
+
+```python
+# Get bundles for request
+bundles_query = """
+SELECT DISTINCT
+    b.bundle_id, b.bundle_name, b.status,
+    b.po_number, b.po_date
+FROM requirements_bundle_mapping rbm
+JOIN requirements_bundles b ON rbm.bundle_id = b.bundle_id
+WHERE rbm.req_id = ?
+"""
+
+# Get items in each bundle
+bundle_items_query = """
+SELECT DISTINCT i.item_name, roi.quantity
+FROM requirements_order_items roi
+JOIN Items i ON roi.item_id = i.item_id
+JOIN requirements_bundle_items bi ON roi.item_id = bi.item_id
+WHERE roi.req_id = ? AND bi.bundle_id = ?
+"""
+```
+
+**3. Progress Messages:**
+
+Smart messages based on bundle status:
+
+```python
+ordered_count = sum(1 for b in bundles if b['status'] in ('Ordered', 'Completed'))
+completed_count = sum(1 for b in bundles if b['status'] == 'Completed')
+
+if ordered_count == 0:
+    "⏳ Orders are being processed..."
+elif completed_count == total_count:
+    "✅ All items delivered! X bundle(s) completed"
+elif completed_count > 0:
+    "📦 X of Y bundles delivered"
+elif ordered_count < total_count:
+    "📦 X of Y orders placed"
+else:
+    "✅ All items ordered! X PO(s) issued"
+```
+
+**4. Request Status Auto-Update:**
+
+Added logic in `save_order_placement()` to update request status:
+
+```python
+# After placing order, check if ALL bundles are ordered
+for req_id in request_ids:
+    all_bundles = get_bundles_for_request(req_id)
+    all_ordered = all(b['status'] in ('Ordered', 'Completed') for b in all_bundles)
+    
+    if all_ordered:
+        UPDATE requirements_orders SET status = 'Ordered'
+```
+
+### **User Experience Examples:**
+
+**Single Bundle Request:**
+```
+📋 REQ-20251001-105044 - Ordered
+
+Items:
+• 3M VHB Clear - 5 pieces
+• Evercoat Primer - 1 piece
+
+Order Status:
+
+✅ Bundle 1 - Ordered
+   📦 PO#: PO-2025-001
+   📅 Order Date: 2025-10-01
+   📋 Items: 3M VHB Clear (5 pcs), Evercoat Primer (1 pc)
+```
+
+**Multi-Bundle Request (Partial Orders):**
+```
+📋 REQ-20251001-105044 - In Progress
+
+Items:
+• ACRYLITE P99 - 6 pieces
+• 3M VHB Clear - 5 pieces
+• Brass - 5 pieces
+
+Your items are being sourced from 2 bundles:
+📦 1 of 2 orders placed
+
+✅ Bundle 1 - Ordered
+   📦 PO#: PO-2025-001
+   📅 Order Date: 2025-10-01
+   📋 Items: ACRYLITE P99 (6 pcs), 3M VHB (5 pcs)
+
+⏳ Bundle 2 - Approved
+   📋 Items: Brass (5 pcs)
+```
+
+**Multi-Bundle Request (All Ordered):**
+```
+📋 REQ-20251001-105044 - Ordered
+
+Items:
+• ACRYLITE P99 - 6 pieces
+• 3M VHB Clear - 5 pieces
+• Brass - 5 pieces
+
+Your items are being sourced from 2 bundles:
+✅ All items ordered! 2 PO(s) issued
+
+✅ Bundle 1 - Ordered
+   📦 PO#: PO-2025-001
+   📅 Order Date: 2025-10-01
+   📋 Items: ACRYLITE P99 (6 pcs), 3M VHB (5 pcs)
+
+✅ Bundle 2 - Ordered
+   📦 PO#: PO-2025-002
+   📅 Order Date: 2025-10-02
+   📋 Items: Brass (5 pcs)
+```
+
+**Multi-Bundle Request (Partial Delivery):**
+```
+📋 REQ-20251001-105044 - Ordered
+
+Items:
+• ACRYLITE P99 - 6 pieces
+• 3M VHB Clear - 5 pieces
+• Brass - 5 pieces
+
+Your items are being sourced from 2 bundles:
+📦 1 of 2 bundles delivered
+
+✅ Bundle 1 - Completed
+   📦 PO#: PO-2025-001
+   📅 Order Date: 2025-10-01
+   📋 Items: ACRYLITE P99 (6 pcs), 3M VHB (5 pcs)
+
+✅ Bundle 2 - Ordered
+   📦 PO#: PO-2025-002
+   📅 Order Date: 2025-10-02
+   📋 Items: Brass (5 pcs)
+```
+
+**Multi-Bundle Request (All Delivered):**
+```
+📋 REQ-20251001-105044 - Completed ✅
+
+Items:
+• ACRYLITE P99 - 6 pieces
+• 3M VHB Clear - 5 pieces
+• Brass - 5 pieces
+
+Your items are being sourced from 2 bundles:
+✅ All items delivered! 2 bundle(s) completed
+
+✅ Bundle 1 - Completed
+   📦 PO#: PO-2025-001
+   📅 Order Date: 2025-10-01
+   📋 Items: ACRYLITE P99 (6 pcs), 3M VHB (5 pcs)
+
+✅ Bundle 2 - Completed
+   📦 PO#: PO-2025-002
+   📅 Order Date: 2025-10-02
+   📋 Items: Brass (5 pcs)
+```
+
+### **Status Flow Summary:**
+
+**Request Status:**
+```
+Pending → In Progress → Ordered → Completed
+```
+
+**Triggers:**
+- **Pending:** Initial creation
+- **In Progress:** Bundled (at least one bundle active/approved)
+- **Ordered:** ALL bundles ordered
+- **Completed:** ALL bundles completed
+
+**Bundle Status:**
+```
+Active → Approved → Ordered → Completed
+```
+
+### **Bug Fixes:**
+
+**1. Number Input Default Value Issue:**
+
+**Problem:** When item had no cost (N/A), `number_input` with `value=0.0` and `min_value=0.01` caused error.
+
+**Fix:**
+```python
+if item.get('cost') and item['cost'] > 0:
+    default_value = float(item['cost'])
+else:
+    default_value = None  # Empty with placeholder
+
+st.number_input(
+    "Unit Cost ($) *",
+    min_value=0.01,
+    value=default_value,
+    placeholder="Enter cost per unit"
+)
+```
+
+**Result:** Items with no cost show empty field with placeholder text.
+
+### **Benefits:**
+
+**For Users:**
+- ✅ **Complete transparency** - Know exactly what's ordered and delivered
+- ✅ **PO tracking** - Can reference specific PO for specific items
+- ✅ **Progress visibility** - Clear messages on order/delivery status
+- ✅ **Multi-bundle clarity** - Understand when items split across vendors
+- ✅ **No vendor exposure** - Internal vendor info stays confidential
+
+**For Operators:**
+- ✅ **PO reference** - Can view PO and costs after saving
+- ✅ **Cost visibility** - See what costs were entered
+- ✅ **Read-only protection** - No accidental edits
+
+**For System:**
+- ✅ **Accurate status** - Request status reflects actual order state
+- ✅ **Automatic updates** - Status changes when bundles ordered/completed
+- ✅ **Data integrity** - Status logic handles multi-bundle scenarios
+
+### **Technical Changes:**
+
+**Files Modified:**
+1. **app.py:**
+   - Updated `display_my_requests_tab()` - Added bundle grouping and PO display
+   - Updated `display_active_bundles_for_operator()` - Added read-only PO view
+   - Fixed `display_order_placement_form()` - Number input default value
+
+2. **db_connector.py:**
+   - Updated `save_order_placement()` - Added request status update logic
 
 ---
 
