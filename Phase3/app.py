@@ -1814,16 +1814,24 @@ def display_order_placement_form(db, bundle):
             st.caption("Last recorded cost: N/A")
         
         # Cost input
+        # If item has existing cost, pre-fill it. Otherwise start with min value
+        if item.get('cost') and item['cost'] > 0:
+            default_value = float(item['cost'])
+        else:
+            # No existing cost - use placeholder text to indicate operator must enter
+            default_value = None
+        
         cost_value = st.number_input(
             f"Unit Cost ($) *",
             min_value=0.01,
             step=0.01,
             format="%.2f",
             key=f"cost_{bundle_id}_{item['item_id']}",
-            value=float(item['cost']) if item.get('cost') else 0.0
+            value=default_value,
+            placeholder="Enter cost per unit"
         )
         
-        st.session_state[f'item_costs_{bundle_id}'][item['item_id']] = cost_value
+        st.session_state[f'item_costs_{bundle_id}'][item['item_id']] = cost_value if cost_value else 0.0
         st.markdown("---")
     
     # Validation and save
