@@ -889,12 +889,11 @@ def display_my_requests_tab(db):
                 else:
                     st.write("*No items found for this request*")
                 
-                # Show bundle/order information for non-pending requests
+                # Show order information for non-pending requests (simplified for users)
                 if request['status'] != 'Pending':
                     bundles_query = """
                     SELECT DISTINCT
                         b.bundle_id,
-                        b.bundle_name,
                         b.status,
                         b.po_number,
                         b.po_date
@@ -907,61 +906,76 @@ def display_my_requests_tab(db):
                     
                     if bundles:
                         st.markdown("---")
+                        st.write("**📦 Order Status**")
                         
                         # Count ordered and completed bundles
                         ordered_count = sum(1 for b in bundles if b['status'] in ('Ordered', 'Completed'))
                         completed_count = sum(1 for b in bundles if b['status'] == 'Completed')
                         total_count = len(bundles)
                         
-                        # Show message based on number of bundles and status
-                        if len(bundles) > 1:
-                            st.write(f"**Your items are being sourced from {len(bundles)} bundles:**")
-                            
-                            # Show progress message
-                            if ordered_count == 0:
-                                st.caption("⏳ Orders are being processed...")
-                            elif completed_count == total_count:
-                                st.success(f"✅ All items delivered! {total_count} bundle(s) completed")
-                            elif completed_count > 0:
-                                st.info(f"📦 {completed_count} of {total_count} bundles delivered")
-                            elif ordered_count < total_count:
-                                st.info(f"📦 {ordered_count} of {total_count} orders placed")
-                            else:
-                                st.success(f"✅ All items ordered! {total_count} PO(s) issued")
+                        # Show status message
+                        if completed_count == total_count:
+                            st.success(f"🎉 Completed ({completed_count} of {total_count} items)")
+                        elif ordered_count == total_count:
+                            st.info(f"✅ All Ordered ({ordered_count} of {total_count} items)")
+                        elif ordered_count > 0:
+                            st.info(f"🔵 In Progress ({ordered_count} of {total_count} items ordered)")
                         else:
-                            st.write("**Order Status:**")
+                            st.caption("⏳ Processing...")
                         
-                        for idx, bundle in enumerate(bundles, 1):
-                            status_icon = "✅" if bundle['status'] in ('Ordered', 'Completed') else "⏳"
+                        # Separate ordered and processing items
+                        ordered_bundles = [b for b in bundles if b['status'] in ('Ordered', 'Completed')]
+                        processing_bundles = [b for b in bundles if b['status'] not in ('Ordered', 'Completed')]
+                        
+                        # Show ordered items
+                        if ordered_bundles:
+                            if completed_count == total_count:
+                                st.write("**✅ Delivered:**")
+                            else:
+                                st.write("**✅ Ordered:**")
                             
-                            # Get items in this bundle for this request
-                            bundle_items_query = """
-                            SELECT DISTINCT
-                                i.item_name,
-                                roi.quantity
-                            FROM requirements_order_items roi
-                            JOIN Items i ON roi.item_id = i.item_id
-                            JOIN requirements_bundle_items bi ON roi.item_id = bi.item_id
-                            WHERE roi.req_id = ? AND bi.bundle_id = ?
-                            """
-                            bundle_items = db.execute_query(bundle_items_query, (request['req_id'], bundle['bundle_id']))
+                            for bundle in ordered_bundles:
+                                # Get items in this bundle
+                                bundle_items_query = """
+                                SELECT DISTINCT i.item_name, roi.quantity
+                                FROM requirements_order_items roi
+                                JOIN Items i ON roi.item_id = i.item_id
+                                JOIN requirements_bundle_items bi ON roi.item_id = bi.item_id
+                                WHERE roi.req_id = ? AND bi.bundle_id = ?
+                                """
+                                bundle_items = db.execute_query(bundle_items_query, (request['req_id'], bundle['bundle_id']))
+                                
+                                # Show items
+                                for item in bundle_items or []:
+                                    st.write(f"   • {item['item_name']} ({item['quantity']} pcs)")
+                                
+                                # Show PO info
+                                if bundle.get('po_number'):
+                                    po_date = ""
+                                    if bundle.get('po_date'):
+                                        po_date = bundle['po_date'].strftime('%b %d') if hasattr(bundle['po_date'], 'strftime') else str(bundle['po_date'])[:10]
+                                    st.caption(f"     PO#: {bundle['po_number']} | {po_date}")
                             
-                            # Display bundle info
-                            st.write(f"{status_icon} **Bundle {idx} - {bundle['status']}**")
+                            st.write("")
+                        
+                        # Show processing items
+                        if processing_bundles:
+                            st.write("**⏳ Processing:**")
                             
-                            # Show PO number if ordered
-                            if bundle['status'] in ('Ordered', 'Completed') and bundle.get('po_number'):
-                                st.write(f"   📦 PO#: {bundle['po_number']}")
-                                if bundle.get('po_date'):
-                                    po_date = bundle['po_date'].strftime('%Y-%m-%d') if hasattr(bundle['po_date'], 'strftime') else str(bundle['po_date'])[:10]
-                                    st.write(f"   📅 Order Date: {po_date}")
-                            
-                            # Show items in this bundle
-                            if bundle_items:
-                                items_text = ", ".join([f"{bi['item_name']} ({bi['quantity']} pcs)" for bi in bundle_items])
-                                st.write(f"   📋 Items: {items_text}")
-                            
-                            st.write("")  # Add spacing between bundles
+                            for bundle in processing_bundles:
+                                # Get items in this bundle
+                                bundle_items_query = """
+                                SELECT DISTINCT i.item_name, roi.quantity
+                                FROM requirements_order_items roi
+                                JOIN Items i ON roi.item_id = i.item_id
+                                JOIN requirements_bundle_items bi ON roi.item_id = bi.item_id
+                                WHERE roi.req_id = ? AND bi.bundle_id = ?
+                                """
+                                bundle_items = db.execute_query(bundle_items_query, (request['req_id'], bundle['bundle_id']))
+                                
+                                # Show items
+                                for item in bundle_items or []:
+                                    st.write(f"   • {item['item_name']} ({item['quantity']} pcs)")
     
     except Exception as e:
         st.error(f"Error loading requests: {str(e)}")

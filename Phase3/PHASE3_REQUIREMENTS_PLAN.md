@@ -9,6 +9,7 @@
 ### **September 30, 2025 - Project Tracking Integration**
 
 #### **✅ Completed Today:**
+
 - **Project Selection Per Item**
   - Integrated project tracking from `ProcoreProjectData` table into the requirements workflow.
   - Each item in the cart is now mapped to a specific project (ProjectNumber from Procore).
