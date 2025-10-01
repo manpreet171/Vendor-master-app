@@ -908,8 +908,9 @@ def display_my_requests_tab(db):
                     if bundles:
                         st.markdown("---")
                         
-                        # Count ordered bundles
+                        # Count ordered and completed bundles
                         ordered_count = sum(1 for b in bundles if b['status'] in ('Ordered', 'Completed'))
+                        completed_count = sum(1 for b in bundles if b['status'] == 'Completed')
                         total_count = len(bundles)
                         
                         # Show message based on number of bundles and status
@@ -919,6 +920,10 @@ def display_my_requests_tab(db):
                             # Show progress message
                             if ordered_count == 0:
                                 st.caption("⏳ Orders are being processed...")
+                            elif completed_count == total_count:
+                                st.success(f"✅ All items delivered! {total_count} bundle(s) completed")
+                            elif completed_count > 0:
+                                st.info(f"📦 {completed_count} of {total_count} bundles delivered")
                             elif ordered_count < total_count:
                                 st.info(f"📦 {ordered_count} of {total_count} orders placed")
                             else:
