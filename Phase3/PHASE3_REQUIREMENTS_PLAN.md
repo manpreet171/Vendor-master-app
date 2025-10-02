@@ -1337,6 +1337,527 @@ st.number_input(
 
 ---
 
+## **October 2, 2025 - Analytics Dashboard & Packing Slip Tracking**
+
+### **Feature 1: Analytics Dashboard for Data-Driven Decisions**
+
+#### **Problem Statement:**
+
+Operators and management had no visibility into:
+- Which items are requested most frequently
+- Which vendors are used most
+- Cost trends and price changes
+- Request processing patterns
+- Operational bottlenecks
+
+Without analytics, business decisions were made without data, missing opportunities for:
+- Bulk ordering discounts
+- Vendor consolidation
+- Cost optimization
+- Process improvements
+
+#### **Solution: Comprehensive Analytics Dashboard**
+
+**Implemented 5 key analytics sections with simple explanations and actionable insights:**
+
+1. **Request Status Overview**
+2. **Top Requested Items**
+3. **Most Used Vendors**
+4. **Items by Vendor**
+5. **Recent Cost Updates**
+
+#### **Implementation Details:**
+
+**1. Request Status Overview**
+
+**What it shows:**
+```
+📋 Request Status Overview
+💡 What this shows: Current state of all requests - helps you see what needs attention
+
+🟡 Pending: 5    🔵 In Progress: 12    ✅ Ordered: 8    🎉 Completed: 45
+
+💬 What to do: If too many 'Pending' requests, process them faster. 
+               If too many 'In Progress', check for bottlenecks.
+```
+
+**SQL Query:**
+```sql
+SELECT status, COUNT(*) as count
+FROM requirements_orders
+WHERE created_at >= DATEADD(day, -30, GETDATE())
+GROUP BY status
+ORDER BY count DESC
+```
+
+**Business Value:**
+- Daily operations tracking
+- Identify stuck requests
+- Monitor workload
+
+---
+
+**2. Top Requested Items**
+
+**What it shows:**
+```
+📦 Top Requested Items
+💡 What this shows: Most popular items - consider keeping these in stock or negotiating bulk prices
+
+1. ACRYLITE P99 - 15 requests (78 pieces)
+2. 3M VHB Clear - 12 requests (45 pieces)
+3. Brass Sheet - 10 requests (52 pieces)
+
+💬 Action: Top item 'ACRYLITE P99' was requested 15 times. 
+           Consider bulk ordering or keeping in stock.
+```
+
+**SQL Query:**
+```sql
+SELECT TOP 10
+    i.item_name,
+    COUNT(DISTINCT roi.req_id) as request_count,
+    SUM(roi.quantity) as total_quantity
+FROM requirements_order_items roi
+JOIN Items i ON roi.item_id = i.item_id
+JOIN requirements_orders ro ON roi.req_id = ro.req_id
+WHERE ro.created_at >= DATEADD(day, -30, GETDATE())
+GROUP BY i.item_name
+ORDER BY request_count DESC
+```
+
+**Business Value:**
+- Stock planning
+- Bulk ordering opportunities
+- Negotiate better prices for high-volume items
+
+---
+
+**3. Most Used Vendors**
+
+**What it shows:**
+```
+🏪 Most Used Vendors
+💡 What this shows: Which vendors you order from most - use this for price negotiations
+
+1. S&F Supplies - 45 orders (35%)
+2. Canal Plastics - 32 orders (25%)
+3. E&T Plastics - 28 orders (22%)
+
+💬 Action: 'S&F Supplies' gets 35% of your orders. Negotiate volume discounts!
+```
+
+**SQL Query:**
+```sql
+SELECT TOP 10
+    v.vendor_name,
+    COUNT(*) as order_count,
+    CAST(COUNT(*) * 100.0 / 
+         (SELECT COUNT(*) FROM requirements_bundles 
+          WHERE status IN ('Ordered', 'Completed')) AS INT) as percentage
+FROM requirements_bundles b
+JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
+WHERE b.status IN ('Ordered', 'Completed')
+GROUP BY v.vendor_name
+ORDER BY order_count DESC
+```
+
+**Business Value:**
+- Vendor negotiations leverage
+- Identify consolidation opportunities
+- Volume discount discussions
+
+---
+
+**4. Items by Vendor**
+
+**What it shows:**
+```
+📋 Items by Vendor
+💡 What this shows: What each vendor supplies most - helps find cheaper alternatives
+
+Select a vendor: [S&F Supplies ▼]
+
+Top items from S&F Supplies:
+1. ACRYLITE P99 - 25× ordered (78 pcs)
+2. 3M VHB Clear - 18× ordered (45 pcs)
+3. Brass Sheet - 15× ordered (52 pcs)
+
+💬 Action: Check if other vendors offer 'ACRYLITE P99' at better prices.
+```
+
+**SQL Query:**
+```sql
+SELECT TOP 5
+    i.item_name,
+    COUNT(*) as times_ordered,
+    SUM(bi.total_quantity) as total_pieces
+FROM requirements_bundle_items bi
+JOIN requirements_bundles b ON bi.bundle_id = b.bundle_id
+JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
+JOIN Items i ON bi.item_id = i.item_id
+WHERE b.status IN ('Ordered', 'Completed')
+    AND v.vendor_name = ?
+GROUP BY i.item_name
+ORDER BY times_ordered DESC
+```
+
+**Business Value:**
+- Price comparison opportunities
+- Vendor switching decisions
+- Cost optimization
+
+---
+
+**5. Recent Cost Updates**
+
+**What it shows:**
+```
+💰 Recent Cost Updates
+💡 What this shows: Latest price changes - monitor for price increases
+
+ACRYLITE P99 - S&F Supplies
+$135.00 | Updated: Oct 1
+
+3M VHB Clear - E&T Plastics
+$98.00 | Updated: Oct 1
+
+💬 Action: If prices increased, check alternative vendors for better rates.
+```
+
+**SQL Query:**
+```sql
+SELECT TOP 10
+    i.item_name,
+    v.vendor_name,
+    ivm.cost,
+    ivm.last_cost_update
+FROM ItemVendorMap ivm
+JOIN Items i ON ivm.item_id = i.item_id
+JOIN Vendors v ON ivm.vendor_id = v.vendor_id
+WHERE ivm.last_cost_update IS NOT NULL
+ORDER BY ivm.last_cost_update DESC
+```
+
+**Business Value:**
+- Price monitoring
+- Cost trend analysis
+- Vendor comparison
+
+---
+
+#### **UI/UX Design Principles:**
+
+**1. Simple Language**
+- No technical jargon
+- Clear, conversational explanations
+- User-friendly terminology
+
+**2. Contextual Help**
+- **💡 What this shows:** Explains what the data means
+- **💬 Action:** Provides actionable next steps
+- **💬 What to do:** Guides decision-making
+
+**3. Visual Clarity**
+- Icons for visual recognition (📋, 📦, 🏪, 💰)
+- Color-coded status badges
+- Clean column layouts
+- Metric cards for key numbers
+
+**4. Date Range**
+- Default: Last 30 days
+- Refresh button for latest data
+- Consistent time window across all analytics
+
+---
+
+#### **Benefits:**
+
+**For Management:**
+- ✅ **Data-driven decisions** - No more guessing
+- ✅ **Cost optimization** - Identify savings opportunities
+- ✅ **Vendor negotiations** - Leverage with data
+- ✅ **Trend analysis** - Spot patterns early
+
+**For Operators:**
+- ✅ **Workload visibility** - See what's stuck
+- ✅ **Priority guidance** - Focus on bottlenecks
+- ✅ **Process insights** - Understand patterns
+
+**For Business:**
+- ✅ **Cost savings** - Bulk ordering, better pricing
+- ✅ **Efficiency** - Identify process improvements
+- ✅ **Strategic planning** - Stock high-demand items
+
+---
+
+### **Feature 2: Packing Slip Tracking for Delivery Confirmation**
+
+#### **Problem Statement:**
+
+When operators marked bundles as "Completed," there was:
+- No verification of actual delivery
+- No tracking of packing slip codes
+- No accountability for received goods
+- No audit trail for deliveries
+
+**Business Impact:**
+- Can't verify deliveries
+- No reference for disputes
+- Missing delivery documentation
+- Poor accountability
+
+#### **Solution: Mandatory Packing Slip Code Entry**
+
+**Approach:**
+Add mandatory packing slip code entry when marking bundles as completed. Operator must enter delivery documentation before completion.
+
+#### **Key Design Decisions:**
+
+**1. Mandatory Entry**
+- Cannot complete bundle without packing slip code
+- Ensures delivery documentation always captured
+- Quality gate for completion
+
+**2. Free Text Format**
+- Accepts any format (letters, numbers, symbols)
+- No format restrictions (vendors use different formats)
+- Examples: PS-12345, PKG/2025/001, SLIP-ABC-123
+
+**3. Internal Tracking Only**
+- Operators see packing slip codes
+- Users DON'T see packing slip codes (internal info)
+- Maintains confidentiality
+
+**4. No Editing After Save**
+- Locked after completion
+- Prevents accidental changes
+- Data integrity maintained
+
+---
+
+#### **Database Changes:**
+
+```sql
+ALTER TABLE requirements_bundles
+ADD packing_slip_code VARCHAR(100) NULL
+```
+
+**Why minimal:**
+- Just one column needed
+- Reuses existing `completed_at` and `completed_by` fields
+- No new table required
+
+---
+
+#### **Workflow:**
+
+**Old Flow (Before):**
+```
+Bundle Status: Ordered
+[🏁 Mark as Completed] ← One click, no verification
+  ↓
+Bundle Completed ✅
+```
+
+**New Flow (After):**
+```
+Bundle Status: Ordered
+[🏁 Mark as Completed] ← Click opens form
+  ↓
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📦 Confirm Delivery
+
+Confirm delivery from S&F Supplies
+Enter packing slip code to complete this bundle
+
+Packing Slip Code *: [_____________]
+Examples: PS-12345, PKG/2025/001, SLIP-ABC-123
+
+[✅ Confirm Completion]  [Cancel]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ↓
+Validation: Packing slip required
+  ↓
+Bundle Completed ✅ (with packing slip saved)
+```
+
+---
+
+#### **Technical Implementation:**
+
+**1. UI Form (`display_completion_form`):**
+
+```python
+def display_completion_form(db, bundle):
+    """Display form for marking bundle as completed (with packing slip)"""
+    st.subheader("📦 Confirm Delivery")
+    
+    bundle_id = bundle['bundle_id']
+    vendor_name = bundle.get('vendor_name', 'Unknown Vendor')
+    
+    st.write(f"**Confirm delivery from {vendor_name}**")
+    st.caption("Enter packing slip code to complete this bundle")
+    
+    # Packing slip input
+    packing_slip = st.text_input(
+        "Packing Slip Code *",
+        key=f"packing_slip_{bundle_id}",
+        placeholder="e.g., PS-12345, PKG/2025/001, SLIP-ABC-123",
+        help="Enter the packing slip code from the delivery."
+    )
+    
+    # Validation and save
+    if st.button("✅ Confirm Completion"):
+        if not packing_slip or not packing_slip.strip():
+            st.error("⚠️ Packing slip code is required")
+        else:
+            result = mark_bundle_completed_with_packing_slip(
+                db, bundle_id, packing_slip.strip()
+            )
+```
+
+**2. Backend Function (`mark_bundle_completed_with_packing_slip`):**
+
+```python
+def mark_bundle_completed_with_packing_slip(db, bundle_id, packing_slip_code):
+    """Mark a bundle as completed with packing slip code"""
+    try:
+        from datetime import datetime
+        
+        # Update bundle status with packing slip
+        bundle_query = """
+        UPDATE requirements_bundles 
+        SET status = 'Completed',
+            packing_slip_code = ?,
+            completed_at = ?,
+            completed_by = ?
+        WHERE bundle_id = ?
+        """
+        completed_at = datetime.now()
+        completed_by = st.session_state.get('user_id', 'operator')
+        
+        db.execute_insert(bundle_query, 
+            (packing_slip_code, completed_at, completed_by, bundle_id))
+        
+        # Update request status if all bundles completed
+        # (same logic as before)
+        
+        db.conn.commit()
+        return {'success': True, 'message': 'Bundle completed successfully'}
+    except Exception as e:
+        db.conn.rollback()
+        return {'success': False, 'error': str(e)}
+```
+
+**3. Display (Operator View):**
+
+```
+📦 BUNDLE-001 - Completed
+
+Vendor: S&F Supplies
+Items: 4 | Pieces: 15
+Status: Completed ✅
+
+📦 Order Details
+PO Number: PO-2025-001
+Order Date: 2025-10-01
+
+📦 Delivery Details          ← NEW SECTION!
+Packing Slip: PS-12345       ← SHOWS HERE!
+Delivered: 2025-10-05
+
+Items in this bundle:
+• ACRYLITE P99 — 9 pieces @ $135.00/pc
+• Action Tac — 1 piece @ $45.00/pc
+```
+
+**4. User View (No Change):**
+
+Users do NOT see packing slip codes (internal tracking only):
+
+```
+📦 Order Status
+
+🎉 Completed (Oct 5, 2025)
+
+✅ Delivered:
+   • 3M VHB Clear (5 pcs)
+     PO#: test12345 | Delivered: Oct 5
+     (No packing slip shown)
+```
+
+---
+
+#### **Validation Rules:**
+
+**Required:**
+- ✅ Packing slip code must be entered (not empty)
+- ✅ Cannot complete without packing slip
+
+**Format:**
+- ✅ Free text (VARCHAR 100)
+- ✅ Accepts letters, numbers, symbols
+- ✅ No format restrictions
+
+**Uniqueness:**
+- ❌ No uniqueness check (different bundles may have same vendor slip)
+
+---
+
+#### **Benefits:**
+
+**For Operators:**
+- ✅ **Delivery verification** - Proof of receipt
+- ✅ **Documentation** - Packing slip always recorded
+- ✅ **Reference** - Can look up packing slip later
+- ✅ **Accountability** - Who received, when
+
+**For Business:**
+- ✅ **Audit trail** - Complete delivery records
+- ✅ **Dispute resolution** - Reference for vendor issues
+- ✅ **Compliance** - Proper documentation
+- ✅ **Tracking** - Full order-to-delivery lifecycle
+
+**For System:**
+- ✅ **Data quality** - All completions have documentation
+- ✅ **Traceability** - Full tracking from PO to delivery
+- ✅ **Integrity** - Locked after save, no accidental changes
+
+---
+
+#### **Implementation Status:**
+
+**✅ COMPLETED (October 2, 2025):**
+
+**Analytics Dashboard:**
+- ✅ Added "📊 Analytics" tab to operator dashboard
+- ✅ Implemented 5 analytics sections with queries
+- ✅ Added contextual help (💡 What this shows, 💬 Action)
+- ✅ Clean UI with icons and metrics
+- ✅ 30-day date range with refresh button
+
+**Packing Slip Tracking:**
+- ✅ Database: Added `packing_slip_code` column
+- ✅ UI: Created completion form with validation
+- ✅ Backend: `mark_bundle_completed_with_packing_slip()` function
+- ✅ Display: Shows packing slip in completed bundles (operator only)
+- ✅ Query: Updated bundle fetch to include packing_slip_code
+
+**Files Modified:**
+1. **app.py:**
+   - Added `display_analytics_dashboard()` function
+   - Added `display_completion_form()` function
+   - Added `mark_bundle_completed_with_packing_slip()` function
+   - Updated bundle query to include packing_slip_code
+   - Updated completion button to open form
+   - Added delivery details display for completed bundles
+
+2. **Database:**
+   - Added `packing_slip_code VARCHAR(100)` to requirements_bundles
+
+---
+
 **Pending for Future:**
 - User dashboard update to show multi-bundle requests (when user interface is built)
 
