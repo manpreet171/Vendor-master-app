@@ -1453,8 +1453,8 @@ def display_active_bundles_for_operator(db):
                 with col3:
                     st.write(f"**Status:** {get_status_badge(bundle['status'])}")
                 
-                # Show PO details if Ordered
-                if bundle['status'] == 'Ordered' and bundle.get('po_number'):
+                # Show PO details if Ordered or Completed
+                if bundle['status'] in ('Ordered', 'Completed') and bundle.get('po_number'):
                     st.markdown("---")
                     st.info("📦 **Order Details**")
                     po_col1, po_col2 = st.columns(2)
@@ -1464,6 +1464,17 @@ def display_active_bundles_for_operator(db):
                         if bundle.get('po_date'):
                             po_date = bundle['po_date'].strftime('%Y-%m-%d') if hasattr(bundle['po_date'], 'strftime') else str(bundle['po_date'])[:10]
                             st.write(f"**Order Date:** {po_date}")
+                
+                # Show delivery details if Completed
+                if bundle['status'] == 'Completed' and bundle.get('packing_slip_code'):
+                    st.success("📦 **Delivery Details**")
+                    delivery_col1, delivery_col2 = st.columns(2)
+                    with delivery_col1:
+                        st.write(f"**Packing Slip:** {bundle['packing_slip_code']}")
+                    with delivery_col2:
+                        if bundle.get('completed_at'):
+                            completed_date = bundle['completed_at'].strftime('%Y-%m-%d') if hasattr(bundle['completed_at'], 'strftime') else str(bundle['completed_at'])[:10]
+                            st.write(f"**Delivered:** {completed_date}")
 
                 st.markdown("---")
                 st.write("**Items in this bundle:**")
@@ -1674,8 +1685,7 @@ def display_active_bundles_for_operator(db):
                 elif bundle['status'] == 'Ordered':
                     # Ordered: Only show completion button
                     if st.button(f"🏁 Mark as Completed", key=f"complete_{bundle['bundle_id']}", type="primary"):
-                        mark_bundle_completed(db, bundle.get('bundle_id'))
-                        st.success("Bundle marked as completed")
+                        st.session_state[f'completing_bundle_{bundle["bundle_id"]}'] = True
                         st.rerun()
                 
                 # Approval Checklist Flow
@@ -1692,6 +1702,11 @@ def display_active_bundles_for_operator(db):
                 if st.session_state.get(f'placing_order_{bundle["bundle_id"]}'):
                     st.markdown("---")
                     display_order_placement_form(db, bundle)
+                
+                # Completion Flow (with packing slip)
+                if st.session_state.get(f'completing_bundle_{bundle["bundle_id"]}'):
+                    st.markdown("---")
+                    display_completion_form(db, bundle)
     
     except Exception as e:
         st.error(f"Error loading active bundles: {str(e)}")
@@ -1958,6 +1973,56 @@ def display_order_placement_form(db, bundle):
             del st.session_state[f'placing_order_{bundle_id}']
             if f'item_costs_{bundle_id}' in st.session_state:
                 del st.session_state[f'item_costs_{bundle_id}']
+            st.rerun()
+
+def display_completion_form(db, bundle):
+    """Display form for marking bundle as completed (with packing slip)"""
+    st.subheader("📦 Confirm Delivery")
+    
+    bundle_id = bundle['bundle_id']
+    vendor_name = bundle.get('vendor_name', 'Unknown Vendor')
+    
+    st.write(f"**Confirm delivery from {vendor_name}**")
+    st.caption("Enter packing slip code to complete this bundle")
+    
+    # Packing slip input
+    packing_slip = st.text_input(
+        "Packing Slip Code *",
+        key=f"packing_slip_{bundle_id}",
+        placeholder="e.g., PS-12345, PKG/2025/001, SLIP-ABC-123",
+        help="Enter the packing slip code from the delivery. Can include letters, numbers, and symbols."
+    )
+    
+    st.caption("**Examples:** PS-12345, PKG/2025/001, SLIP-ABC-123, or any format from your vendor")
+    
+    # Validation and save
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("✅ Confirm Completion", key=f"confirm_complete_{bundle_id}", type="primary"):
+            # Validate
+            if not packing_slip or not packing_slip.strip():
+                st.error("⚠️ Packing slip code is required")
+            else:
+                # Mark as completed with packing slip
+                result = mark_bundle_completed_with_packing_slip(
+                    db, 
+                    bundle_id, 
+                    packing_slip.strip()
+                )
+                
+                if result['success']:
+                    st.success(f"✅ Bundle marked as completed!")
+                    st.success(f"📦 Packing Slip: {packing_slip.strip()}")
+                    # Clean up session state
+                    del st.session_state[f'completing_bundle_{bundle_id}']
+                    st.rerun()
+                else:
+                    st.error(f"❌ Failed: {result.get('error')}")
+    
+    with col2:
+        if st.button("Cancel", key=f"cancel_complete_{bundle_id}"):
+            del st.session_state[f'completing_bundle_{bundle_id}']
             st.rerun()
 
 def display_analytics_dashboard(db):
@@ -2706,6 +2771,7 @@ def get_bundles_with_vendor_info(db):
             b.duplicates_reviewed,
             b.po_number,
             b.po_date,
+            b.packing_slip_code,
             v.vendor_name,
             v.vendor_email,
             v.vendor_phone,
@@ -2833,6 +2899,62 @@ def mark_bundle_completed(db, bundle_id):
             db.conn.rollback()
         raise Exception(f"Failed to mark bundle as completed: {str(e)}")
 
+def mark_bundle_completed_with_packing_slip(db, bundle_id, packing_slip_code):
+    """Mark a bundle as completed with packing slip code and update related requests"""
+    try:
+        from datetime import datetime
+        
+        # Update bundle status with packing slip
+        bundle_query = """
+        UPDATE requirements_bundles 
+        SET status = 'Completed',
+            packing_slip_code = ?,
+            completed_at = ?,
+            completed_by = ?
+        WHERE bundle_id = ?
+        """
+        completed_at = datetime.now()
+        completed_by = st.session_state.get('user_id', 'operator')
+        
+        db.execute_insert(bundle_query, (packing_slip_code, completed_at, completed_by, bundle_id))
+        
+        # Get all request IDs in this bundle
+        mapping_query = """
+        SELECT req_id FROM requirements_bundle_mapping 
+        WHERE bundle_id = ?
+        """
+        mappings = db.execute_query(mapping_query, (bundle_id,))
+        
+        if mappings:
+            req_ids = [mapping['req_id'] for mapping in mappings]
+            
+            # Check each request to see if ALL its bundles are completed
+            for req_id in req_ids:
+                # Get all bundles for this request
+                all_bundles = db.get_bundles_for_request(req_id)
+                
+                # Check if any bundles are still incomplete
+                incomplete_bundles = [b for b in all_bundles if b['status'] != 'Completed']
+                
+                if len(incomplete_bundles) == 0:
+                    # All bundles completed - mark request as completed
+                    update_request_query = """
+                    UPDATE requirements_orders 
+                    SET status = 'Completed'
+                    WHERE req_id = ?
+                    """
+                    db.execute_insert(update_request_query, (req_id,))
+        
+        db.conn.commit()
+        return {'success': True, 'message': 'Bundle completed successfully'}
+    except Exception as e:
+        print(f"Error in mark_bundle_completed_with_packing_slip: {str(e)}")
+        if db.conn:
+            db.conn.rollback()
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
 def mark_bundle_approved(db, bundle_id):
     """Mark a bundle as approved by operator"""
     try:
@@ -2842,19 +2964,17 @@ def mark_bundle_approved(db, bundle_id):
         WHERE bundle_id = ?
         """
         db.execute_insert(update_q, (bundle_id,))
-        if db.conn:
-            db.conn.commit()
+        db.conn.commit()
         return True
     except Exception as e:
         if db.conn:
             db.conn.rollback()
-        raise Exception(f"Failed to approve bundle: {str(e)}")
+        return False
 
 def get_status_badge(status):
     """Return colored status badge"""
     if status == "Active":
         return "🟡 Active"
-    elif status == "Approved":
         return "🔵 Approved"
     elif status == "Completed":
         return "🟢 Completed"
