@@ -1858,8 +1858,387 @@ Users do NOT see packing slip codes (internal tracking only):
 
 ---
 
+### **Feature 3: UI Organization - Status-Based Views**
+
+#### **Problem Statement:**
+
+Both users and operators faced navigation challenges:
+
+**User Problems:**
+- All requests mixed together (Pending, In Progress, Ordered, Completed)
+- Hard to find specific status requests
+- Overwhelming when many requests
+- No clear organization
+
+**Operator Problems:**
+- All bundles mixed together (Active, Approved, Ordered, Completed)
+- Can't quickly see "what needs my attention now"
+- Hard to prioritize work
+- Inefficient workflow
+
+**Business Impact:**
+- Time wasted scrolling through mixed lists
+- Important items overlooked
+- Poor task prioritization
+- Reduced productivity
+
+#### **Solution: Status-Based Organization**
+
+**Approach:**
+- **For Users:** Status tabs with expand/collapse requests
+- **For Operators:** Status filter dropdown with counts
+
+**Why Different Approaches:**
+- Users have fewer requests → Tabs work well
+- Operators have many bundles → Dropdown avoids complexity
+
+---
+
+#### **Implementation: User View (Status Tabs)**
+
+**Structure:**
+```
+📋 My Requests
+
+[🟡 Pending (3)] [🔵 In Progress (2)] [✅ Ordered (5)] [🎉 Completed (12)]
+                        ↑ Click to switch tabs
+
+Showing: 2 In Progress Requests
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+▼ 📋 REQ-20251001-105044 - In Progress    ← Click to expand/collapse
+
+   Request Date: 2025-10-01
+   Total Items: 21 pieces
+   
+   Your Items:
+   • ACRYLITE P99 - 6 pieces
+   • Brass - 5 pieces
+   
+   📦 Order Status
+   🔵 In Progress (1 of 4 items ordered)
+   ...
+
+▶ 📋 REQ-20251002-110234 - In Progress    ← Collapsed
+```
+
+**Technical Implementation:**
+
+```python
+# Group requests by status
+requests_by_status = {
+    'Pending': [],
+    'In Progress': [],
+    'Ordered': [],
+    'Completed': []
+}
+
+for request in user_requests:
+    status = request.get('status', 'Pending')
+    if status in requests_by_status:
+        requests_by_status[status].append(request)
+
+# Count per status
+pending_count = len(requests_by_status['Pending'])
+in_progress_count = len(requests_by_status['In Progress'])
+ordered_count = len(requests_by_status['Ordered'])
+completed_count = len(requests_by_status['Completed'])
+
+# Create status tabs
+tabs = st.tabs([
+    f"🟡 Pending ({pending_count})",
+    f"🔵 In Progress ({in_progress_count})",
+    f"✅ Ordered ({ordered_count})",
+    f"🎉 Completed ({completed_count})"
+])
+
+# Display requests for each status
+for idx, status in enumerate(['Pending', 'In Progress', 'Ordered', 'Completed']):
+    with tabs[idx]:
+        requests = requests_by_status[status]
+        
+        if not requests:
+            st.info(f"No {status.lower()} requests")
+            continue
+        
+        st.write(f"**Showing: {len(requests)} {status} Request{'s' if len(requests) != 1 else ''}**")
+        
+        # Each request as expandable
+        for request in requests:
+            with st.expander(f"📋 {request['req_number']} - {status}", expanded=False):
+                # Request details here
+                ...
+```
+
+**Empty States:**
+```python
+if not requests:
+    if status == 'Pending':
+        st.info("No pending requests. All your requests have been processed!")
+    elif status == 'In Progress':
+        st.info("No requests in progress.")
+    elif status == 'Ordered':
+        st.info("No ordered requests. Check 'In Progress' or 'Completed' tabs.")
+    else:
+        st.info("No completed requests yet.")
+```
+
+---
+
+#### **Implementation: Operator View (Status Filter)**
+
+**Structure:**
+```
+📦 Active Orders & Bundles
+
+Filter by Status: [📋 All Bundles (15) ▼]          Total: 15
+                  ├─ 🟡 Active (5)
+                  ├─ ✅ Approved (3)
+                  ├─ 📦 Ordered (4)
+                  ├─ 🎉 Completed (8)
+                  └─ 📋 All Bundles (15)
+
+✅ Showing 3 Approved bundles (Ready to Order)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+▶ 📦 BUNDLE-002 - Approved
+▶ 📦 BUNDLE-005 - Approved
+▶ 📦 BUNDLE-008 - Approved
+```
+
+**Technical Implementation:**
+
+```python
+# Count bundles by status
+status_counts = {
+    'Active': sum(1 for b in all_bundles if b['status'] == 'Active'),
+    'Approved': sum(1 for b in all_bundles if b['status'] == 'Approved'),
+    'Ordered': sum(1 for b in all_bundles if b['status'] == 'Ordered'),
+    'Completed': sum(1 for b in all_bundles if b['status'] == 'Completed')
+}
+
+# Status filter dropdown
+col_filter, col_total = st.columns([3, 1])
+with col_filter:
+    status_options = [
+        f"🟡 Active ({status_counts['Active']})",
+        f"✅ Approved ({status_counts['Approved']})",
+        f"📦 Ordered ({status_counts['Ordered']})",
+        f"🎉 Completed ({status_counts['Completed']})",
+        f"📋 All Bundles ({len(all_bundles)})"
+    ]
+    selected_filter = st.selectbox("Filter by Status:", status_options, index=4)
+
+with col_total:
+    st.metric("Total", len(all_bundles))
+
+# Filter bundles based on selection
+if "Active" in selected_filter and "All" not in selected_filter:
+    bundles = [b for b in all_bundles if b['status'] == 'Active']
+    st.info(f"Showing {len(bundles)} Active bundles (Need Review)")
+elif "Approved" in selected_filter:
+    bundles = [b for b in all_bundles if b['status'] == 'Approved']
+    st.success(f"Showing {len(bundles)} Approved bundles (Ready to Order)")
+elif "Ordered" in selected_filter:
+    bundles = [b for b in all_bundles if b['status'] == 'Ordered']
+    st.info(f"Showing {len(bundles)} Ordered bundles (Waiting Delivery)")
+elif "Completed" in selected_filter:
+    bundles = [b for b in all_bundles if b['status'] == 'Completed']
+    st.success(f"Showing {len(bundles)} Completed bundles")
+else:
+    bundles = all_bundles
+    st.write(f"**📊 Showing all {len(bundles)} bundles**")
+```
+
+**Contextual Messages:**
+- **Active:** "Need Review"
+- **Approved:** "Ready to Order"
+- **Ordered:** "Waiting Delivery"
+- **Completed:** Shows count only
+
+---
+
+#### **User Experience Examples:**
+
+**User Workflow:**
+
+**Step 1: Check Pending Requests**
+```
+User clicks: 🟡 Pending (2)
+
+Showing: 2 Pending Requests
+
+▼ REQ-001 - Pending
+   Items: ACRYLITE (4), Brass (5)
+   [Can edit quantities]
+
+▶ REQ-002 - Pending
+```
+
+**Step 2: Track In Progress**
+```
+User clicks: 🔵 In Progress (3)
+
+Showing: 3 In Progress Requests
+
+▼ REQ-003 - In Progress
+   📦 Order Status
+   🔵 In Progress (1 of 4 items ordered)
+   
+   ✅ Ordered:
+      • 3M VHB (5 pcs) - PO#: test12345
+   
+   ⏳ Processing:
+      • ACRYLITE (6 pcs)
+      • Brass (5 pcs)
+```
+
+**Step 3: View Completed**
+```
+User clicks: 🎉 Completed (12)
+
+Showing: 12 Completed Requests
+
+▶ REQ-004 - Completed
+▶ REQ-005 - Completed
+...
+```
+
+---
+
+**Operator Workflow:**
+
+**Morning Routine:**
+
+**Step 1: Review Active Bundles**
+```
+Operator selects: 🟡 Active (5)
+
+ℹ️ Showing 5 Active bundles (Need Review)
+
+▼ BUNDLE-001 - Active
+   Vendor: S&F Supplies
+   Items: 4 | Pieces: 15
+   
+   [✅ Approve Bundle]  [🚫 Report Issue]
+```
+
+**Step 2: Place Orders**
+```
+Operator selects: ✅ Approved (3)
+
+✅ Showing 3 Approved bundles (Ready to Order)
+
+▼ BUNDLE-002 - Approved
+   Vendor: Canal Plastics
+   Items: 2 | Pieces: 8
+   
+   [📦 Order Placed]
+```
+
+**Step 3: Track Deliveries**
+```
+Operator selects: 📦 Ordered (4)
+
+ℹ️ Showing 4 Ordered bundles (Waiting Delivery)
+
+▼ BUNDLE-003 - Ordered
+   PO#: PO-2025-001
+   Order Date: 2025-10-01
+   
+   [🏁 Mark as Completed]
+```
+
+**Step 4: Review Completed**
+```
+Operator selects: 🎉 Completed (8)
+
+✅ Showing 8 Completed bundles
+
+▼ BUNDLE-004 - Completed
+   PO#: PO-2025-001
+   Packing Slip: PS-12345
+   Delivered: 2025-10-05
+```
+
+---
+
+#### **Benefits:**
+
+**For Users:**
+- ✅ **Clear organization** - Requests grouped by status
+- ✅ **Easy navigation** - One click to switch status
+- ✅ **Visual counts** - See numbers at a glance
+- ✅ **Focused view** - Only see relevant requests
+- ✅ **Less scrolling** - Smaller lists per tab
+
+**For Operators:**
+- ✅ **Task prioritization** - See what needs attention
+- ✅ **Workflow clarity** - Clear stages (Review → Order → Deliver)
+- ✅ **Quick filtering** - One dropdown to filter
+- ✅ **Status counts** - Know workload at a glance
+- ✅ **Contextual messages** - "Ready to Order", "Need Review"
+
+**For System:**
+- ✅ **Better UX** - Consistent organization pattern
+- ✅ **Scalability** - Works with many requests/bundles
+- ✅ **Maintainability** - Simple code structure
+- ✅ **Performance** - Filter in memory (fast)
+
+---
+
+#### **Design Decisions:**
+
+**Why Tabs for Users:**
+- Users typically have fewer requests (5-20)
+- Tabs provide quick visual overview
+- Easy to switch between statuses
+- Modern, familiar UI pattern
+
+**Why Dropdown for Operators:**
+- Operators manage many bundles (20-50+)
+- Dropdown avoids complex indentation
+- Simpler code maintenance
+- Metric shows total count
+
+**Why Different Approaches:**
+- Different use cases require different solutions
+- Optimized for each user type
+- Avoids one-size-fits-all complexity
+
+---
+
+#### **Implementation Status:**
+
+**✅ COMPLETED (October 2, 2025 - Afternoon):**
+
+**User View:**
+- ✅ Status tabs with counts (4 tabs)
+- ✅ Request grouping by status
+- ✅ Expandable requests (click to expand/collapse)
+- ✅ Empty state messages
+- ✅ Full request details in expanders
+- ✅ Order status display (simplified)
+
+**Operator View:**
+- ✅ Status filter dropdown with counts
+- ✅ Bundle filtering by status
+- ✅ Contextual status messages
+- ✅ Total metric display
+- ✅ "All Bundles" option (default)
+- ✅ Clean, simple implementation
+
+**Files Modified:**
+1. **app.py:**
+   - Updated `display_my_requests_tab()` - Added status tabs and grouping
+   - Updated `display_active_bundles_for_operator()` - Added status filter dropdown
+   - Minimal indentation changes (avoided complexity)
+
+---
+
 **Pending for Future:**
-- User dashboard update to show multi-bundle requests (when user interface is built)
+- Consider adding sort options (newest first, oldest first)
+- Consider adding search functionality for large lists
 
 ---
 
