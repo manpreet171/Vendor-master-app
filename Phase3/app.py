@@ -795,7 +795,7 @@ def display_cart_tab(db):
                     st.rerun()
 
 def display_my_requests_tab(db):
-    """Display user's past requests and their status"""
+    """Display user's past requests and their status - organized by status"""
     st.header("📋 My Requests")
     st.caption("View your submitted requests and their current status")
     
@@ -808,215 +808,224 @@ def display_my_requests_tab(db):
             return
         
         # Group requests by status
-        pending_requests = [r for r in user_requests if r['status'] == 'Pending']
-        in_progress_requests = [r for r in user_requests if r['status'] == 'In Progress']
-        ordered_requests = [r for r in user_requests if r['status'] == 'Ordered']
-        completed_requests = [r for r in user_requests if r['status'] == 'Completed']
+        requests_by_status = {
+            'Pending': [],
+            'In Progress': [],
+            'Ordered': [],
+            'Completed': []
+        }
         
-        # Create status tabs with counts
+        for request in user_requests:
+            status = request.get('status', 'Pending')
+            if status in requests_by_status:
+                requests_by_status[status].append(request)
+        
+        # Count requests per status
+        pending_count = len(requests_by_status['Pending'])
+        in_progress_count = len(requests_by_status['In Progress'])
+        ordered_count = len(requests_by_status['Ordered'])
+        completed_count = len(requests_by_status['Completed'])
+        
+        # Create status tabs
         tabs = st.tabs([
-            f"🟡 Pending ({len(pending_requests)})",
-            f"🔵 In Progress ({len(in_progress_requests)})",
-            f"✅ Ordered ({len(ordered_requests)})",
-            f"🎉 Completed ({len(completed_requests)})"
+            f"🟡 Pending ({pending_count})",
+            f"🔵 In Progress ({in_progress_count})",
+            f"✅ Ordered ({ordered_count})",
+            f"🎉 Completed ({completed_count})"
         ])
         
-        # Display requests in each tab (fully expanded)
-        with tabs[0]:  # Pending
-            display_requests_by_status(db, pending_requests, 'Pending')
+        # Display requests for each status
+        status_list = ['Pending', 'In Progress', 'Ordered', 'Completed']
         
-        with tabs[1]:  # In Progress
-            display_requests_by_status(db, in_progress_requests, 'In Progress')
-        
-        with tabs[2]:  # Ordered
-            display_requests_by_status(db, ordered_requests, 'Ordered')
-        
-        with tabs[3]:  # Completed
-            display_requests_by_status(db, completed_requests, 'Completed')
+        for idx, status in enumerate(status_list):
+            with tabs[idx]:
+                requests = requests_by_status[status]
+                
+                if not requests:
+                    if status == 'Pending':
+                        st.info("No pending requests. All your requests have been processed!")
+                    elif status == 'In Progress':
+                        st.info("No requests in progress.")
+                    elif status == 'Ordered':
+                        st.info("No ordered requests. Check 'In Progress' or 'Completed' tabs.")
+                    else:
+                        st.info("No completed requests yet.")
+                    continue
+                
+                st.write(f"**Showing: {len(requests)} {status} Request{'s' if len(requests) != 1 else ''}**")
+                st.markdown("---")
+                
+                # Display each request as an expander
+                for request in requests:
+                    # Format date nicely
+                    req_date = request.get('req_date', 'Unknown')
+                    if hasattr(req_date, 'strftime'):
+                        formatted_date = req_date.strftime('%Y-%m-%d %H:%M')
+                    else:
+                        formatted_date = str(req_date)
+                    
+                    with st.expander(f"📋 {request['req_number']} - {status}", expanded=False):
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.write(f"**Request Date:** {formatted_date}")
+                            st.write(f"**Total Items:** {request['total_items']} pieces")
+                        
+                        with col2:
+                            st.write(f"**Request ID:** {request['req_id']}")
+                            if request.get('notes'):
+                                st.write(f"**Notes:** {request['notes']}")
+                        
+                        # Show items in this request
+                        request_items = get_request_items(db, request['req_id'])
+                        if request_items:
+                            st.write("**Your Items:**")
+                            for item in request_items:
+                                # Build item description with dimensions for Raw Materials
+                                item_desc = f"• **{item['item_name']}**"
+                                
+                                # Add dimensions for Raw Materials (formatted)
+                                if item.get('source_sheet') == 'Raw Materials':
+                                    dimensions = []
+                                    h = fmt_dim(item.get('height'))
+                                    w = fmt_dim(item.get('width'))
+                                    t = fmt_dim(item.get('thickness'))
+                                    if h: dimensions.append(f"H: {h}")
+                                    if w: dimensions.append(f"W: {w}")
+                                    if t: dimensions.append(f"T: {t}")
+                                    if dimensions:
+                                        dim_str = " × ".join(dimensions)
+                                        item_desc += f" ({dim_str})"
+                        
+                                # Add SKU for BoxHero items
+                                elif item.get('source_sheet') == 'BoxHero' and item.get('sku'):
+                                    item_desc += f" (SKU: {item['sku']})"
+                        
+                                # Add project info if available
+                                if item.get('project_number'):
+                                    item_desc += f" | 📋 Project: {item['project_number']}"
+                        
+                                # Show quantity with edit option for pending requests
+                                if request['status'] == 'Pending':
+                                    col_item, col_qty, col_btn = st.columns([3, 1, 1])
+                                    with col_item:
+                                        st.write(item_desc)
+                                    with col_qty:
+                                        new_qty = st.number_input(
+                                            "Qty", 
+                                            min_value=1, 
+                                            value=item['quantity'], 
+                                            key=f"qty_{request['req_id']}_{item['item_name']}"
+                                        )
+                                    with col_btn:
+                                        if new_qty != item['quantity']:
+                                            if st.button("Update", key=f"update_{request['req_id']}_{item['item_name']}"):
+                                                try:
+                                                    success = db.update_order_item_quantity(request['req_id'], item['item_id'], new_qty)
+                                                    if success:
+                                                        st.success("✅ Updated!")
+                                                        st.rerun()
+                                                    else:
+                                                        st.error("❌ Failed to update")
+                                                except Exception as e:
+                                                    st.error(f"❌ Error: {str(e)}")
+                                else:
+                                    # For non-pending requests, just show the quantity
+                                    item_desc += f" - {item['quantity']} pieces"
+                                    st.write(item_desc)
+                        else:
+                            st.write("*No items found for this request*")
+                
+                        # Show order information for non-pending requests (simplified for users)
+                        if request['status'] != 'Pending':
+                            bundles_query = """
+                            SELECT DISTINCT
+                                b.bundle_id,
+                                b.status,
+                                b.po_number,
+                                b.po_date
+                            FROM requirements_bundle_mapping rbm
+                            JOIN requirements_bundles b ON rbm.bundle_id = b.bundle_id
+                            WHERE rbm.req_id = ?
+                            ORDER BY b.bundle_id
+                            """
+                            bundles = db.execute_query(bundles_query, (request['req_id'],))
+                            
+                            if bundles:
+                                st.markdown("---")
+                                st.write("**📦 Order Status**")
+                                
+                                # Count ordered and completed bundles
+                                ordered_count_bundle = sum(1 for b in bundles if b['status'] in ('Ordered', 'Completed'))
+                                completed_count_bundle = sum(1 for b in bundles if b['status'] == 'Completed')
+                                total_count_bundle = len(bundles)
+                                
+                                # Show status message
+                                if completed_count_bundle == total_count_bundle:
+                                    st.success(f"🎉 Completed ({completed_count_bundle} of {total_count_bundle} items)")
+                                elif ordered_count_bundle == total_count_bundle:
+                                    st.info(f"✅ All Ordered ({ordered_count_bundle} of {total_count_bundle} items)")
+                                elif ordered_count_bundle > 0:
+                                    st.info(f"🔵 In Progress ({ordered_count_bundle} of {total_count_bundle} items ordered)")
+                                else:
+                                    st.caption("⏳ Processing...")
+                                
+                                # Separate ordered and processing items
+                                ordered_bundles = [b for b in bundles if b['status'] in ('Ordered', 'Completed')]
+                                processing_bundles = [b for b in bundles if b['status'] not in ('Ordered', 'Completed')]
+                                
+                                # Show ordered items
+                                if ordered_bundles:
+                                    if completed_count_bundle == total_count_bundle:
+                                        st.write("**✅ Delivered:**")
+                                    else:
+                                        st.write("**✅ Ordered:**")
+                                    
+                                    for bundle in ordered_bundles:
+                                        # Get items in this bundle
+                                        bundle_items_query = """
+                                        SELECT DISTINCT i.item_name, roi.quantity
+                                        FROM requirements_order_items roi
+                                        JOIN Items i ON roi.item_id = i.item_id
+                                        JOIN requirements_bundle_items bi ON roi.item_id = bi.item_id
+                                        WHERE roi.req_id = ? AND bi.bundle_id = ?
+                                        """
+                                        bundle_items = db.execute_query(bundle_items_query, (request['req_id'], bundle['bundle_id']))
+                                        
+                                        # Show items
+                                        for item in bundle_items or []:
+                                            st.write(f"   • {item['item_name']} ({item['quantity']} pcs)")
+                                        
+                                        # Show PO info
+                                        if bundle.get('po_number'):
+                                            po_date = ""
+                                            if bundle.get('po_date'):
+                                                po_date = bundle['po_date'].strftime('%b %d') if hasattr(bundle['po_date'], 'strftime') else str(bundle['po_date'])[:10]
+                                            st.caption(f"     PO#: {bundle['po_number']} | {po_date}")
+                                    
+                                    st.write("")
+                                
+                                # Show processing items
+                                if processing_bundles:
+                                    st.write("**⏳ Processing:**")
+                                    
+                                    for bundle in processing_bundles:
+                                        # Get items in this bundle
+                                        bundle_items_query = """
+                                        SELECT DISTINCT i.item_name, roi.quantity
+                                        FROM requirements_order_items roi
+                                        JOIN Items i ON roi.item_id = i.item_id
+                                        JOIN requirements_bundle_items bi ON roi.item_id = bi.item_id
+                                        WHERE roi.req_id = ? AND bi.bundle_id = ?
+                                        """
+                                        bundle_items = db.execute_query(bundle_items_query, (request['req_id'], bundle['bundle_id']))
+                                        
+                                        # Show items
+                                        for item in bundle_items or []:
+                                            st.write(f"   • {item['item_name']} ({item['quantity']} pcs)")
     
     except Exception as e:
         st.error(f"Error loading requests: {str(e)}")
-
-def display_requests_by_status(db, requests, status):
-    """Display all requests for a given status with intuitive expanders"""
-    if not requests:
-        st.info(f"No {status.lower()} requests")
-        return
-    
-    st.write(f"**Showing: {len(requests)} {status} Request(s)**")
-    st.markdown("---")
-    
-    # Display each request with user-friendly expanders
-    for request in requests:
-        # Format date nicely
-        req_date = request.get('req_date', 'Unknown')
-        if hasattr(req_date, 'strftime'):
-            formatted_date = req_date.strftime('%Y-%m-%d')
-        else:
-            formatted_date = str(req_date)[:10]
-        
-        # Create intuitive expander label with key info at a glance
-        expander_label = f"📋 {request['req_number']} | {formatted_date} | {request['total_items']} items"
-        
-        with st.expander(expander_label, expanded=True):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write(f"**Request Date:** {formatted_date}")
-                st.write(f"**Total Items:** {request['total_items']} pieces")
-            
-            with col2:
-                st.write(f"**Request ID:** {request['req_id']}")
-                if request.get('notes'):
-                    st.write(f"**Notes:** {request['notes']}")
-            
-            # Show items in this request
-            st.write("**Your Items:**")
-            request_items = get_request_items(db, request['req_id'])
-            if request_items:
-                for item in request_items:
-                    # Build item description with dimensions for Raw Materials
-                    item_desc = f"• **{item['item_name']}**"
-                    
-                    # Add dimensions for Raw Materials (formatted)
-                    if item.get('source_sheet') == 'Raw Materials':
-                        dimensions = []
-                        h = fmt_dim(item.get('height'))
-                        w = fmt_dim(item.get('width'))
-                        t = fmt_dim(item.get('thickness'))
-                        if h: dimensions.append(f"H: {h}")
-                        if w: dimensions.append(f"W: {w}")
-                        if t: dimensions.append(f"T: {t}")
-                        if dimensions:
-                            dim_str = " × ".join(dimensions)
-                            item_desc += f" ({dim_str})"
-                    
-                    # Add SKU for BoxHero items
-                    elif item.get('source_sheet') == 'BoxHero' and item.get('sku'):
-                        item_desc += f" (SKU: {item['sku']})"
-                    
-                    # Add project info if available
-                    if item.get('project_number'):
-                        item_desc += f" | 📋 Project: {item['project_number']}"
-                    
-                    # Show quantity with edit option for pending requests
-                    if request['status'] == 'Pending':
-                        col_item, col_qty, col_btn = st.columns([3, 1, 1])
-                        with col_item:
-                            st.write(item_desc)
-                        with col_qty:
-                            new_qty = st.number_input(
-                                "Qty", 
-                                min_value=1, 
-                                value=item['quantity'], 
-                                key=f"qty_{request['req_id']}_{item['item_name']}"
-                            )
-                        with col_btn:
-                            if new_qty != item['quantity']:
-                                if st.button("Update", key=f"update_{request['req_id']}_{item['item_name']}"):
-                                    try:
-                                        success = db.update_order_item_quantity(request['req_id'], item['item_id'], new_qty)
-                                        if success:
-                                            st.success("✅ Updated!")
-                                            st.rerun()
-                                        else:
-                                            st.error("❌ Failed to update")
-                                    except Exception as e:
-                                        st.error(f"❌ Error: {str(e)}")
-                    else:
-                        # For non-pending requests, just show the quantity
-                        item_desc += f" - {item['quantity']} pieces"
-                        st.write(item_desc)
-            else:
-                st.write("*No items found for this request*")
-            
-            # Show order information for non-pending requests (simplified for users)
-            if request['status'] != 'Pending':
-                bundles_query = """
-                SELECT DISTINCT
-                    b.bundle_id,
-                    b.status,
-                    b.po_number,
-                    b.po_date
-                FROM requirements_bundle_mapping rbm
-                JOIN requirements_bundles b ON rbm.bundle_id = b.bundle_id
-                WHERE rbm.req_id = ?
-                ORDER BY b.bundle_id
-                """
-                bundles = db.execute_query(bundles_query, (request['req_id'],))
-                
-                if bundles:
-                    st.markdown("---")
-                    st.write("**📦 Order Status**")
-                    
-                    # Count ordered and completed bundles
-                    ordered_count = sum(1 for b in bundles if b['status'] in ('Ordered', 'Completed'))
-                    completed_count = sum(1 for b in bundles if b['status'] == 'Completed')
-                    total_count = len(bundles)
-                    
-                    # Show status message
-                    if completed_count == total_count:
-                        st.success(f"🎉 Completed ({completed_count} of {total_count} items)")
-                    elif ordered_count == total_count:
-                        st.info(f"✅ All Ordered ({ordered_count} of {total_count} items)")
-                    elif ordered_count > 0:
-                        st.info(f"🔵 In Progress ({ordered_count} of {total_count} items ordered)")
-                    else:
-                        st.caption("⏳ Processing...")
-                    
-                    # Separate ordered and processing items
-                    ordered_bundles = [b for b in bundles if b['status'] in ('Ordered', 'Completed')]
-                    processing_bundles = [b for b in bundles if b['status'] not in ('Ordered', 'Completed')]
-                    
-                    # Show ordered items
-                    if ordered_bundles:
-                        if completed_count == total_count:
-                            st.write("**✅ Delivered:**")
-                        else:
-                            st.write("**✅ Ordered:**")
-                    
-                    for bundle in ordered_bundles:
-                        # Get items in this bundle
-                        bundle_items_query = """
-                        SELECT DISTINCT i.item_name, roi.quantity
-                        FROM requirements_order_items roi
-                        JOIN Items i ON roi.item_id = i.item_id
-                        JOIN requirements_bundle_items bi ON roi.item_id = bi.item_id
-                        WHERE roi.req_id = ? AND bi.bundle_id = ?
-                        """
-                        bundle_items = db.execute_query(bundle_items_query, (request['req_id'], bundle['bundle_id']))
-                        
-                        # Show items
-                        for item in bundle_items or []:
-                            st.write(f"   • {item['item_name']} ({item['quantity']} pcs)")
-                        
-                        # Show PO info
-                        if bundle.get('po_number'):
-                            po_date = ""
-                            if bundle.get('po_date'):
-                                po_date = bundle['po_date'].strftime('%b %d') if hasattr(bundle['po_date'], 'strftime') else str(bundle['po_date'])[:10]
-                            st.caption(f"     PO#: {bundle['po_number']} | {po_date}")
-                    
-                        st.write("")
-                    
-                    # Show processing items
-                    if processing_bundles:
-                        st.write("**⏳ Processing:**")
-                        
-                        for bundle in processing_bundles:
-                            # Get items in this bundle
-                            bundle_items_query = """
-                            SELECT DISTINCT i.item_name, roi.quantity
-                            FROM requirements_order_items roi
-                            JOIN Items i ON roi.item_id = i.item_id
-                            JOIN requirements_bundle_items bi ON roi.item_id = bi.item_id
-                            WHERE roi.req_id = ? AND bi.bundle_id = ?
-                            """
-                            bundle_items = db.execute_query(bundle_items_query, (request['req_id'], bundle['bundle_id']))
-                            
-                            # Show items
-                            for item in bundle_items or []:
-                                st.write(f"   • {item['item_name']} ({item['quantity']} pcs)")
 
 def get_status_badge(status):
     """Return colored status badge"""
