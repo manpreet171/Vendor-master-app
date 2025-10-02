@@ -1445,13 +1445,57 @@ def display_active_bundles_for_operator(db):
     
     try:
         # Batch fetch: bundles with vendor info in a single query
-        bundles = get_bundles_with_vendor_info(db)
+        all_bundles = get_bundles_with_vendor_info(db)
         
-        if not bundles:
+        if not all_bundles:
             st.info("No active bundles yet. Generate recommendations first!")
             return
         
-        st.write(f"**📊 You have {len(bundles)} orders to manage**")
+        # Count bundles by status
+        status_counts = {
+            'Active': sum(1 for b in all_bundles if b['status'] == 'Active'),
+            'Approved': sum(1 for b in all_bundles if b['status'] == 'Approved'),
+            'Ordered': sum(1 for b in all_bundles if b['status'] == 'Ordered'),
+            'Completed': sum(1 for b in all_bundles if b['status'] == 'Completed')
+        }
+        
+        # Status filter
+        col_filter, col_total = st.columns([3, 1])
+        with col_filter:
+            status_options = [
+                f"🟡 Active ({status_counts['Active']})",
+                f"✅ Approved ({status_counts['Approved']})",
+                f"📦 Ordered ({status_counts['Ordered']})",
+                f"🎉 Completed ({status_counts['Completed']})",
+                f"📋 All Bundles ({len(all_bundles)})"
+            ]
+            selected_filter = st.selectbox("Filter by Status:", status_options, index=4)
+        
+        with col_total:
+            st.metric("Total", len(all_bundles))
+        
+        # Filter bundles based on selection
+        if "Active" in selected_filter and "All" not in selected_filter:
+            bundles = [b for b in all_bundles if b['status'] == 'Active']
+            st.info(f"Showing {len(bundles)} Active bundles (Need Review)")
+        elif "Approved" in selected_filter:
+            bundles = [b for b in all_bundles if b['status'] == 'Approved']
+            st.success(f"Showing {len(bundles)} Approved bundles (Ready to Order)")
+        elif "Ordered" in selected_filter:
+            bundles = [b for b in all_bundles if b['status'] == 'Ordered']
+            st.info(f"Showing {len(bundles)} Ordered bundles (Waiting Delivery)")
+        elif "Completed" in selected_filter:
+            bundles = [b for b in all_bundles if b['status'] == 'Completed']
+            st.success(f"Showing {len(bundles)} Completed bundles")
+        else:
+            bundles = all_bundles
+            st.write(f"**📊 Showing all {len(bundles)} bundles**")
+        
+        if not bundles:
+            st.info("No bundles in this status")
+            return
+        
+        st.markdown("---")
 
         # Prepare IDs for batched item and user lookups
         bundle_ids = [b.get('bundle_id') for b in bundles if b.get('bundle_id') is not None]
