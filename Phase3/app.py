@@ -799,6 +799,40 @@ def display_my_requests_tab(db):
     st.header("📋 My Requests")
     st.caption("View your submitted requests and their current status")
     
+    # Help section - collapsible
+    with st.expander("ℹ️ **How Request Status Works** - Click to learn more", expanded=False):
+        st.markdown("""
+        ### 📊 **Status Meanings**
+        
+        | Status | What It Means | What You Can Do |
+        |--------|---------------|-----------------|
+        | 🟡 **Pending** | Your request is waiting to be bundled with others | ✏️ Edit quantities or cancel the request |
+        | 🔵 **In Progress** | Your items are being prepared for ordering | ⏳ Wait - procurement team is working on it |
+        | ✅ **Ordered** | Purchase order sent to vendor | 📦 Items will arrive soon |
+        | 🎉 **Completed** | Items received and available | ✅ You can request this item again |
+        
+        ---
+        
+        ### 🚫 **Why Can't I Request the Same Item Again?**
+        
+        **Rule:** You cannot request an item that's already **Pending** or **In Progress** in another request.
+        
+        **Reason:** We bundle multiple requests together to save costs. If you need more of the same item:
+        - **If Pending:** Edit the quantity in your existing request
+        - **If In Progress:** Wait for completion, then submit a new request
+        - **If Completed:** You can freely request it again
+        
+        ---
+        
+        ### 💡 **Quick Tips**
+        - **Pending requests** can be edited anytime before bundling (runs Tue/Thu 10 AM)
+        - **In Progress** means bundling is done - no changes allowed
+        - **Completed items** are back in stock - request them anytime
+        - Check this tab regularly to track your order progress
+        """)
+    
+    st.markdown("---")
+    
     try:
         # Get user's requests from database
         user_requests = get_user_requests(db, st.session_state.user_id)
