@@ -806,18 +806,18 @@ def display_my_requests_tab(db):
         
         | Status | What It Means | What You Can Do |
         |--------|---------------|-----------------|
-        | 🟡 **Pending** | Your request is waiting to be bundled with others | ✏️ Edit quantities or cancel the request |
-        | 🔵 **In Progress** | Your items are being prepared for ordering | ⏳ Wait - procurement team is working on it |
-        | ✅ **Ordered** | Purchase order sent to vendor | 📦 Items will arrive soon |
+        | 🟡 **Pending** | Your request is waiting to be processed | ✏️ Edit quantities or cancel |
+        | 🔵 **In Progress** | Your items are being prepared for ordering | ⏳ Wait - team is working on it |
+        | ✅ **Ordered** | Order placed with supplier | 📦 Items will arrive soon |
         | 🎉 **Completed** | Items received and available | ✅ You can request this item again |
         
         ---
         
         ### 🚫 **Why Can't I Request the Same Item Again?**
         
-        **Rule:** You cannot request an item that's already **Pending** or **In Progress** in another request.
+        **Rule:** You cannot request an item that's already **Pending** or **In Progress**.
         
-        **Reason:** We bundle multiple requests together to save costs. If you need more of the same item:
+        **Reason:** We group requests together to save costs. If you need more of the same item:
         - **If Pending:** Edit the quantity in your existing request
         - **If In Progress:** Wait for completion, then submit a new request
         - **If Completed:** You can freely request it again
@@ -825,9 +825,9 @@ def display_my_requests_tab(db):
         ---
         
         ### 💡 **Quick Tips**
-        - **Pending requests** can be edited anytime before bundling (runs Tue/Thu 10 AM)
-        - **In Progress** means bundling is done - no changes allowed
-        - **Completed items** are back in stock - request them anytime
+        - **Pending requests** can be edited anytime before processing (Tue/Thu 10 AM)
+        - **In Progress** means processing started - no changes allowed
+        - **Completed items** are available - request them anytime
         - Check this tab regularly to track your order progress
         """)
     
