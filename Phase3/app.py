@@ -2180,7 +2180,8 @@ def display_analytics_dashboard(db):
             for idx, item in enumerate(top_items, 1):
                 col1, col2, col3 = st.columns([3, 1, 1])
                 with col1:
-                    st.write(f"**{idx}. {item['item_name']}**")
+                    # Use HTML to avoid Markdown parsing issues with special characters in item names
+                    st.markdown(f"<b>{idx}. {item['item_name']}</b>", unsafe_allow_html=True)
                 with col2:
                     st.write(f"{item['request_count']} requests")
                 with col3:
