@@ -346,12 +346,12 @@ class DatabaseConnector:
         return self.execute_query(query, (item_id, exclude_vendor_id))
     
     def get_active_bundle_for_vendor(self, vendor_id):
-        """Check if vendor already has an active/approved bundle"""
+        """Check if vendor already has an ACTIVE or REVIEWED bundle (not Approved - those are locked)"""
         query = """
-        SELECT bundle_id, bundle_name, total_items, total_quantity
+        SELECT bundle_id, bundle_name, total_items, total_quantity, status
         FROM requirements_bundles
         WHERE recommended_vendor_id = ? 
-          AND status IN ('Active', 'Approved')
+          AND status IN ('Active', 'Reviewed')
         ORDER BY bundle_id DESC
         """
         results = self.execute_query(query, (vendor_id,))
@@ -442,7 +442,17 @@ class DatabaseConnector:
                     target_bundle_id
                 ))
                 
-                message = f"Item added to existing bundle {existing_bundle['bundle_name']}"
+                # AUTO-REVERT: If bundle was Reviewed, revert to Active (bundle changed)
+                if existing_bundle.get('status') == 'Reviewed':
+                    revert_query = """
+                    UPDATE requirements_bundles
+                    SET status = 'Active'
+                    WHERE bundle_id = ?
+                    """
+                    self.execute_insert(revert_query, (target_bundle_id,))
+                    message = f"Item added to existing bundle {existing_bundle['bundle_name']} (reverted to Active for re-review)"
+                else:
+                    message = f"Item added to existing bundle {existing_bundle['bundle_name']}"
                 
             else:
                 # CASE B: Create new bundle
@@ -1190,3 +1200,81 @@ class DatabaseConnector:
             if self.conn:
                 self.conn.rollback()
             return False
+    
+    def mark_bundle_reviewed(self, bundle_id):
+        """Mark bundle as reviewed (Active → Reviewed)"""
+        try:
+            update_q = """
+            UPDATE requirements_bundles
+            SET status = 'Reviewed'
+            WHERE bundle_id = ? AND status = 'Active'
+            """
+            self.execute_insert(update_q, (bundle_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            print(f"Error marking bundle as reviewed: {str(e)}")
+            return False
+    
+    def mark_bundles_reviewed_bulk(self, bundle_ids):
+        """Mark multiple bundles as reviewed at once"""
+        try:
+            if not bundle_ids:
+                return False
+            
+            placeholders = ','.join(['?' for _ in bundle_ids])
+            update_q = f"""
+            UPDATE requirements_bundles
+            SET status = 'Reviewed'
+            WHERE bundle_id IN ({placeholders})
+              AND status = 'Active'
+            """
+            self.execute_insert(update_q, tuple(bundle_ids))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            print(f"Error marking bundles as reviewed: {str(e)}")
+            return False
+    
+    def mark_bundles_approved_bulk(self, bundle_ids):
+        """Approve multiple bundles at once (only if they are Reviewed)"""
+        try:
+            if not bundle_ids:
+                return {'success': False, 'error': 'No bundles selected'}
+            
+            placeholders = ','.join(['?' for _ in bundle_ids])
+            
+            # First check if all bundles are Reviewed
+            check_q = f"""
+            SELECT bundle_id, status 
+            FROM requirements_bundles
+            WHERE bundle_id IN ({placeholders})
+            """
+            bundles = self.execute_query(check_q, tuple(bundle_ids))
+            
+            non_reviewed = [b for b in bundles if b['status'] != 'Reviewed']
+            if non_reviewed:
+                return {
+                    'success': False, 
+                    'error': f"{len(non_reviewed)} bundle(s) are not Reviewed yet"
+                }
+            
+            # All are reviewed, proceed with approval
+            update_q = f"""
+            UPDATE requirements_bundles
+            SET status = 'Approved'
+            WHERE bundle_id IN ({placeholders})
+              AND status = 'Reviewed'
+            """
+            self.execute_insert(update_q, tuple(bundle_ids))
+            self.conn.commit()
+            return {'success': True, 'approved_count': len(bundle_ids)}
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            print(f"Error approving bundles: {str(e)}")
+            return {'success': False, 'error': str(e)}

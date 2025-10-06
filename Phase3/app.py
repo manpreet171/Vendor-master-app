@@ -1488,6 +1488,7 @@ def display_active_bundles_for_operator(db):
         # Count bundles by status
         status_counts = {
             'Active': sum(1 for b in all_bundles if b['status'] == 'Active'),
+            'Reviewed': sum(1 for b in all_bundles if b['status'] == 'Reviewed'),
             'Approved': sum(1 for b in all_bundles if b['status'] == 'Approved'),
             'Ordered': sum(1 for b in all_bundles if b['status'] == 'Ordered'),
             'Completed': sum(1 for b in all_bundles if b['status'] == 'Completed')
@@ -1498,12 +1499,13 @@ def display_active_bundles_for_operator(db):
         with col_filter:
             status_options = [
                 f"🟡 Active ({status_counts['Active']})",
-                f"✅ Approved ({status_counts['Approved']})",
+                f"🟢 Reviewed ({status_counts['Reviewed']})",
+                f"🔵 Approved ({status_counts['Approved']})",
                 f"📦 Ordered ({status_counts['Ordered']})",
                 f"🎉 Completed ({status_counts['Completed']})",
                 f"📋 All Bundles ({len(all_bundles)})"
             ]
-            selected_filter = st.selectbox("Filter by Status:", status_options, index=4)
+            selected_filter = st.selectbox("Filter by Status:", status_options, index=5)
         
         with col_total:
             st.metric("Total", len(all_bundles))
@@ -1512,9 +1514,12 @@ def display_active_bundles_for_operator(db):
         if "Active" in selected_filter and "All" not in selected_filter:
             bundles = [b for b in all_bundles if b['status'] == 'Active']
             st.info(f"Showing {len(bundles)} Active bundles (Need Review)")
+        elif "Reviewed" in selected_filter and "All" not in selected_filter:
+            bundles = [b for b in all_bundles if b['status'] == 'Reviewed']
+            st.success(f"Showing {len(bundles)} Reviewed bundles (Ready to Approve)")
         elif "Approved" in selected_filter:
             bundles = [b for b in all_bundles if b['status'] == 'Approved']
-            st.success(f"Showing {len(bundles)} Approved bundles (Ready to Order)")
+            st.info(f"Showing {len(bundles)} Approved bundles (Ready to Order)")
         elif "Ordered" in selected_filter:
             bundles = [b for b in all_bundles if b['status'] == 'Ordered']
             st.info(f"Showing {len(bundles)} Ordered bundles (Waiting Delivery)")
@@ -1530,6 +1535,25 @@ def display_active_bundles_for_operator(db):
             return
         
         st.markdown("---")
+        
+        # Review Progress Indicator (for Active/Reviewed bundles only)
+        active_or_reviewed_bundles = [b for b in bundles if b['status'] in ('Active', 'Reviewed')]
+        if active_or_reviewed_bundles:
+            reviewed_count = len([b for b in active_or_reviewed_bundles if b['status'] == 'Reviewed'])
+            active_count = len([b for b in active_or_reviewed_bundles if b['status'] == 'Active'])
+            total_count = len(active_or_reviewed_bundles)
+            
+            # Progress bar
+            progress = reviewed_count / total_count if total_count > 0 else 0
+            st.progress(progress, text=f"📊 Review Progress: {reviewed_count}/{total_count} bundles reviewed")
+            
+            # Status message
+            if active_count > 0:
+                st.warning(f"⚠️ {active_count} bundle(s) need review before approval can proceed")
+            else:
+                st.success("✅ All bundles reviewed - ready to approve!")
+            
+            st.markdown("---")
 
         # Prepare IDs for batched item and user lookups
         bundle_ids = [b.get('bundle_id') for b in bundles if b.get('bundle_id') is not None]
@@ -1556,9 +1580,76 @@ def display_active_bundles_for_operator(db):
         # Batch fetch: user names for all referenced user IDs
         user_name_map = get_user_names_map(db, sorted(user_ids_set)) if user_ids_set else {}
         
+        # Multi-select for Active/Reviewed bundles
+        if active_or_reviewed_bundles:
+            st.subheader("📋 Bulk Actions")
+            
+            # Initialize session state for selections
+            if 'selected_bundles' not in st.session_state:
+                st.session_state.selected_bundles = []
+            
+            # Select All / Deselect All
+            col_select, col_actions = st.columns([1, 3])
+            with col_select:
+                select_all = st.checkbox("Select All", key="select_all_bundles")
+                if select_all:
+                    st.session_state.selected_bundles = [b['bundle_id'] for b in active_or_reviewed_bundles]
+                else:
+                    if st.session_state.get('deselect_triggered'):
+                        st.session_state.selected_bundles = []
+                        st.session_state.deselect_triggered = False
+            
+            with col_actions:
+                if st.session_state.selected_bundles:
+                    action_col1, action_col2 = st.columns(2)
+                    
+                    with action_col1:
+                        if st.button(f"✅ Mark as Reviewed ({len(st.session_state.selected_bundles)})", key="bulk_review"):
+                            if db.mark_bundles_reviewed_bulk(st.session_state.selected_bundles):
+                                st.success(f"✅ Marked {len(st.session_state.selected_bundles)} bundle(s) as Reviewed!")
+                                st.session_state.selected_bundles = []
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to mark bundles as reviewed")
+                    
+                    with action_col2:
+                        # Check if all bundles are reviewed
+                        all_reviewed = active_count == 0
+                        if all_reviewed:
+                            if st.button(f"🎯 Approve Selected ({len(st.session_state.selected_bundles)})", type="primary", key="bulk_approve"):
+                                result = db.mark_bundles_approved_bulk(st.session_state.selected_bundles)
+                                if result['success']:
+                                    st.success(f"✅ Approved {result['approved_count']} bundle(s)!")
+                                    st.session_state.selected_bundles = []
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ {result['error']}")
+                        else:
+                            st.button(f"🎯 Approve Selected", disabled=True, key="bulk_approve_disabled")
+                            st.caption("⚠️ Review all bundles first")
+            
+            st.markdown("---")
+        
         # Display bundles in operator-friendly format
         for bundle in bundles:
-            with st.expander(f"📦 {bundle['bundle_name']} - {bundle['status']}", expanded=False):
+            # Add checkbox for Active/Reviewed bundles
+            if bundle['status'] in ('Active', 'Reviewed'):
+                col_check, col_exp = st.columns([0.5, 11.5])
+                with col_check:
+                    is_selected = bundle['bundle_id'] in st.session_state.selected_bundles
+                    if st.checkbox("", value=is_selected, key=f"check_{bundle['bundle_id']}", label_visibility="collapsed"):
+                        if bundle['bundle_id'] not in st.session_state.selected_bundles:
+                            st.session_state.selected_bundles.append(bundle['bundle_id'])
+                    else:
+                        if bundle['bundle_id'] in st.session_state.selected_bundles:
+                            st.session_state.selected_bundles.remove(bundle['bundle_id'])
+                
+                with col_exp:
+                    expander_obj = st.expander(f"📦 {bundle['bundle_name']} - {get_status_badge(bundle['status'])}", expanded=False)
+            else:
+                expander_obj = st.expander(f"📦 {bundle['bundle_name']} - {get_status_badge(bundle['status'])}", expanded=False)
+            
+            with expander_obj:
                 # Vendor details already joined
                 vendor_name = bundle.get('vendor_name') or "Unknown Vendor"
                 vendor_email = bundle.get('vendor_email') or ""
@@ -1773,12 +1864,15 @@ def display_active_bundles_for_operator(db):
 
                 # Actions - Dynamic based on status
                 if bundle['status'] == 'Active':
-                    # Active: Show all 3 buttons
+                    # Active: Show Mark as Reviewed and Report Issue buttons
                     action_cols = st.columns(3)
                     with action_cols[0]:
-                        if st.button(f"✅ Approve Bundle", key=f"approve_{bundle['bundle_id']}"):
-                            st.session_state[f'approving_bundle_{bundle["bundle_id"]}'] = True
-                            st.rerun()
+                        if st.button(f"✅ Mark as Reviewed", key=f"review_{bundle['bundle_id']}", type="primary"):
+                            if db.mark_bundle_reviewed(bundle['bundle_id']):
+                                st.success("✅ Bundle marked as Reviewed!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to mark as reviewed")
                     with action_cols[1]:
                         if st.button(f"⚠️ Report Issue", key=f"report_{bundle['bundle_id']}"):
                             st.session_state[f'reporting_issue_{bundle["bundle_id"]}'] = True
@@ -1795,6 +1889,16 @@ def display_active_bundles_for_operator(db):
                                 mark_bundle_completed(db, bundle.get('bundle_id'))
                                 st.success("Bundle marked as completed")
                                 st.rerun()
+                
+                elif bundle['status'] == 'Reviewed':
+                    # Reviewed: Show option to revert to Active or use bulk approval
+                    st.info("✅ Bundle reviewed - use bulk approval above or revert to Active if changes needed")
+                    if st.button(f"↩️ Revert to Active", key=f"revert_{bundle['bundle_id']}"):
+                        revert_q = "UPDATE requirements_bundles SET status = 'Active' WHERE bundle_id = ?"
+                        db.execute_insert(revert_q, (bundle['bundle_id'],))
+                        db.conn.commit()
+                        st.success("Bundle reverted to Active")
+                        st.rerun()
                 
                 elif bundle['status'] == 'Approved':
                     # Approved: Show Order Placed button (completion disabled until ordered)
@@ -3101,9 +3205,14 @@ def get_status_badge(status):
     """Return colored status badge"""
     if status == "Active":
         return "🟡 Active"
+    elif status == "Reviewed":
+        return "🟢 Reviewed"
+    elif status == "Approved":
         return "🔵 Approved"
+    elif status == "Ordered":
+        return "📦 Ordered"
     elif status == "Completed":
-        return "🟢 Completed"
+        return "🎉 Completed"
     else:
         return f"⚪ {status}"
 
