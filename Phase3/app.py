@@ -1849,8 +1849,8 @@ def display_active_bundles_for_operator(db):
 
                 # Actions - Dynamic based on status
                 if bundle['status'] == 'Active':
-                    # Active: Show Mark as Reviewed (with checklist) and Report Issue buttons
-                    action_cols = st.columns(3)
+                    # Active: Show Mark as Reviewed (with checklist) and Report Issue buttons ONLY
+                    action_cols = st.columns(2)
                     with action_cols[0]:
                         if st.button(f"✅ Mark as Reviewed", key=f"review_{bundle['bundle_id']}", type="primary"):
                             st.session_state[f'reviewing_bundle_{bundle["bundle_id"]}'] = True
@@ -1859,18 +1859,6 @@ def display_active_bundles_for_operator(db):
                         if st.button(f"⚠️ Report Issue", key=f"report_{bundle['bundle_id']}"):
                             st.session_state[f'reporting_issue_{bundle["bundle_id"]}'] = True
                             st.rerun()
-                    with action_cols[2]:
-                        # Check if duplicates exist and haven't been reviewed
-                        has_unreviewed_duplicates = duplicates and not duplicates_reviewed
-                        
-                        if has_unreviewed_duplicates:
-                            st.button(f"🏁 Mark as Completed", key=f"complete_{bundle['bundle_id']}", disabled=True)
-                            st.caption("⚠️ Review duplicates first")
-                        else:
-                            if st.button(f"🏁 Mark as Completed", key=f"complete_{bundle['bundle_id']}"):
-                                mark_bundle_completed(db, bundle.get('bundle_id'))
-                                st.success("Bundle marked as completed")
-                                st.rerun()
                 
                 elif bundle['status'] == 'Reviewed':
                     # Reviewed: Show option to revert to Active or use bulk approval
