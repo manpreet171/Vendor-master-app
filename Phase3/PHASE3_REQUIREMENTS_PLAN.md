@@ -86,18 +86,24 @@ Active ←→ Reviewed → Approved → Ordered → Completed
 
 #### **🎨 UI Changes (`app.py`):**
 
-**1. Review Progress Indicator**
-- Added progress bar showing: "📊 Review Progress: X/Y bundles reviewed"
-- Warning message: "⚠️ N bundle(s) need review before approval can proceed"
-- Success message: "✅ All bundles reviewed - ready to approve!"
-- Only shown for Active/Reviewed bundles
+**1. Review Progress Indicator (Simplified UI)**
+- Single-line progress: "📊 Review Progress: X/Y bundles reviewed • Z remaining"
+- When complete: "✅ All bundles reviewed! Select bundles below to approve."
+- Clean, minimal design - no redundant messages
 
-**2. Multi-Select Bulk Actions**
-- **"Select All" checkbox** - Selects all Active/Reviewed bundles
-- **Individual checkboxes** - Per-bundle selection for Active/Reviewed bundles
-- **Bulk Action Buttons**:
-  - **"✅ Mark as Reviewed (N)"** - Bulk review action (always enabled)
-  - **"🎯 Approve Selected (N)"** - Bulk approval (ONLY enabled when ALL bundles are Reviewed)
+**2. Individual Review with Checklist**
+- **"✅ Mark as Reviewed"** button opens verification checklist
+- Operator must confirm 4 items before marking as reviewed:
+  - Vendor contact verified
+  - All items and quantities reviewed
+  - Duplicates reviewed (if any)
+  - Correct vendor selected
+- No bulk review - ensures each bundle is actually reviewed
+
+**3. Bulk Approval (Only After All Reviewed)**
+- **"Select All" checkbox** - Selects all Reviewed bundles
+- **Individual checkboxes** - Per-bundle selection for Reviewed bundles only
+- **"🎯 Approve Selected (N)"** - Bulk approval (ONLY enabled when ALL bundles are Reviewed)
 
 **3. Updated Status Filter**
 - Added "🟢 Reviewed" filter option
@@ -107,13 +113,12 @@ Active ←→ Reviewed → Approved → Ordered → Completed
 **4. Individual Bundle Actions**
 
 **Active Bundle:**
-- **Primary Button**: "✅ Mark as Reviewed" (replaces "Approve Bundle")
-- **Secondary Button**: "⚠️ Report Issue" (unchanged)
-- **Tertiary Button**: "🏁 Mark as Completed" (disabled if duplicates unreviewed)
+- **Primary Button**: "✅ Mark as Reviewed" (opens checklist)
+- **Secondary Button**: "⚠️ Report Issue" (move items to different vendors)
 
 **Reviewed Bundle:**
-- **Info Message**: "✅ Bundle reviewed - use bulk approval above or revert to Active if changes needed"
-- **Action Button**: "↩️ Revert to Active" (if changes needed)
+- **Status Caption**: "✅ Reviewed - ready for approval"
+- **Action Button**: "↩️ Revert" (revert to Active if changes needed)
 
 **Approved/Ordered/Completed Bundles:**
 - No changes (existing workflow preserved)
@@ -324,9 +329,66 @@ if existing_bundle.get('status') == 'Reviewed':
 
 #### **📚 Documentation Updates:**
 - ✅ Updated PHASE3_REQUIREMENTS_PLAN.md with complete workflow documentation
-- ⏳ TODO: Update User_Manual_Operators.md with new review workflow
+- ✅ Updated User_Manual_Operators.md with new review workflow
+- ✅ Updated REVIEWED_STATUS_IMPLEMENTATION_SUMMARY.md
 - ⏳ TODO: Create training guide for operators
 - ⏳ TODO: Update status lifecycle diagram
+
+---
+
+#### **🎨 UI Simplification (Late Evening - October 6, 2025):**
+
+**Problem Identified:**
+- After implementing review workflow, UI became cluttered with redundant messages
+- Progress bar + success message + warning message (3 separate elements saying similar things)
+- "Bulk Approval" heading was unnecessary
+- Long info messages on Reviewed bundles
+- Confusing "Mark as Completed" button appeared on Active bundles (doesn't make sense)
+
+**Solution: Simplified Operator UI**
+
+**Changes Made:**
+
+1. **Progress Indicator - Simplified**
+   - **Before:** 3 lines (progress bar + success message + warning)
+   - **After:** 1 line: "📊 Review Progress: X/Y bundles reviewed • Z remaining"
+   - When complete: "✅ All bundles reviewed! Select bundles below to approve."
+
+2. **Bulk Approval Section - Cleaned Up**
+   - Removed "Bulk Approval" heading (redundant)
+   - Removed repetitive success message
+   - Single clear instruction with compact layout
+
+3. **Reviewed Bundle Actions - Minimized**
+   - **Before:** Long info message + "Revert to Active" button
+   - **After:** Simple caption "✅ Reviewed - ready for approval" + compact "↩️ Revert" button
+   - Tooltip on Revert button explains functionality
+
+4. **Active Bundle Actions - Fixed**
+   - **Before:** 3 buttons including "Mark as Completed" (doesn't make sense for Active bundles)
+   - **After:** 2 buttons only: "Mark as Reviewed" and "Report Issue"
+   - Removed confusing "Mark as Completed" button (only appears for Ordered bundles)
+
+5. **Review Checklist - Added**
+   - Clicking "Mark as Reviewed" now opens verification checklist (similar to approval)
+   - Operator must confirm 4 items before marking as reviewed:
+     - Vendor contact verified
+     - All items and quantities reviewed
+     - Duplicates reviewed (if any)
+     - Correct vendor selected
+   - Ensures actual review happened (quality control)
+
+**Benefits:**
+- ✅ Less visual clutter - easier to focus
+- ✅ Clear instructions - operators know exactly what to do
+- ✅ Shorter text - faster to read
+- ✅ Relevant actions only - no confusing buttons
+- ✅ Consistent patterns - review and approval both use checklists
+
+**Documentation Updated:**
+- ✅ User_Manual_Operators.md - Simplified descriptions
+- ✅ PHASE3_REQUIREMENTS_PLAN.md - Updated UI features
+- ✅ REVIEWED_STATUS_IMPLEMENTATION_SUMMARY.md - Updated examples
 
 ---
 

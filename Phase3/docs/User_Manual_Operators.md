@@ -49,35 +49,28 @@ Bundles move through these statuses:
 
 ### **Review Progress Tracking:**
 
-At the top of Active Bundles, you'll see:
-- **Progress Bar**: Shows how many bundles you've reviewed (e.g., "📊 Review Progress: 6/10 bundles reviewed")
-- **Status Message**: 
-  - ⚠️ Warning if bundles still need review
-  - ✅ Success when all bundles are reviewed and ready to approve
+At the top of Active Bundles, you'll see a simple progress indicator:
+- **While reviewing**: "📊 Review Progress: 6/10 bundles reviewed • 4 remaining"
+- **When complete**: "✅ All bundles reviewed! Select bundles below to approve."
 
-### **Bulk Actions (NEW):**
+### **Bulk Approval (NEW):**
 
-**Select Multiple Bundles:**
-- Use checkboxes next to Active/Reviewed bundles
-- Click "Select All" to select all at once
-- Selected count shows in action buttons
+**When ALL bundles are reviewed:**
+- Checkboxes appear next to Reviewed bundles
+- "Select All" checkbox to select all at once
+- **"🎯 Approve Selected (N)"** button to approve selected bundles
 
-**Bulk Action Buttons:**
-- **"✅ Mark as Reviewed (N)"** - Mark selected bundles as reviewed (always available)
-- **"🎯 approve Selected (N)"** - approve selected bundles (ONLY enabled when ALL bundles are reviewed)
-
-**Important Rule:** You must review ALL bundles before you can approve ANY bundle. This ensures quality control.
+**Important Rule:** You must review ALL bundles individually before you can approve ANY bundle. This ensures quality control.
 
 ### **Individual Bundle Actions:**
 
 **For Active Bundles (🟡):**
-- **"✅ Mark as Reviewed"** - Mark this bundle as reviewed after checking items and vendor
+- **"✅ Mark as Reviewed"** - Opens checklist to verify vendor, items, and duplicates
 - **"⚠️ Report Issue"** - Move items to different vendors if needed
-- **"🏁 Mark as Completed"** - Direct completion (disabled if duplicates need review)
 
 **For Reviewed Bundles (🟢):**
-- **Info Message**: "Bundle reviewed - use bulk approval above or revert to Active if changes needed"
-- **"↩️ Revert to Active"** - Revert to Active if you need to make changes
+- **Status**: "✅ Reviewed - ready for approval"
+- **"↩️ Revert"** - Revert to Active if you need to make changes
 
 **For Approved Bundles (🔵):**
 - **"📦 Order Placed"** - Record PO details when order is placed with vendor
@@ -133,18 +126,22 @@ Open `👤 User Management` to manage user accounts (admin/operator only).
 
 **Step 2: Review Bundles (NEW)**
 - Open `📦 Active Bundles`
-- See progress bar showing review status
-- Review each Active bundle:
-  - Check vendor is correct
-  - Verify items and quantities
-  - Review any duplicate project alerts
-  - Click "✅ Mark as Reviewed" when satisfied
-- OR use bulk action: Select multiple → Click "Mark as Reviewed (N)"
+- See progress: "📊 Review Progress: X/Y bundles reviewed • Z remaining"
+- For each Active bundle:
+  - Click "✅ Mark as Reviewed"
+  - Checklist appears - verify all 4 items:
+    - ☐ Vendor contact verified
+    - ☐ All items and quantities reviewed
+    - ☐ Duplicates reviewed (if any)
+    - ☐ Correct vendor selected
+  - Click "Confirm & Mark as Reviewed"
+- Repeat for all bundles
 
 **Step 3: Approve Bundles (NEW)**
-- Once ALL bundles are reviewed (progress shows 100%)
-- Success message appears: "✅ All bundles reviewed - ready to approve!"
-- Select bundles you want to approve
+- Once ALL bundles are reviewed
+- Message appears: "✅ All bundles reviewed! Select bundles below to approve."
+- Checkboxes appear next to Reviewed bundles
+- Select bundles you want to approve (or click "Select All")
 - Click "🎯 Approve Selected (N)"
 - Bundles move to Approved status
 
