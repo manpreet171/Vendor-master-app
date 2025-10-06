@@ -1580,9 +1580,12 @@ def display_active_bundles_for_operator(db):
         # Batch fetch: user names for all referenced user IDs
         user_name_map = get_user_names_map(db, sorted(user_ids_set)) if user_ids_set else {}
         
-        # Multi-select for Active/Reviewed bundles
-        if active_or_reviewed_bundles:
-            st.subheader("📋 Bulk Actions")
+        # Bulk Approval Actions (ONLY for Reviewed bundles - NO bulk review)
+        reviewed_bundles = [b for b in bundles if b['status'] == 'Reviewed']
+        if reviewed_bundles and active_count == 0:
+            # Only show bulk approval when ALL bundles are reviewed
+            st.subheader("📋 Bulk Approval")
+            st.success("✅ All bundles reviewed - select bundles to approve")
             
             # Initialize session state for selections
             if 'selected_bundles' not in st.session_state:
@@ -1593,7 +1596,7 @@ def display_active_bundles_for_operator(db):
             with col_select:
                 select_all = st.checkbox("Select All", key="select_all_bundles")
                 if select_all:
-                    st.session_state.selected_bundles = [b['bundle_id'] for b in active_or_reviewed_bundles]
+                    st.session_state.selected_bundles = [b['bundle_id'] for b in reviewed_bundles]
                 else:
                     if st.session_state.get('deselect_triggered'):
                         st.session_state.selected_bundles = []
@@ -1601,39 +1604,21 @@ def display_active_bundles_for_operator(db):
             
             with col_actions:
                 if st.session_state.selected_bundles:
-                    action_col1, action_col2 = st.columns(2)
-                    
-                    with action_col1:
-                        if st.button(f"✅ Mark as Reviewed ({len(st.session_state.selected_bundles)})", key="bulk_review"):
-                            if db.mark_bundles_reviewed_bulk(st.session_state.selected_bundles):
-                                st.success(f"✅ Marked {len(st.session_state.selected_bundles)} bundle(s) as Reviewed!")
-                                st.session_state.selected_bundles = []
-                                st.rerun()
-                            else:
-                                st.error("❌ Failed to mark bundles as reviewed")
-                    
-                    with action_col2:
-                        # Check if all bundles are reviewed
-                        all_reviewed = active_count == 0
-                        if all_reviewed:
-                            if st.button(f"🎯 Approve Selected ({len(st.session_state.selected_bundles)})", type="primary", key="bulk_approve"):
-                                result = db.mark_bundles_approved_bulk(st.session_state.selected_bundles)
-                                if result['success']:
-                                    st.success(f"✅ Approved {result['approved_count']} bundle(s)!")
-                                    st.session_state.selected_bundles = []
-                                    st.rerun()
-                                else:
-                                    st.error(f"❌ {result['error']}")
+                    if st.button(f"🎯 Approve Selected ({len(st.session_state.selected_bundles)})", type="primary", key="bulk_approve"):
+                        result = db.mark_bundles_approved_bulk(st.session_state.selected_bundles)
+                        if result['success']:
+                            st.success(f"✅ Approved {result['approved_count']} bundle(s)!")
+                            st.session_state.selected_bundles = []
+                            st.rerun()
                         else:
-                            st.button(f"🎯 Approve Selected", disabled=True, key="bulk_approve_disabled")
-                            st.caption("⚠️ Review all bundles first")
+                            st.error(f"❌ {result['error']}")
             
             st.markdown("---")
         
         # Display bundles in operator-friendly format
         for bundle in bundles:
-            # Add checkbox for Active/Reviewed bundles
-            if bundle['status'] in ('Active', 'Reviewed'):
+            # Add checkbox ONLY for Reviewed bundles (for approval)
+            if bundle['status'] == 'Reviewed':
                 col_check, col_exp = st.columns([0.5, 11.5])
                 with col_check:
                     is_selected = bundle['bundle_id'] in st.session_state.selected_bundles

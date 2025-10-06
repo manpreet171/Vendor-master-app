@@ -1202,7 +1202,7 @@ class DatabaseConnector:
             return False
     
     def mark_bundle_reviewed(self, bundle_id):
-        """Mark bundle as reviewed (Active → Reviewed)"""
+        """Mark bundle as reviewed (Active → Reviewed) - Individual review only"""
         try:
             update_q = """
             UPDATE requirements_bundles
@@ -1216,28 +1216,6 @@ class DatabaseConnector:
             if self.conn:
                 self.conn.rollback()
             print(f"Error marking bundle as reviewed: {str(e)}")
-            return False
-    
-    def mark_bundles_reviewed_bulk(self, bundle_ids):
-        """Mark multiple bundles as reviewed at once"""
-        try:
-            if not bundle_ids:
-                return False
-            
-            placeholders = ','.join(['?' for _ in bundle_ids])
-            update_q = f"""
-            UPDATE requirements_bundles
-            SET status = 'Reviewed'
-            WHERE bundle_id IN ({placeholders})
-              AND status = 'Active'
-            """
-            self.execute_insert(update_q, tuple(bundle_ids))
-            self.conn.commit()
-            return True
-        except Exception as e:
-            if self.conn:
-                self.conn.rollback()
-            print(f"Error marking bundles as reviewed: {str(e)}")
             return False
     
     def mark_bundles_approved_bulk(self, bundle_ids):
