@@ -1580,16 +1580,16 @@ def display_active_bundles_for_operator(db):
         # Batch fetch: user names for all referenced user IDs
         user_name_map = get_user_names_map(db, sorted(user_ids_set)) if user_ids_set else {}
         
+        # Initialize session state for selections (MUST be before any usage)
+        if 'selected_bundles' not in st.session_state:
+            st.session_state.selected_bundles = []
+        
         # Bulk Approval Actions (ONLY for Reviewed bundles - NO bulk review)
         reviewed_bundles = [b for b in bundles if b['status'] == 'Reviewed']
         if reviewed_bundles and active_count == 0:
             # Only show bulk approval when ALL bundles are reviewed
             st.subheader("📋 Bulk Approval")
             st.success("✅ All bundles reviewed - select bundles to approve")
-            
-            # Initialize session state for selections
-            if 'selected_bundles' not in st.session_state:
-                st.session_state.selected_bundles = []
             
             # Select All / Deselect All
             col_select, col_actions = st.columns([1, 3])
@@ -1849,15 +1849,12 @@ def display_active_bundles_for_operator(db):
 
                 # Actions - Dynamic based on status
                 if bundle['status'] == 'Active':
-                    # Active: Show Mark as Reviewed and Report Issue buttons
+                    # Active: Show Mark as Reviewed (with checklist) and Report Issue buttons
                     action_cols = st.columns(3)
                     with action_cols[0]:
                         if st.button(f"✅ Mark as Reviewed", key=f"review_{bundle['bundle_id']}", type="primary"):
-                            if db.mark_bundle_reviewed(bundle['bundle_id']):
-                                st.success("✅ Bundle marked as Reviewed!")
-                                st.rerun()
-                            else:
-                                st.error("❌ Failed to mark as reviewed")
+                            st.session_state[f'reviewing_bundle_{bundle["bundle_id"]}'] = True
+                            st.rerun()
                     with action_cols[1]:
                         if st.button(f"⚠️ Report Issue", key=f"report_{bundle['bundle_id']}"):
                             st.session_state[f'reporting_issue_{bundle["bundle_id"]}'] = True
@@ -1902,6 +1899,11 @@ def display_active_bundles_for_operator(db):
                         st.session_state[f'completing_bundle_{bundle["bundle_id"]}'] = True
                         st.rerun()
                 
+                # Review Checklist Flow (for marking as Reviewed)
+                if st.session_state.get(f'reviewing_bundle_{bundle["bundle_id"]}'):
+                    st.markdown("---")
+                    display_review_checklist(db, bundle, items_by_bundle.get(bundle.get('bundle_id'), []), duplicates, duplicates_reviewed)
+                
                 # Approval Checklist Flow
                 if st.session_state.get(f'approving_bundle_{bundle["bundle_id"]}'):
                     st.markdown("---")
@@ -1924,6 +1926,85 @@ def display_active_bundles_for_operator(db):
     
     except Exception as e:
         st.error(f"Error loading active bundles: {str(e)}")
+
+def display_review_checklist(db, bundle, bundle_items, duplicates, duplicates_reviewed):
+    """Display review checklist before marking bundle as Reviewed"""
+    st.subheader("📋 Bundle Review Checklist")
+    
+    bundle_id = bundle['bundle_id']
+    vendor_name = bundle.get('vendor_name', 'Unknown Vendor')
+    
+    st.write(f"**Before marking this bundle as Reviewed, please confirm:**")
+    st.caption("All items must be checked to mark as reviewed")
+    
+    # Checklist items
+    check1 = st.checkbox(
+        f"I have verified **{vendor_name}** contact information is correct",
+        key=f"review_check1_{bundle_id}"
+    )
+    
+    # Show items list
+    st.markdown("**Items in this bundle:**")
+    for item in bundle_items:
+        st.write(f"• {item['item_name']} ({item['total_quantity']} pcs)")
+    
+    check2 = st.checkbox(
+        f"I have reviewed ALL {len(bundle_items)} items and quantities in this bundle",
+        key=f"review_check2_{bundle_id}"
+    )
+    
+    # Duplicate check (conditional)
+    if duplicates:
+        if duplicates_reviewed:
+            check3 = st.checkbox(
+                f"All duplicate project issues have been reviewed and resolved ✅",
+                value=True,
+                disabled=True,
+                key=f"review_check3_{bundle_id}"
+            )
+        else:
+            st.warning(f"⚠️ **{len(duplicates)} duplicate project(s) detected** - Must be reviewed first")
+            check3 = st.checkbox(
+                f"All duplicate project issues have been reviewed and resolved",
+                value=False,
+                disabled=True,
+                key=f"review_check3_{bundle_id}"
+            )
+            st.caption("👆 Please scroll up and mark duplicates as reviewed first")
+    else:
+        check3 = True  # No duplicates, auto-pass
+    
+    check4 = st.checkbox(
+        f"**{vendor_name}** is the correct vendor for these items",
+        key=f"review_check4_{bundle_id}"
+    )
+    
+    st.markdown("---")
+    
+    # Validation
+    all_checked = check1 and check2 and check3 and check4
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if all_checked:
+            if st.button("✅ Confirm & Mark as Reviewed", key=f"confirm_review_{bundle_id}", type="primary"):
+                if db.mark_bundle_reviewed(bundle_id):
+                    del st.session_state[f'reviewing_bundle_{bundle_id}']
+                    st.success(f"✅ Bundle marked as Reviewed!")
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to mark as reviewed")
+        else:
+            st.button("✅ Confirm & Mark as Reviewed", key=f"confirm_review_{bundle_id}", disabled=True)
+            if not check3 and duplicates and not duplicates_reviewed:
+                st.caption("⚠️ Review duplicates first")
+            else:
+                st.caption("⚠️ Please confirm all items above")
+    
+    with col2:
+        if st.button("Cancel", key=f"cancel_review_{bundle_id}"):
+            del st.session_state[f'reviewing_bundle_{bundle_id}']
+            st.rerun()
 
 def display_approval_checklist(db, bundle, bundle_items, duplicates, duplicates_reviewed):
     """Display approval checklist before approving bundle"""
