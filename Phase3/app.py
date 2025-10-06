@@ -1543,15 +1543,9 @@ def display_active_bundles_for_operator(db):
             active_count = len([b for b in active_or_reviewed_bundles if b['status'] == 'Active'])
             total_count = len(active_or_reviewed_bundles)
             
-            # Progress bar
-            progress = reviewed_count / total_count if total_count > 0 else 0
-            st.progress(progress, text=f"📊 Review Progress: {reviewed_count}/{total_count} bundles reviewed")
-            
-            # Status message
+            # Simple progress indicator
             if active_count > 0:
-                st.warning(f"⚠️ {active_count} bundle(s) need review before approval can proceed")
-            else:
-                st.success("✅ All bundles reviewed - ready to approve!")
+                st.info(f"📊 **Review Progress:** {reviewed_count}/{total_count} bundles reviewed • {active_count} remaining")
             
             st.markdown("---")
 
@@ -1587,12 +1581,11 @@ def display_active_bundles_for_operator(db):
         # Bulk Approval Actions (ONLY for Reviewed bundles - NO bulk review)
         reviewed_bundles = [b for b in bundles if b['status'] == 'Reviewed']
         if reviewed_bundles and active_count == 0:
-            # Only show bulk approval when ALL bundles are reviewed
-            st.subheader("📋 Bulk Approval")
-            st.success("✅ All bundles reviewed - select bundles to approve")
+            # Only show bulk approval when ALL bundles are reviewed - CLEAN UI
+            st.success("✅ **All bundles reviewed!** Select bundles below to approve.")
             
-            # Select All / Deselect All
-            col_select, col_actions = st.columns([1, 3])
+            # Compact action row
+            col_select, col_button = st.columns([1, 5])
             with col_select:
                 select_all = st.checkbox("Select All", key="select_all_bundles")
                 if select_all:
@@ -1602,7 +1595,7 @@ def display_active_bundles_for_operator(db):
                         st.session_state.selected_bundles = []
                         st.session_state.deselect_triggered = False
             
-            with col_actions:
+            with col_button:
                 if st.session_state.selected_bundles:
                     if st.button(f"🎯 Approve Selected ({len(st.session_state.selected_bundles)})", type="primary", key="bulk_approve"):
                         result = db.mark_bundles_approved_bulk(st.session_state.selected_bundles)
@@ -1861,14 +1854,17 @@ def display_active_bundles_for_operator(db):
                             st.rerun()
                 
                 elif bundle['status'] == 'Reviewed':
-                    # Reviewed: Show option to revert to Active or use bulk approval
-                    st.info("✅ Bundle reviewed - use bulk approval above or revert to Active if changes needed")
-                    if st.button(f"↩️ Revert to Active", key=f"revert_{bundle['bundle_id']}"):
-                        revert_q = "UPDATE requirements_bundles SET status = 'Active' WHERE bundle_id = ?"
-                        db.execute_insert(revert_q, (bundle['bundle_id'],))
-                        db.conn.commit()
-                        st.success("Bundle reverted to Active")
-                        st.rerun()
+                    # Reviewed: Minimal UI - just revert option
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.caption("✅ Reviewed - ready for approval")
+                    with col2:
+                        if st.button(f"↩️ Revert", key=f"revert_{bundle['bundle_id']}", help="Revert to Active if changes needed"):
+                            revert_q = "UPDATE requirements_bundles SET status = 'Active' WHERE bundle_id = ?"
+                            db.execute_insert(revert_q, (bundle['bundle_id'],))
+                            db.conn.commit()
+                            st.success("Bundle reverted to Active")
+                            st.rerun()
                 
                 elif bundle['status'] == 'Approved':
                     # Approved: Show Order Placed button (completion disabled until ordered)
