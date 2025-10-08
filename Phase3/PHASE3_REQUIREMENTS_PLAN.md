@@ -408,10 +408,17 @@ if existing_bundle.get('status') == 'Reviewed':
 
 #### **📊 Implementation Details:**
 
-**NO DATABASE SCHEMA CHANGES!**
-- Uses existing `requirements_order_items.project_number VARCHAR(50)` column
-- Stores letter-based projects as: `"parent|sub"` (e.g., "CP-2025|25-3456")
-- Regular projects stored as-is: `"25-1234"`
+**DATABASE SCHEMA CHANGE:**
+```sql
+ALTER TABLE requirements_order_items
+ADD parent_project_id VARCHAR(50) NULL;
+```
+
+**Storage Strategy:**
+- `project_number` column: Stores actual project number (validates against FK)
+- `parent_project_id` column: Stores parent project reference (for letter-based projects only)
+- Regular projects: `project_number = "25-1234"`, `parent_project_id = NULL`
+- Letter-based: `project_number = "25-3456"`, `parent_project_id = "CP-2025"`
 
 **Detection Logic:**
 ```python
@@ -423,43 +430,64 @@ else:
 ```
 
 **Storage Format:**
-- Regular: `"25-1234"`
-- Letter-based: `"CP-2025|25-3456"`
+| Type | project_number | parent_project_id | Display |
+|------|---------------|-------------------|---------|
+| Regular | "25-1234" | NULL | "25-1234" |
+| Letter-based | "25-3456" | "CP-2025" | "CP-2025 (25-3456)" |
 
-**Display Format:**
-- Regular: `"25-1234"`
-- Letter-based: `"CP-2025 (25-3456)"`
+**Benefits:**
+- ✅ FK constraint works (project_number validated)
+- ✅ Parent reference preserved (can query by parent)
+- ✅ Future reporting enabled (spending per parent project)
 
 ---
 
 #### **🔧 Code Changes:**
 
-**1. New Function in `db_connector.py`:**
+**1. Database Function - `get_previous_sub_projects()`:**
 ```python
 def get_previous_sub_projects(parent_project):
     """Get previously used sub-project numbers for a parent project"""
-    # Searches for: "CP-2025|%"
+    query = """
+    SELECT DISTINCT project_number
+    FROM requirements_order_items
+    WHERE parent_project_id = ?
+    """
     # Returns: ['25-3456', '25-7890', '26-1111']
 ```
 
 **2. Updated `display_project_selector()` in `app.py`:**
-- Detects if project starts with letter
+- Detects if project starts with letter: `project[0].isalpha()`
 - Shows additional input for sub-project number
 - Displays dropdown of previously used sub-projects
 - Option to enter new sub-project number
-- Returns combined format: `"parent|sub"`
+- Returns: `(sub_project_number, project_name, parent_project_id)`
 
-**3. New Helper Function:**
+**3. Updated `format_project_display()` Helper:**
 ```python
-def format_project_display(project_number):
-    """Format for display: "parent|sub" → "parent (sub)" """
+def format_project_display(project_number, parent_project_id=None):
+    """Format for display"""
+    if parent_project_id:
+        return f"{parent_project_id} ({project_number})"
+    return project_number
 ```
 
-**4. Updated Display Locations:**
-- Cart display
-- My Requests display
-- Operator dashboard (User Requests)
-- Operator dashboard (Bundle duplicates)
+**4. Updated `add_to_cart()` Function:**
+- Added `parent_project_id` parameter
+- Stores in cart item dictionary
+
+**5. Updated `submit_cart_as_order()` in `db_connector.py`:**
+```python
+INSERT INTO requirements_order_items 
+(req_id, item_id, quantity, item_notes, project_number, parent_project_id)
+VALUES (?, ?, ?, ?, ?, ?)
+```
+
+**6. Updated Display Locations:**
+- Cart display (shows formatted project)
+- My Requests display (shows formatted project)
+- Operator dashboard - User Requests (shows formatted project)
+- All queries updated to include `parent_project_id`
 
 ---
 
@@ -469,7 +497,9 @@ def format_project_display(project_number):
 ```
 1. User selects: "25-1234"
 2. System: Starts with number → No additional input
-3. Stored as: "25-1234"
+3. Stored as: 
+   - project_number = "25-1234"
+   - parent_project_id = NULL
 4. Displayed as: "25-1234"
 ```
 
@@ -477,11 +507,13 @@ def format_project_display(project_number):
 ```
 1. User selects: "CP-2025"
 2. System: Starts with letter → Shows input
-   "📋 CP-2025 requires a project number"
+   "📋 CP-2025 - Brooklyn Community High School (Educational) requires a project number"
    [Text input: Enter project number for CP-2025]
    Placeholder: "e.g., 25-3456"
 3. User enters: "25-3456"
-4. Stored as: "CP-2025|25-3456"
+4. Stored as:
+   - project_number = "25-3456"
+   - parent_project_id = "CP-2025"
 5. Displayed as: "CP-2025 (25-3456)"
 ```
 
@@ -489,13 +521,15 @@ def format_project_display(project_number):
 ```
 1. User selects: "CP-2025"
 2. System: Checks database, finds previous sub-projects
-   "📋 CP-2025 requires a project number"
+   "📋 CP-2025 - Brooklyn Community High School (Educational) requires a project number"
    [Dropdown]
    - 25-3456 (previously used)
    - 25-7890 (previously used)
    - + Enter new number
 3. User selects: "25-3456" OR enters new number
-4. Stored as: "CP-2025|25-3456"
+4. Stored as:
+   - project_number = "25-3456"
+   - parent_project_id = "CP-2025"
 5. Displayed as: "CP-2025 (25-3456)"
 ```
 
