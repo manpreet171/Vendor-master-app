@@ -206,11 +206,13 @@ class DatabaseConnector:
     def detect_duplicate_projects_in_bundle(self, bundle_id):
         """
         Detect items where multiple users requested same item for same project.
+        For letter-based projects, considers both parent and sub-project.
         Returns list of duplicates with format:
         [{
             'item_id': int,
             'item_name': str,
             'project_number': str,
+            'sub_project_number': str (optional),
             'users': [{'user_id': int, 'quantity': int}, ...]
         }]
         """
@@ -219,6 +221,7 @@ class DatabaseConnector:
             roi.item_id,
             i.item_name,
             roi.project_number,
+            roi.sub_project_number,
             ro.user_id,
             roi.quantity
         FROM requirements_bundle_mapping rbm
@@ -226,7 +229,7 @@ class DatabaseConnector:
         JOIN requirements_order_items roi ON ro.req_id = roi.req_id
         JOIN items i ON roi.item_id = i.item_id
         WHERE rbm.bundle_id = ? AND roi.project_number IS NOT NULL
-        ORDER BY roi.item_id, roi.project_number
+        ORDER BY roi.item_id, roi.project_number, roi.sub_project_number
         """
         
         results = self.execute_query(query, (bundle_id,))
@@ -234,15 +237,17 @@ class DatabaseConnector:
         if not results:
             return []
         
-        # Group by (item_id, project_number)
+        # Group by (item_id, project_number, sub_project_number)
+        # This ensures different sub-projects are NOT considered duplicates
         grouped = {}
         for row in results:
-            key = (row['item_id'], row['project_number'])
+            key = (row['item_id'], row['project_number'], row.get('sub_project_number'))
             if key not in grouped:
                 grouped[key] = {
                     'item_id': row['item_id'],
                     'item_name': row['item_name'],
                     'project_number': row['project_number'],
+                    'sub_project_number': row.get('sub_project_number'),
                     'users': []
                 }
             grouped[key]['users'].append({
@@ -250,7 +255,7 @@ class DatabaseConnector:
                 'quantity': row['quantity']
             })
         
-        # Filter to only duplicates (multiple users for same item+project)
+        # Filter to only duplicates (multiple users for same item+project+sub-project)
         duplicates = [v for v in grouped.values() if len(v['users']) > 1]
         return duplicates
     

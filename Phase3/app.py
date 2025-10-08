@@ -1806,9 +1806,9 @@ def display_active_bundles_for_operator(db):
                     
                     # Display each duplicate with edit interface
                     for idx, dup in enumerate(duplicates):
-                        # Note: duplicates come from project_number column which now stores sub-project only
-                        # We don't have parent_project_id in duplicate detection query, so just show project_number
-                        st.markdown(f"**🔍 Duplicate {idx+1}: {dup['item_name']} - Project {dup['project_number']}**")
+                        # Format project display with sub-project if available
+                        formatted_project = format_project_display(dup['project_number'], dup.get('sub_project_number'))
+                        st.markdown(f"**🔍 Duplicate {idx+1}: {dup['item_name']} - Project {formatted_project}**")
                         st.warning(f"Multiple users requested this item for the same project")
                         
                         # Show each user's contribution with edit capability
