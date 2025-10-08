@@ -170,6 +170,43 @@ class DatabaseConnector:
         """
         return self.execute_query(query, (bundle_id, item_id))
     
+    def get_previous_sub_projects(self, parent_project):
+        """
+        Get previously used sub-project numbers for a parent project.
+        For letter-based projects like 'CP-2025', returns list of sub-projects used before.
+        
+        Args:
+            parent_project: Parent project ID (e.g., 'CP-2025')
+        
+        Returns:
+            List of unique sub-project numbers (e.g., ['25-3456', '25-7890'])
+        """
+        try:
+            query = """
+            SELECT DISTINCT project_number
+            FROM requirements_order_items
+            WHERE project_number LIKE ?
+            ORDER BY project_number DESC
+            """
+            # Search for pattern: "CP-2025|%"
+            search_pattern = f"{parent_project}|%"
+            results = self.execute_query(query, (search_pattern,))
+            
+            # Extract sub-project numbers from "parent|sub" format
+            sub_projects = []
+            for row in results:
+                project_number = row['project_number']
+                if '|' in project_number:
+                    # Split and get the sub-project part
+                    parts = project_number.split('|')
+                    if len(parts) == 2:
+                        sub_projects.append(parts[1])
+            
+            return sub_projects
+        except Exception as e:
+            print(f"Error getting previous sub-projects: {str(e)}")
+            return []
+    
     def detect_duplicate_projects_in_bundle(self, bundle_id):
         """
         Detect items where multiple users requested same item for same project.

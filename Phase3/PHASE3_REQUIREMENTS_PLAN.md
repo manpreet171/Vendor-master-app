@@ -392,6 +392,150 @@ if existing_bundle.get('status') == 'Reviewed':
 
 ---
 
+### **October 8, 2025 - Letter-Based Project Sub-Project Support**
+
+#### **✅ Completed Today:**
+
+**Problem Statement:**
+- Some projects start with letters (CP-2025, BCHS 2025, GMH 2025, etc.)
+- These letter-based projects need to be linked to actual project numbers (e.g., 25-3456)
+- Need to track which sub-project numbers were used for each parent project
+- Should show previously used sub-projects for easy selection
+
+**Solution: Sub-Project Tracking with Simple Delimiter**
+
+---
+
+#### **📊 Implementation Details:**
+
+**NO DATABASE SCHEMA CHANGES!**
+- Uses existing `requirements_order_items.project_number VARCHAR(50)` column
+- Stores letter-based projects as: `"parent|sub"` (e.g., "CP-2025|25-3456")
+- Regular projects stored as-is: `"25-1234"`
+
+**Detection Logic:**
+```python
+# Check if project starts with letter
+if project_number[0].isalpha():
+    # Letter-based project - needs sub-project
+else:
+    # Regular number-based project
+```
+
+**Storage Format:**
+- Regular: `"25-1234"`
+- Letter-based: `"CP-2025|25-3456"`
+
+**Display Format:**
+- Regular: `"25-1234"`
+- Letter-based: `"CP-2025 (25-3456)"`
+
+---
+
+#### **🔧 Code Changes:**
+
+**1. New Function in `db_connector.py`:**
+```python
+def get_previous_sub_projects(parent_project):
+    """Get previously used sub-project numbers for a parent project"""
+    # Searches for: "CP-2025|%"
+    # Returns: ['25-3456', '25-7890', '26-1111']
+```
+
+**2. Updated `display_project_selector()` in `app.py`:**
+- Detects if project starts with letter
+- Shows additional input for sub-project number
+- Displays dropdown of previously used sub-projects
+- Option to enter new sub-project number
+- Returns combined format: `"parent|sub"`
+
+**3. New Helper Function:**
+```python
+def format_project_display(project_number):
+    """Format for display: "parent|sub" → "parent (sub)" """
+```
+
+**4. Updated Display Locations:**
+- Cart display
+- My Requests display
+- Operator dashboard (User Requests)
+- Operator dashboard (Bundle duplicates)
+
+---
+
+#### **👤 User Experience:**
+
+**Scenario 1: Regular Project (25-1234)**
+```
+1. User selects: "25-1234"
+2. System: Starts with number → No additional input
+3. Stored as: "25-1234"
+4. Displayed as: "25-1234"
+```
+
+**Scenario 2: Letter-Based Project (First Time)**
+```
+1. User selects: "CP-2025"
+2. System: Starts with letter → Shows input
+   "📋 CP-2025 requires a project number"
+   [Text input: Enter project number for CP-2025]
+   Placeholder: "e.g., 25-3456"
+3. User enters: "25-3456"
+4. Stored as: "CP-2025|25-3456"
+5. Displayed as: "CP-2025 (25-3456)"
+```
+
+**Scenario 3: Letter-Based Project (Previously Used)**
+```
+1. User selects: "CP-2025"
+2. System: Checks database, finds previous sub-projects
+   "📋 CP-2025 requires a project number"
+   [Dropdown]
+   - 25-3456 (previously used)
+   - 25-7890 (previously used)
+   - + Enter new number
+3. User selects: "25-3456" OR enters new number
+4. Stored as: "CP-2025|25-3456"
+5. Displayed as: "CP-2025 (25-3456)"
+```
+
+---
+
+#### **📈 Benefits:**
+
+**For Users:**
+- ✅ Easy selection of previously used sub-projects
+- ✅ Clear display showing both parent and sub-project
+- ✅ No confusion about which project number to use
+
+**For Business:**
+- ✅ Proper tracking of letter-based projects
+- ✅ Links to actual project numbers for accounting
+- ✅ Historical record of sub-projects used
+
+**Technical:**
+- ✅ Zero schema changes
+- ✅ Simple delimiter approach
+- ✅ Backward compatible (regular projects unchanged)
+- ✅ Easy to query with LIKE operator
+
+---
+
+#### **🧪 Testing Checklist:**
+
+- [ ] Regular project (25-1234) still works normally
+- [ ] Letter-based project (CP-2025) shows sub-project input
+- [ ] First-time letter-based project shows text input
+- [ ] Previously used letter-based project shows dropdown
+- [ ] New sub-project can be entered from dropdown
+- [ ] Display shows "parent (sub)" format in cart
+- [ ] Display shows "parent (sub)" format in requests
+- [ ] Display shows "parent (sub)" format in operator dashboard
+- [ ] Bundling works with both formats
+- [ ] Duplicate detection works with both formats
+
+---
+
 ### **September 30, 2025 - Project Tracking Integration**
 
 #### **✅ Completed Today:**

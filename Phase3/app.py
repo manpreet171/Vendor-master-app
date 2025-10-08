@@ -642,7 +642,11 @@ def display_item_card(item, col, category):
         st.markdown("---")
 
 def display_project_selector(db, key_suffix=""):
-    """Reusable project dropdown - returns selected project_number and project_name"""
+    """
+    Reusable project dropdown - returns selected project_number and project_name.
+    For letter-based projects (CP-2025, BCHS 2025, etc.), asks for sub-project number.
+    Returns project in format: "parent|sub" for letter-based, or "number" for regular.
+    """
     try:
         projects = db.get_all_projects()
         if not projects:
@@ -666,14 +670,72 @@ def display_project_selector(db, key_suffix=""):
         
         if selected and selected != "-- Select a project --":
             project_info = options_dict[selected]
-            # Show confirmation with name and type
-            st.success(f"✓ Project: {project_info['number']} - {project_info['name']} ({project_info['type']})")
-            return project_info['number'], project_info['name']
+            parent_project = project_info['number']
+            
+            # Check if project starts with letter (letter-based project)
+            if parent_project and parent_project[0].isalpha():
+                # Letter-based project - need sub-project number
+                st.info(f"📋 **{parent_project}** requires a project number")
+                
+                # Get previously used sub-projects
+                previous_subs = db.get_previous_sub_projects(parent_project)
+                
+                if previous_subs:
+                    # Show dropdown with previous + new option
+                    sub_options = previous_subs + ["+ Enter new number"]
+                    selected_sub = st.selectbox(
+                        f"Select or enter project number for {parent_project}:",
+                        sub_options,
+                        key=f"sub_project_select_{key_suffix}"
+                    )
+                    
+                    if selected_sub == "+ Enter new number":
+                        # Show text input for new number
+                        sub_project = st.text_input(
+                            f"Enter project number for {parent_project}:",
+                            placeholder="e.g., 25-3456",
+                            key=f"sub_project_input_{key_suffix}"
+                        )
+                    else:
+                        # Use selected previous sub-project
+                        sub_project = selected_sub
+                else:
+                    # No previous sub-projects, show text input directly
+                    sub_project = st.text_input(
+                        f"Enter project number for {parent_project}:",
+                        placeholder="e.g., 25-3456",
+                        key=f"sub_project_input_{key_suffix}"
+                    )
+                
+                if sub_project and sub_project.strip():
+                    # Store as "parent|sub" format
+                    combined_project = f"{parent_project}|{sub_project.strip()}"
+                    st.success(f"✓ Project: {parent_project} ({sub_project.strip()}) - {project_info['name']} ({project_info['type']})")
+                    return combined_project, project_info['name']
+                else:
+                    # Sub-project not entered yet
+                    return None, None
+            else:
+                # Regular number-based project
+                st.success(f"✓ Project: {parent_project} - {project_info['name']} ({project_info['type']})")
+                return parent_project, project_info['name']
         
         return None, None
     except Exception as e:
         st.error(f"Error loading projects: {str(e)}")
         return None, None
+
+def format_project_display(project_number):
+    """
+    Format project number for display.
+    For letter-based projects stored as "parent|sub", returns "parent (sub)".
+    For regular projects, returns as-is.
+    """
+    if project_number and '|' in project_number:
+        parts = project_number.split('|')
+        if len(parts) == 2:
+            return f"{parts[0]} ({parts[1]})"
+    return project_number
 
 def add_to_cart(item, quantity, category, project_number=None, project_name=None):
     """Add item to cart with project info"""
@@ -730,7 +792,8 @@ def display_cart_tab(db):
             st.caption(f"{cart_item['category']} • SKU: {cart_item.get('sku', 'N/A')}")
             # Project info
             if cart_item.get('project_number'):
-                st.caption(f"📋 Project: {cart_item['project_number']} - {cart_item.get('project_name', 'N/A')}")
+                formatted_project = format_project_display(cart_item['project_number'])
+                st.caption(f"📋 Project: {formatted_project} - {cart_item.get('project_name', 'N/A')}")
             # Dimensions if available
             dims = []
             h = fmt_dim(cart_item.get('height'))
@@ -937,7 +1000,8 @@ def display_my_requests_tab(db):
                         
                                 # Add project info if available
                                 if item.get('project_number'):
-                                    item_desc += f" | 📋 Project: {item['project_number']}"
+                                    formatted_project = format_project_display(item['project_number'])
+                                    item_desc += f" | 📋 Project: {formatted_project}"
                         
                                 # Show quantity with edit option for pending requests
                                 if request['status'] == 'Pending':
@@ -1252,7 +1316,8 @@ def display_user_requests_for_operator(db):
                         st.write(f"*{item['source_sheet']}*")
                     with col4:
                         if item.get('project_number'):
-                            st.write(f"📋 {item['project_number']}")
+                            formatted_project = format_project_display(item['project_number'])
+                            st.write(f"📋 {formatted_project}")
                         else:
                             st.write("—")
         
@@ -1738,7 +1803,8 @@ def display_active_bundles_for_operator(db):
                     
                     # Display each duplicate with edit interface
                     for idx, dup in enumerate(duplicates):
-                        st.markdown(f"**🔍 Duplicate {idx+1}: {dup['item_name']} - Project {dup['project_number']}**")
+                        formatted_project = format_project_display(dup['project_number'])
+                        st.markdown(f"**🔍 Duplicate {idx+1}: {dup['item_name']} - Project {formatted_project}**")
                         st.warning(f"Multiple users requested this item for the same project")
                         
                         # Show each user's contribution with edit capability
