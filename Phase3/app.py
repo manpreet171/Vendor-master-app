@@ -294,7 +294,7 @@ def display_boxhero_tab(db):
             st.info(f"Selected: **{st.session_state.bh_selected_item.get('item_name', 'Unknown Item')}**")
             
             # Project selection
-            project_number, project_name, parent_project_id = display_project_selector(db, "bh")
+            project_number, project_name, parent_project_id, sub_project_number = display_project_selector(db, "bh")
             
             # Quantity input
             col1, col2 = st.columns([2, 1])
@@ -311,7 +311,7 @@ def display_boxhero_tab(db):
                 # Only enable Add to Cart if project is selected
                 if project_number:
                     if st.button("🛒 Add to Cart", type="primary", key="bh_add_to_cart"):
-                        result = add_to_cart(st.session_state.bh_selected_item, quantity, "BoxHero", project_number, project_name, parent_project_id)
+                        result = add_to_cart(st.session_state.bh_selected_item, quantity, "BoxHero", project_number, project_name, parent_project_id, sub_project_number)
                         if result == "added":
                             st.success("✅ Added to cart!")
                             # Reset flow for next selection
@@ -521,7 +521,7 @@ def display_raw_materials_tab(db):
             st.info(f"Selected: **{sel.get('item_name', 'Unknown Material')}**{dim_txt}")
             
             # Project selection
-            project_number, project_name, parent_project_id = display_project_selector(db, "rm")
+            project_number, project_name, parent_project_id, sub_project_number = display_project_selector(db, "rm")
             
             # Quantity input
             col1, col2 = st.columns([2, 1])
@@ -538,7 +538,7 @@ def display_raw_materials_tab(db):
                 # Only enable Add to Cart if project is selected
                 if project_number:
                     if st.button("🛒 Add to Cart", type="primary", key="rm_add_to_cart"):
-                        result = add_to_cart(st.session_state.rm_selected_item, quantity, "Raw Materials", project_number, project_name, parent_project_id)
+                        result = add_to_cart(st.session_state.rm_selected_item, quantity, "Raw Materials", project_number, project_name, parent_project_id, sub_project_number)
                         if result == "added":
                             st.success("✅ Added to cart!")
                             # Reset flow for next selection
@@ -643,17 +643,17 @@ def display_item_card(item, col, category):
 
 def display_project_selector(db, key_suffix=""):
     """
-    Reusable project dropdown - returns (project_number, project_name, parent_project_id).
+    Reusable project dropdown - returns (project_number, project_name, parent_project_id, sub_project_number).
     For letter-based projects (CP-2025, BCHS 2025, etc.), asks for sub-project number.
     Returns:
-        - Regular projects: (project_number, project_name, None)
-        - Letter-based: (sub_project_number, project_name, parent_project_id)
+        - Regular projects: (project_number, project_name, None, None)
+        - Letter-based: (parent_project, project_name, parent_project, sub_project_number)
     """
     try:
         projects = db.get_all_projects()
         if not projects:
             st.warning("⚠️ No projects available. Please contact your administrator.")
-            return None, None, None
+            return None, None, None, None
         
         # Build dropdown options: Show only ProjectNumber
         options_dict = {}
@@ -710,33 +710,33 @@ def display_project_selector(db, key_suffix=""):
                     )
                 
                 if sub_project and sub_project.strip():
-                    # Return: (sub_project_number, project_name, parent_project_id)
+                    # Return: (parent_project, project_name, parent_project_id, sub_project_number)
                     st.success(f"✓ Project: {parent_project} ({sub_project.strip()}) - {project_info['name']} ({project_info['type']})")
-                    return sub_project.strip(), project_info['name'], parent_project
+                    return parent_project, project_info['name'], parent_project, sub_project.strip()
                 else:
                     # Sub-project not entered yet
-                    return None, None, None
+                    return None, None, None, None
             else:
                 # Regular number-based project
                 st.success(f"✓ Project: {parent_project} - {project_info['name']} ({project_info['type']})")
-                return parent_project, project_info['name'], None
+                return parent_project, project_info['name'], None, None
         
-        return None, None, None
+        return None, None, None, None
     except Exception as e:
         st.error(f"Error loading projects: {str(e)}")
-        return None, None, None
+        return None, None, None, None
 
-def format_project_display(project_number, parent_project_id=None):
+def format_project_display(project_number, sub_project_number=None):
     """
     Format project number for display.
-    If parent_project_id exists, returns "parent (sub)".
+    If sub_project_number exists, returns "parent (sub)".
     Otherwise returns project_number as-is.
     """
-    if parent_project_id:
-        return f"{parent_project_id} ({project_number})"
+    if sub_project_number:
+        return f"{project_number} ({sub_project_number})"
     return project_number
 
-def add_to_cart(item, quantity, category, project_number=None, project_name=None, parent_project_id=None):
+def add_to_cart(item, quantity, category, project_number=None, project_name=None, parent_project_id=None, sub_project_number=None):
     """Add item to cart with project info"""
     try:
         # Check if item already in current cart with same project
@@ -762,7 +762,8 @@ def add_to_cart(item, quantity, category, project_number=None, project_name=None
             'source_sheet': item.get('source_sheet', ''),
             'project_number': project_number,
             'project_name': project_name,
-            'parent_project_id': parent_project_id
+            'parent_project_id': parent_project_id,
+            'sub_project_number': sub_project_number
         }
         
         st.session_state.cart_items.append(cart_item)
@@ -792,7 +793,7 @@ def display_cart_tab(db):
             st.caption(f"{cart_item['category']} • SKU: {cart_item.get('sku', 'N/A')}")
             # Project info
             if cart_item.get('project_number'):
-                formatted_project = format_project_display(cart_item['project_number'], cart_item.get('parent_project_id'))
+                formatted_project = format_project_display(cart_item['project_number'], cart_item.get('sub_project_number'))
                 st.caption(f"📋 Project: {formatted_project} - {cart_item.get('project_name', 'N/A')}")
             # Dimensions if available
             dims = []
@@ -1000,7 +1001,7 @@ def display_my_requests_tab(db):
                         
                                 # Add project info if available
                                 if item.get('project_number'):
-                                    formatted_project = format_project_display(item['project_number'], item.get('parent_project_id'))
+                                    formatted_project = format_project_display(item['project_number'], item.get('sub_project_number'))
                                     item_desc += f" | 📋 Project: {formatted_project}"
                         
                                 # Show quantity with edit option for pending requests
@@ -1294,7 +1295,8 @@ def display_user_requests_for_operator(db):
                 'quantity': req['quantity'],
                 'source_sheet': req['source_sheet'],
                 'project_number': req.get('project_number'),
-                'parent_project_id': req.get('parent_project_id')
+                'parent_project_id': req.get('parent_project_id'),
+                'sub_project_number': req.get('sub_project_number')
             })
             requests_by_user[user_key]['total_pieces'] += req['quantity']
         
@@ -1317,7 +1319,7 @@ def display_user_requests_for_operator(db):
                         st.write(f"*{item['source_sheet']}*")
                     with col4:
                         if item.get('project_number'):
-                            formatted_project = format_project_display(item['project_number'], item.get('parent_project_id'))
+                            formatted_project = format_project_display(item['project_number'], item.get('sub_project_number'))
                             st.write(f"📋 {formatted_project}")
                         else:
                             st.write("—")

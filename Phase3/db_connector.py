@@ -772,6 +772,7 @@ class DatabaseConnector:
             ri.item_notes,
             ri.project_number,
             ri.parent_project_id,
+            ri.sub_project_number,
             i.item_name, 
             i.sku,
             i.source_sheet,
@@ -812,8 +813,8 @@ class DatabaseConnector:
             for item in cart_items:
                 item_query = """
                 INSERT INTO requirements_order_items 
-                (req_id, item_id, quantity, item_notes, project_number, parent_project_id)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (req_id, item_id, quantity, item_notes, project_number, parent_project_id, sub_project_number)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """
                 
                 item_notes = f"Category: {item.get('category', 'Unknown')}"
@@ -823,7 +824,8 @@ class DatabaseConnector:
                     item['quantity'], 
                     item_notes,
                     item.get('project_number'),
-                    item.get('parent_project_id')
+                    item.get('parent_project_id'),
+                    item.get('sub_project_number')
                 ))
             
             # Commit the transaction
@@ -915,7 +917,7 @@ class DatabaseConnector:
         """Get all pending requests for bundling"""
         query = """
         SELECT ro.req_id, ro.req_number, ro.user_id, ro.req_date, ro.total_items,
-               roi.item_id, roi.quantity, roi.project_number, roi.parent_project_id,
+               roi.item_id, roi.quantity, roi.project_number, roi.parent_project_id, roi.sub_project_number,
                i.item_name, i.sku, i.source_sheet
         FROM requirements_orders ro
         JOIN requirements_order_items roi ON ro.req_id = roi.req_id

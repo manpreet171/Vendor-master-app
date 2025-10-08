@@ -408,17 +408,23 @@ if existing_bundle.get('status') == 'Reviewed':
 
 #### **📊 Implementation Details:**
 
-**DATABASE SCHEMA CHANGE:**
+**DATABASE SCHEMA CHANGES:**
 ```sql
+-- Step 1: Add parent reference column
 ALTER TABLE requirements_order_items
 ADD parent_project_id VARCHAR(50) NULL;
+
+-- Step 2: Add sub-project column (no FK validation)
+ALTER TABLE requirements_order_items
+ADD sub_project_number VARCHAR(50) NULL;
 ```
 
 **Storage Strategy:**
-- `project_number` column: Stores actual project number (validates against FK)
-- `parent_project_id` column: Stores parent project reference (for letter-based projects only)
-- Regular projects: `project_number = "25-1234"`, `parent_project_id = NULL`
-- Letter-based: `project_number = "25-3456"`, `parent_project_id = "CP-2025"`
+- `project_number` column: Stores validated project (FK constraint maintained)
+- `parent_project_id` column: Stores parent reference (same as project_number for letter-based)
+- `sub_project_number` column: Stores user-entered sub-project (no validation)
+- Regular projects: `project_number = "25-1234"`, `parent_project_id = NULL`, `sub_project_number = NULL`
+- Letter-based: `project_number = "CP-2025"`, `parent_project_id = "CP-2025"`, `sub_project_number = "25-3456"`
 
 **Detection Logic:**
 ```python
@@ -430,15 +436,17 @@ else:
 ```
 
 **Storage Format:**
-| Type | project_number | parent_project_id | Display |
-|------|---------------|-------------------|---------|
-| Regular | "25-1234" | NULL | "25-1234" |
-| Letter-based | "25-3456" | "CP-2025" | "CP-2025 (25-3456)" |
+| Type | project_number | parent_project_id | sub_project_number | Display |
+|------|---------------|-------------------|-------------------|---------|
+| Regular | "25-1234" | NULL | NULL | "25-1234" |
+| Letter-based | "CP-2025" | "CP-2025" | "25-3456" | "CP-2025 (25-3456)" |
 
 **Benefits:**
-- ✅ FK constraint works (project_number validated)
+- ✅ FK constraint maintained (project_number validated against ProcoreProjectData)
 - ✅ Parent reference preserved (can query by parent)
+- ✅ Sub-project flexible (user can enter any value, no validation)
 - ✅ Future reporting enabled (spending per parent project)
+- ✅ Data integrity for regular projects (must exist in ProcoreProjectData)
 
 ---
 
@@ -461,33 +469,35 @@ def get_previous_sub_projects(parent_project):
 - Shows additional input for sub-project number
 - Displays dropdown of previously used sub-projects
 - Option to enter new sub-project number
-- Returns: `(sub_project_number, project_name, parent_project_id)`
+- Returns: `(project_number, project_name, parent_project_id, sub_project_number)`
+  - Regular: `("25-1234", "Project Name", None, None)`
+  - Letter-based: `("CP-2025", "Project Name", "CP-2025", "25-3456")`
 
 **3. Updated `format_project_display()` Helper:**
 ```python
-def format_project_display(project_number, parent_project_id=None):
+def format_project_display(project_number, sub_project_number=None):
     """Format for display"""
-    if parent_project_id:
-        return f"{parent_project_id} ({project_number})"
+    if sub_project_number:
+        return f"{project_number} ({sub_project_number})"
     return project_number
 ```
 
 **4. Updated `add_to_cart()` Function:**
-- Added `parent_project_id` parameter
-- Stores in cart item dictionary
+- Added `parent_project_id` and `sub_project_number` parameters
+- Stores both in cart item dictionary
 
 **5. Updated `submit_cart_as_order()` in `db_connector.py`:**
 ```python
 INSERT INTO requirements_order_items 
-(req_id, item_id, quantity, item_notes, project_number, parent_project_id)
-VALUES (?, ?, ?, ?, ?, ?)
+(req_id, item_id, quantity, item_notes, project_number, parent_project_id, sub_project_number)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 ```
 
 **6. Updated Display Locations:**
-- Cart display (shows formatted project)
-- My Requests display (shows formatted project)
-- Operator dashboard - User Requests (shows formatted project)
-- All queries updated to include `parent_project_id`
+- Cart display (shows formatted project with sub-project)
+- My Requests display (shows formatted project with sub-project)
+- Operator dashboard - User Requests (shows formatted project with sub-project)
+- All queries updated to include `parent_project_id` and `sub_project_number`
 
 ---
 
@@ -498,8 +508,9 @@ VALUES (?, ?, ?, ?, ?, ?)
 1. User selects: "25-1234"
 2. System: Starts with number → No additional input
 3. Stored as: 
-   - project_number = "25-1234"
+   - project_number = "25-1234" (validated ✅)
    - parent_project_id = NULL
+   - sub_project_number = NULL
 4. Displayed as: "25-1234"
 ```
 
@@ -512,8 +523,9 @@ VALUES (?, ?, ?, ?, ?, ?)
    Placeholder: "e.g., 25-3456"
 3. User enters: "25-3456"
 4. Stored as:
-   - project_number = "25-3456"
+   - project_number = "CP-2025" (validated ✅)
    - parent_project_id = "CP-2025"
+   - sub_project_number = "25-3456" (no validation ✅)
 5. Displayed as: "CP-2025 (25-3456)"
 ```
 
@@ -528,8 +540,9 @@ VALUES (?, ?, ?, ?, ?, ?)
    - + Enter new number
 3. User selects: "25-3456" OR enters new number
 4. Stored as:
-   - project_number = "25-3456"
+   - project_number = "CP-2025" (validated ✅)
    - parent_project_id = "CP-2025"
+   - sub_project_number = "25-3456" (no validation ✅)
 5. Displayed as: "CP-2025 (25-3456)"
 ```
 
