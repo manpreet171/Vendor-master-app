@@ -394,6 +394,21 @@ if existing_bundle.get('status') == 'Reviewed':
 
 ### **October 8, 2025 - Letter-Based Project Sub-Project Support**
 
+#### **📌 Quick Reference:**
+
+**What:** Support for letter-based projects (CP-2025, BCHS 2025) that require sub-project numbers  
+**Why:** Some projects need to track multiple sub-projects under one parent project  
+**How:** Three-column approach (project_number, parent_project_id, sub_project_number)  
+**Result:** FK validation maintained + flexible sub-project entry  
+
+**SQL Commands Run:**
+```sql
+ALTER TABLE requirements_order_items ADD parent_project_id VARCHAR(50) NULL;
+ALTER TABLE requirements_order_items ADD sub_project_number VARCHAR(50) NULL;
+```
+
+---
+
 #### **✅ Completed Today:**
 
 **Problem Statement:**
@@ -401,8 +416,10 @@ if existing_bundle.get('status') == 'Reviewed':
 - These letter-based projects need to be linked to actual project numbers (e.g., 25-3456)
 - Need to track which sub-project numbers were used for each parent project
 - Should show previously used sub-projects for easy selection
+- Must maintain FK constraint validation for regular projects
+- Sub-projects should NOT require validation (user-entered, dynamic)
 
-**Solution: Sub-Project Tracking with Simple Delimiter**
+**Solution: Three-Column Approach with Conditional Validation**
 
 ---
 
@@ -440,6 +457,23 @@ else:
 |------|---------------|-------------------|-------------------|---------|
 | Regular | "25-1234" | NULL | NULL | "25-1234" |
 | Letter-based | "CP-2025" | "CP-2025" | "25-3456" | "CP-2025 (25-3456)" |
+
+**Visual Flow:**
+```
+Regular Project:
+User selects "25-1234" → Validated ✅ → Stored → Display: "25-1234"
+
+Letter-Based Project:
+User selects "CP-2025" → Validated ✅ → Ask for sub-project
+  ↓
+Check database for previous sub-projects
+  ↓
+Show dropdown: [23-12345, 24-5678, + Enter new]
+  ↓
+User enters/selects "25-3456" → No validation ✅ → Stored
+  ↓
+Display: "CP-2025 (25-3456)"
+```
 
 **Benefits:**
 - ✅ FK constraint maintained (project_number validated against ProcoreProjectData)
@@ -570,16 +604,138 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
 
 #### **🧪 Testing Checklist:**
 
-- [ ] Regular project (25-1234) still works normally
-- [ ] Letter-based project (CP-2025) shows sub-project input
-- [ ] First-time letter-based project shows text input
-- [ ] Previously used letter-based project shows dropdown
-- [ ] New sub-project can be entered from dropdown
-- [ ] Display shows "parent (sub)" format in cart
-- [ ] Display shows "parent (sub)" format in requests
-- [ ] Display shows "parent (sub)" format in operator dashboard
-- [ ] Bundling works with both formats
-- [ ] Duplicate detection works with both formats
+- [x] Regular project (25-1234) still works normally
+- [x] Letter-based project (CP-2025) shows sub-project input
+- [x] First-time letter-based project shows text input
+- [x] Previously used letter-based project shows dropdown with actual sub-project numbers
+- [x] New sub-project can be entered from dropdown
+- [x] Display shows "parent (sub)" format in cart
+- [x] Display shows "parent (sub)" format in requests
+- [x] Display shows "parent (sub)" format in operator dashboard
+- [x] FK constraint maintained (no errors on submit)
+- [x] Duplicate detection works correctly for both regular and letter-based projects
+- [x] Different sub-projects NOT detected as duplicates
+
+---
+
+#### **🐛 Issues Found & Fixed:**
+
+**Issue 1: Dropdown Showing Parent Instead of Sub-Project**
+- **Problem:** When selecting BCHS 2025 second time, dropdown showed "BCHS 2025" instead of "23-12345"
+- **Cause:** `get_previous_sub_projects()` was querying `project_number` column instead of `sub_project_number`
+- **Fix:** Updated query to `SELECT DISTINCT sub_project_number WHERE parent_project_id = ?`
+- **Status:** ✅ Fixed
+
+**Issue 2: Duplicate Detection Not Considering Sub-Projects**
+- **Problem:** System detected duplicates for same parent but different sub-projects
+- **Example:** User 1: BCHS 2025 (23-12345), User 2: BCHS 2025 (24-5678) → Incorrectly flagged as duplicate
+- **Cause:** Grouping by `(item_id, project_number)` only, ignoring `sub_project_number`
+- **Fix:** Updated grouping to `(item_id, project_number, sub_project_number)`
+- **Status:** ✅ Fixed
+
+---
+
+#### **📊 Final Database Structure:**
+
+```
+requirements_order_items:
+├── req_id (PK)
+├── item_id (FK → items)
+├── quantity
+├── project_number (FK → ProcoreProjectData.ProjectNumber) ← VALIDATED
+├── parent_project_id (nullable, for reference)
+└── sub_project_number (nullable, NO validation) ← USER-ENTERED
+```
+
+**Key Points:**
+- ✅ FK constraint on `project_number` maintained
+- ✅ Regular projects: Validated against ProcoreProjectData
+- ✅ Letter-based parents: Validated against ProcoreProjectData
+- ✅ Sub-projects: No validation (flexible, user-entered)
+
+---
+
+#### **🎯 Implementation Summary:**
+
+**Files Modified:**
+1. **`db_connector.py`:**
+   - Added `get_previous_sub_projects()` - Query sub-project history
+   - Updated `submit_cart_as_order()` - Save 3 columns (project_number, parent_project_id, sub_project_number)
+   - Updated `get_request_items()` - Include sub_project_number in results
+   - Updated `get_all_pending_requests()` - Include sub_project_number
+   - Updated `detect_duplicate_projects_in_bundle()` - Group by sub-project too
+
+2. **`app.py`:**
+   - Updated `display_project_selector()` - Detect letter-based, show dropdown, return 4 values
+   - Updated `format_project_display()` - Format with sub-project
+   - Updated `add_to_cart()` - Accept and store sub_project_number
+   - Updated all display locations - Cart, Requests, Operator Dashboard
+   - Updated duplicate detection display - Show formatted project
+
+3. **`PHASE3_REQUIREMENTS_PLAN.md`:**
+   - Complete documentation of implementation
+   - Problem statement, solution, benefits
+   - User scenarios, testing checklist
+   - Issues found and fixed
+
+**Total Changes:**
+- Database: 2 new columns
+- Code: 10+ functions modified
+- Queries: 5+ queries updated
+- Display: 6+ locations updated
+
+**Time Spent:** ~2 hours (including troubleshooting and fixes)
+
+**Status:** ✅ **COMPLETE & TESTED**
+
+---
+
+#### **💡 Key Learnings & Design Decisions:**
+
+**Decision 1: Why Three Columns Instead of Two?**
+- Initial approach: Store combined format "parent|sub" in project_number
+- Problem: FK constraint fails (combined format doesn't exist in ProcoreProjectData)
+- Solution: Separate columns for validated parent and unvalidated sub-project
+- Result: Best of both worlds - validation + flexibility
+
+**Decision 2: Why Store Parent in Both project_number AND parent_project_id?**
+- For letter-based: `project_number = "CP-2025"`, `parent_project_id = "CP-2025"`
+- Reason: FK validates project_number, parent_project_id enables queries
+- Benefit: Can query "all items under CP-2025" easily
+
+**Decision 3: Why Query sub_project_number Instead of project_number?**
+- Bug found: Dropdown showed "BCHS 2025" instead of "23-12345"
+- Root cause: Query returned project_number (parent) not sub_project_number (child)
+- Fix: `SELECT DISTINCT sub_project_number WHERE parent_project_id = ?`
+- Learning: Always query the column that contains the actual data you want to display
+
+**Decision 4: Why Include sub_project_number in Duplicate Detection?**
+- Bug found: Same parent + different sub-projects flagged as duplicates
+- Example: BCHS 2025 (23-12345) vs BCHS 2025 (24-5678) → Different projects!
+- Fix: Group by `(item_id, project_number, sub_project_number)`
+- Learning: Duplicate detection must consider ALL identifying fields
+
+---
+
+#### **📝 Future Enhancements (If Needed):**
+
+1. **Sub-Project Validation (Optional):**
+   - Add validation rules for sub-project format (e.g., must match pattern "XX-XXXX")
+   - Prevent typos while maintaining flexibility
+
+2. **Sub-Project Metadata (Optional):**
+   - Create `sub_projects` table to store sub-project details
+   - Link: `parent_project_id → sub_project_number → sub_project_name`
+
+3. **Reporting (Future):**
+   - "Total spending by parent project" report
+   - "Sub-project usage frequency" report
+   - "Parent project with most sub-projects" report
+
+4. **UI Enhancement (Future):**
+   - Autocomplete for sub-project numbers
+   - Show sub-project count next to parent in dropdown
+   - Color-code letter-based vs regular projects
 
 ---
 
