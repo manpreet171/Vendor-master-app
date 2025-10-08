@@ -183,19 +183,20 @@ class DatabaseConnector:
         """
         try:
             query = """
-            SELECT DISTINCT project_number
+            SELECT DISTINCT sub_project_number
             FROM requirements_order_items
             WHERE parent_project_id = ?
-            ORDER BY project_number DESC
+            AND sub_project_number IS NOT NULL
+            ORDER BY sub_project_number DESC
             """
             results = self.execute_query(query, (parent_project,))
             
             # Extract sub-project numbers
             sub_projects = []
             for row in results:
-                project_number = row['project_number']
-                if project_number:
-                    sub_projects.append(project_number)
+                sub_project_number = row['sub_project_number']
+                if sub_project_number:
+                    sub_projects.append(sub_project_number)
             
             return sub_projects
         except Exception as e:
