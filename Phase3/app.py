@@ -675,7 +675,7 @@ def display_project_selector(db, key_suffix=""):
             # Check if project starts with letter (letter-based project)
             if parent_project and parent_project[0].isalpha():
                 # Letter-based project - need sub-project number
-                st.info(f"📋 **{parent_project}** requires a project number")
+                st.info(f"📋 **{parent_project}** - {project_info['name']} ({project_info['type']}) requires a project number")
                 
                 # Get previously used sub-projects
                 previous_subs = db.get_previous_sub_projects(parent_project)
