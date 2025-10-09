@@ -1902,10 +1902,10 @@ def display_active_bundles_for_operator(db):
                     # Just show a success message if duplicates were reviewed
                     st.success(f"✅ Duplicates Reviewed - {len(duplicates)} item(s) were checked")
 
-                # Read-only vendor options for single-item bundles
+                # Read-only vendor options for single-item bundles (Active/Reviewed status only)
                 try:
                     items = items_by_bundle.get(bundle.get('bundle_id'), [])
-                    if len(items) == 1:
+                    if len(items) == 1 and bundle['status'] in ('Active', 'Reviewed'):
                         st.markdown("---")
                         st.caption("Other vendor options for this item (view-only)")
                         single_item = items[0]
