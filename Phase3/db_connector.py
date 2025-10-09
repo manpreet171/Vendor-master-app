@@ -206,6 +206,7 @@ class DatabaseConnector:
     def detect_duplicate_projects_in_bundle(self, bundle_id):
         """
         Detect items where multiple users requested same item for same project.
+        Only checks items ACTUALLY in this bundle (from requirements_bundle_items).
         For letter-based projects, considers both parent and sub-project.
         Returns list of duplicates with format:
         [{
@@ -216,20 +217,19 @@ class DatabaseConnector:
             'users': [{'user_id': int, 'quantity': int}, ...]
         }]
         """
+        import json
+        
         query = """
         SELECT 
-            roi.item_id,
+            rbi.item_id,
             i.item_name,
-            roi.project_number,
-            roi.sub_project_number,
-            ro.user_id,
-            roi.quantity
-        FROM requirements_bundle_mapping rbm
-        JOIN requirements_orders ro ON rbm.req_id = ro.req_id
-        JOIN requirements_order_items roi ON ro.req_id = roi.req_id
-        JOIN items i ON roi.item_id = i.item_id
-        WHERE rbm.bundle_id = ? AND roi.project_number IS NOT NULL
-        ORDER BY roi.item_id, roi.project_number, roi.sub_project_number
+            rbi.project_number,
+            rbi.sub_project_number,
+            rbi.user_breakdown
+        FROM requirements_bundle_items rbi
+        JOIN items i ON rbi.item_id = i.item_id
+        WHERE rbi.bundle_id = ? AND rbi.project_number IS NOT NULL
+        ORDER BY rbi.item_id, rbi.project_number, rbi.sub_project_number
         """
         
         results = self.execute_query(query, (bundle_id,))
@@ -237,26 +237,26 @@ class DatabaseConnector:
         if not results:
             return []
         
-        # Group by (item_id, project_number, sub_project_number)
-        # This ensures different sub-projects are NOT considered duplicates
-        grouped = {}
+        # Build duplicates list from items ACTUALLY in this bundle
+        duplicates = []
+        
         for row in results:
-            key = (row['item_id'], row['project_number'], row.get('sub_project_number'))
-            if key not in grouped:
-                grouped[key] = {
+            # Parse user_breakdown JSON
+            try:
+                user_breakdown = json.loads(row['user_breakdown']) if row['user_breakdown'] else []
+            except:
+                user_breakdown = []
+            
+            # Check if multiple users (duplicate)
+            if len(user_breakdown) > 1:
+                duplicates.append({
                     'item_id': row['item_id'],
                     'item_name': row['item_name'],
                     'project_number': row['project_number'],
                     'sub_project_number': row.get('sub_project_number'),
-                    'users': []
-                }
-            grouped[key]['users'].append({
-                'user_id': row['user_id'],
-                'quantity': row['quantity']
-            })
+                    'users': user_breakdown  # Already in correct format: [{'user_id': int, 'quantity': int}, ...]
+                })
         
-        # Filter to only duplicates (multiple users for same item+project+sub-project)
-        duplicates = [v for v in grouped.values() if len(v['users']) > 1]
         return duplicates
     
     def update_bundle_item_user_quantity(self, bundle_id, item_id, user_id, new_quantity):

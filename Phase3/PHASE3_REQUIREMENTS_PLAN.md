@@ -667,6 +667,9 @@ Different sub-projects = different projects
 - [x] Letter-based: Different sub-projects → Allowed
 - [x] Letter-based: Same sub-project in Pending → Warning
 - [x] Letter-based: Same sub-project in Progress → Blocked
+- [x] Project ID displays correctly in My Requests tab
+- [x] Project ID shows for both regular and letter-based projects
+- [x] Database connector parameter passed correctly
 
 ---
 
@@ -696,6 +699,22 @@ Different sub-projects = different projects
 - **Fix:** Added delete_order_item() and delete_request() functions + UI buttons
 - **Status:** ✅ Fixed
 
+**Issue 4: DatabaseConnector Instance Error**
+- **Problem:** `add_to_cart()` created new DatabaseConnector instance without latest methods
+- **Example:** Error: 'DatabaseConnector' object has no attribute 'get_locked_item_project_pairs'
+- **Impact:** Duplicate checking failed, users couldn't add items
+- **Cause:** New instance created inside function instead of using passed parameter
+- **Fix:** Added `db` parameter to `add_to_cart()`, passed from calling functions
+- **Status:** ✅ Fixed
+
+**Issue 5: Project ID Not Displayed in My Requests**
+- **Problem:** Project information not showing in "My Requests" tab
+- **Example:** User sees item name and dimensions but no project ID
+- **Impact:** Users don't know which project their items are for
+- **Cause:** `get_request_items()` query didn't fetch `project_number` and `sub_project_number`
+- **Fix:** Added `ri.project_number, ri.sub_project_number` to SELECT statement
+- **Status:** ✅ Fixed
+
 ---
 
 #### **🎯 Implementation Summary:**
@@ -709,19 +728,22 @@ Different sub-projects = different projects
    - Deprecated `get_user_requested_item_ids()` - No longer used
 
 2. **`app.py`:**
-   - Updated `add_to_cart()` - Two-tier duplicate checking (Pending/Locked)
+   - Updated `add_to_cart()` - Two-tier duplicate checking (Pending/Locked) + added `db` parameter
    - Updated `display_my_requests_tab()` - Added delete item button (🗑️)
    - Updated `display_my_requests_tab()` - Added delete request button
+   - Updated `get_request_items()` - Added project_number and sub_project_number to query
    - Removed old item filtering in BoxHero tab
    - Removed old item filtering in Raw Materials tab
+   - Updated all `add_to_cart()` calls to pass `db` parameter
 
 **Total Changes:**
 - Database: 0 schema changes (uses existing tables)
-- Code: 4 new functions + 2 updated functions
-- UI: 2 new buttons + enhanced messaging
-- Lines: ~140 lines added
+- Code: 4 new functions + 4 updated functions
+- UI: 2 new buttons + enhanced messaging + project display
+- Lines: ~150 lines added
+- Bug Fixes: 5 issues resolved
 
-**Time Spent:** ~1.5 hours (including testing and documentation)
+**Time Spent:** ~2 hours (including testing, bug fixes, and documentation)
 
 **Status:** ✅ **COMPLETE & TESTED**
 
@@ -778,6 +800,89 @@ Different sub-projects = different projects
 5. **Request History:**
    - Show deleted requests in history
    - Audit trail for compliance
+
+---
+
+#### **📝 Final Summary:**
+
+**What Works Now:**
+1. ✅ Users can delete items from pending requests
+2. ✅ Users can delete entire pending requests
+3. ✅ System blocks duplicates for In Progress/Ordered items
+4. ✅ Users can request same item for different projects
+5. ✅ Project ID displays in My Requests tab
+6. ✅ All duplicate checking works correctly
+7. ✅ Status-based permissions enforced
+
+**User Impact:**
+- **Before:** Rigid system, stuck with mistakes, couldn't see project info
+- **After:** Flexible pending requests, smart blocking, full project visibility
+
+**Technical Achievement:**
+- Zero database changes
+- 5 bugs fixed
+- 150+ lines of code
+- Complete feature implementation
+
+**Next Steps:**
+- Monitor user feedback
+- Consider future enhancements if needed
+- System ready for production use
+
+---
+
+#### **🐛 Bug Fix (Same Day - Afternoon):**
+
+**Issue: False Duplicate Warnings in Split Bundles**
+
+**Problem:**
+- When operator split items from Bundle A to Bundle B
+- Bundle B showed duplicate warnings for items NOT in Bundle B
+- Example: Bundle A had Item X (duplicate), operator moved Item Y to Bundle B
+- Bundle B incorrectly showed Item X duplicate warning
+
+**Root Cause:**
+```python
+# OLD query (WRONG):
+FROM requirements_bundle_mapping rbm
+JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+# This got ALL items from requests, not just items in the bundle
+```
+
+**Why This Happened:**
+- `requirements_bundle_mapping` links entire requests to bundles
+- Old query got ALL items from those requests
+- Even if some items were moved to different bundles
+
+**The Fix:**
+```python
+# NEW query (CORRECT):
+FROM requirements_bundle_items rbi
+WHERE rbi.bundle_id = ?
+# This gets ONLY items actually in this bundle
+```
+
+**Impact:**
+- ✅ Each bundle now checks only its own items
+- ✅ No false duplicate warnings in split bundles
+- ✅ Duplicate detection is bundle-specific
+- ✅ Operator workflow is cleaner
+
+**Design Decision:**
+- When duplicate item moved to new bundle → New bundle shows duplicate warning
+- This is CORRECT because:
+  - Different bundle = Different vendor = Different context
+  - Operator should review duplicates per vendor
+  - Pricing/MOQ might differ per vendor
+  - Safety: Explicit review better than implicit assumption
+
+**Files Modified:**
+- `db_connector.py` - Updated `detect_duplicate_projects_in_bundle()`
+  - Changed from querying `requirements_order_items` to `requirements_bundle_items`
+  - Now parses `user_breakdown` JSON to detect duplicates
+  - Only checks items physically in the bundle
+
+**Status:** ✅ Fixed and tested
 
 ---
 
