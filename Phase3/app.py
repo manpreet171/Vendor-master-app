@@ -1176,7 +1176,8 @@ def get_user_requests(db, user_id):
 def get_request_items(db, req_id):
     """Get items for a specific request with dimensions"""
     query = """
-    SELECT ri.quantity, ri.item_notes, i.item_id, i.item_name, i.sku, i.source_sheet,
+    SELECT ri.quantity, ri.item_notes, ri.project_number, ri.sub_project_number,
+           i.item_id, i.item_name, i.sku, i.source_sheet,
            i.height, i.width, i.thickness, i.item_type
     FROM requirements_order_items ri
     JOIN items i ON ri.item_id = i.item_id
