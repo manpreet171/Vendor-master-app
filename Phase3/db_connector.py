@@ -872,15 +872,11 @@ class DatabaseConnector:
         return req_number
     
     def get_user_requested_item_ids(self, user_id):
-        """Get item IDs that user has already requested (pending or in progress)"""
-        query = """
-        SELECT DISTINCT roi.item_id
-        FROM requirements_orders ro
-        JOIN requirements_order_items roi ON ro.req_id = roi.req_id
-        WHERE ro.user_id = ? AND ro.status IN ('Pending', 'In Progress')
         """
-        results = self.execute_query(query, (user_id,))
-        return [row['item_id'] for row in results] if results else []
+        DEPRECATED: No longer used. Duplicate checking now done by item+project combination.
+        Kept for backward compatibility.
+        """
+        return []
     
     def update_order_item_quantity(self, req_id, item_id, new_quantity):
         """Update quantity for an existing order item"""
@@ -1006,6 +1002,23 @@ class DatabaseConnector:
         JOIN requirements_order_items roi ON ro.req_id = roi.req_id
         JOIN items i ON roi.item_id = i.item_id
         WHERE ro.user_id = ? AND ro.status = 'Pending'
+        """
+        return self.execute_query(query, (user_id,))
+    
+    def get_locked_item_project_pairs(self, user_id):
+        """Get item+project combinations that are locked (In Progress/Ordered)"""
+        query = """
+        SELECT 
+            roi.item_id,
+            roi.project_number,
+            roi.sub_project_number,
+            ro.status,
+            ro.req_number,
+            i.item_name
+        FROM requirements_orders ro
+        JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+        JOIN items i ON roi.item_id = i.item_id
+        WHERE ro.user_id = ? AND ro.status IN ('In Progress', 'Ordered')
         """
         return self.execute_query(query, (user_id,))
     

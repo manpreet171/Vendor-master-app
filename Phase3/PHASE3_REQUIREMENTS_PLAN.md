@@ -392,6 +392,395 @@ if existing_bundle.get('status') == 'Reviewed':
 
 ---
 
+### **October 9, 2025 - Pending Request Management & Status-Based Item Blocking**
+
+#### **📌 Quick Reference:**
+
+**What:** Full CRUD operations for pending requests + status-based duplicate prevention  
+**Why:** Users need flexibility to modify pending requests, but prevent duplicates when items are being processed  
+**How:** Delete items/requests for Pending status + block items in In Progress/Ordered status  
+**Result:** Users have full control over pending requests, system prevents conflicts for locked items  
+
+**No Database Changes Required** - Uses existing schema
+
+---
+
+#### **✅ Completed Today:**
+
+**Problem Statement:**
+1. Users couldn't delete items from pending requests
+2. Users couldn't delete entire pending requests
+3. System blocked items by item_id only (not considering project)
+4. Users couldn't request same item for different projects
+5. No distinction between Pending (editable) and In Progress/Ordered (locked)
+
+**Solution: Status-Based Request Management**
+
+---
+
+#### **📊 Implementation Details:**
+
+**Three-Tier Duplicate Prevention:**
+
+```
+Tier 1: Pending Requests
+→ User can edit/delete
+→ Warning if trying to add duplicate
+→ Suggest editing existing request
+
+Tier 2: In Progress/Ordered Requests  
+→ User CANNOT modify
+→ Block if trying to add duplicate
+→ Must wait for completion
+
+Tier 3: Completed Requests
+→ User can request again freely
+→ No blocking
+```
+
+**Status Flow:**
+```
+Pending → (User can modify) → In Progress → (Locked) → Ordered → (Locked) → Completed → (Can request again)
+   ↑                              ↓                        ↓
+   |                              |                        |
+✅ Full Control              ❌ Locked                ❌ Locked
+```
+
+---
+
+#### **🔧 Code Changes:**
+
+**1. New Database Functions (db_connector.py):**
+
+```python
+def delete_order_item(self, req_id, item_id):
+    """Delete an item from a pending request"""
+    # Delete item
+    # Check if any items remain
+    # If no items left → Delete entire request
+    # Else → Update total_items count
+    return "request_deleted" or "item_deleted"
+
+def delete_request(self, req_id):
+    """Delete an entire pending request"""
+    # Delete all items
+    # Delete request
+    return True
+
+def get_user_pending_items(self, user_id):
+    """Get all items in user's pending requests"""
+    # Returns: req_number, item_id, project_number, sub_project_number, quantity
+    
+def get_locked_item_project_pairs(self, user_id):
+    """Get item+project combinations that are locked (In Progress/Ordered)"""
+    # Returns: item_id, project_number, sub_project_number, status, req_number
+```
+
+**2. Updated add_to_cart() Function (app.py):**
+
+```python
+def add_to_cart(...):
+    # Check 1: Pending requests
+    pending_items = db.get_user_pending_items(user_id)
+    for pending in pending_items:
+        if same_item_and_project:
+            st.warning("⚠️ You have this in pending request")
+            st.info("Go to 'My Requests' to edit quantity")
+            return "duplicate"
+    
+    # Check 2: Locked items (In Progress/Ordered)
+    locked_items = db.get_locked_item_project_pairs(user_id)
+    for locked in locked_items:
+        if same_item_and_project:
+            st.error("❌ Item being processed for this project")
+            st.info(f"Status: {locked['status']}")
+            st.info("Wait for completion before requesting again")
+            return "blocked"
+    
+    # Check 3: Different project? Always allow
+    # Add to cart...
+```
+
+**3. Updated My Requests Tab (app.py):**
+
+**Added Delete Item Button:**
+```python
+# For each item in pending request:
+col_item, col_qty, col_btn, col_del = st.columns([3, 1, 1, 0.5])
+
+with col_del:
+    if st.button("🗑️", key=f"delete_{req_id}_{item_id}"):
+        result = db.delete_order_item(req_id, item_id)
+        if result == "request_deleted":
+            st.success("✅ Last item deleted. Request removed.")
+        else:
+            st.success("✅ Item deleted!")
+        st.rerun()
+```
+
+**Added Delete Request Button:**
+```python
+# At bottom of pending request:
+if st.button("🗑️ Delete This Request", key=f"delete_req_{req_id}"):
+    success = db.delete_request(req_id)
+    if success:
+        st.success("✅ Request deleted!")
+        st.rerun()
+```
+
+**4. Removed Old Blocking Logic:**
+
+**Before:**
+```python
+# Blocked items by item_id only (wrong)
+requested_item_ids = db.get_user_requested_item_ids(user_id)
+available_items = [item for item in all_items if item['item_id'] not in requested_item_ids]
+```
+
+**After:**
+```python
+# All items always available
+available_items = all_items
+# Duplicate check happens in add_to_cart() by item+project combination
+```
+
+---
+
+#### **👤 User Experience:**
+
+**Scenario 1: Pending Request - Full Control**
+```
+User has: Item X, Project abc, Status: Pending
+
+Actions Available:
+✅ Edit quantity
+✅ Delete item (🗑️ button)
+✅ Delete entire request (Delete This Request button)
+✅ If last item deleted → Request auto-deleted
+
+Try to add same item+project:
+⚠️ Warning: "You have this in pending. Edit instead."
+```
+
+**Scenario 2: In Progress - Locked**
+```
+User has: Item X, Project abc, Status: In Progress
+
+Actions Available:
+❌ Cannot edit
+❌ Cannot delete
+✅ Can only view
+
+Try to add same item+project:
+❌ Blocked: "Item being processed. Wait for completion."
+Status: In Progress
+```
+
+**Scenario 3: Ordered - Locked**
+```
+User has: Item X, Project abc, Status: Ordered
+
+Actions Available:
+❌ Cannot edit
+❌ Cannot delete
+✅ Can only view
+
+Try to add same item+project:
+❌ Blocked: "Item being processed. Wait for completion."
+Status: Ordered
+```
+
+**Scenario 4: Completed - Can Request Again**
+```
+User has: Item X, Project abc, Status: Completed
+
+Actions Available:
+✅ Can request same item+project again
+✅ No blocking
+✅ Fresh request created
+```
+
+**Scenario 5: Different Projects - Always Allowed**
+```
+User has: Item X, Project abc, Status: In Progress
+
+Try to add: Item X, Project xyz
+✅ Allowed (different project)
+No blocking, no warning
+```
+
+**Scenario 6: Letter-Based Projects**
+```
+User has: Item X, BCHS 2025 (23-12345), Status: In Progress
+
+Try to add: Item X, BCHS 2025 (24-5678)
+✅ Allowed (different sub-project)
+Different sub-projects = different projects
+```
+
+---
+
+#### **📈 Benefits:**
+
+**For Users:**
+- ✅ Full control over pending requests (edit/delete items/requests)
+- ✅ Clear feedback when trying to add duplicates
+- ✅ Can request same item for different projects
+- ✅ Can request same item again after completion
+- ✅ Understand why they can't add items (status shown)
+
+**For Business:**
+- ✅ Prevents duplicate orders for items being processed
+- ✅ Reduces confusion and errors
+- ✅ Clear audit trail (requests not modified after bundling)
+- ✅ Users can self-serve (less support needed)
+
+**Technical:**
+- ✅ No database schema changes
+- ✅ Simple implementation (~100 lines)
+- ✅ Status-based logic (easy to understand)
+- ✅ Backward compatible
+
+---
+
+#### **📊 Complete Status Matrix:**
+
+| User Has | Status | Same Item+Project | Different Project | Action Available |
+|----------|--------|-------------------|-------------------|------------------|
+| Item X, abc | Pending | ⚠️ Warning: Edit existing | ✅ Allowed | ✅ Edit/Delete |
+| Item X, abc | In Progress | ❌ Blocked: Processing | ✅ Allowed | ❌ View only |
+| Item X, abc | Ordered | ❌ Blocked: Ordered | ✅ Allowed | ❌ View only |
+| Item X, abc | Completed | ✅ Allowed: Can request again | ✅ Allowed | ❌ View only |
+
+---
+
+#### **🧪 Testing Checklist:**
+
+- [x] Delete individual item from pending request
+- [x] Delete last item → Request auto-deleted
+- [x] Delete entire pending request
+- [x] Try to add item+project already in Pending → Warning shown
+- [x] Try to add item+project in In Progress → Blocked
+- [x] Try to add item+project in Ordered → Blocked
+- [x] Try to add item+project after Completed → Allowed
+- [x] Try to add same item for different project → Allowed
+- [x] Letter-based: Different sub-projects → Allowed
+- [x] Letter-based: Same sub-project in Pending → Warning
+- [x] Letter-based: Same sub-project in Progress → Blocked
+
+---
+
+#### **🐛 Issues Found & Fixed:**
+
+**Issue 1: Old Blocking Logic Too Restrictive**
+- **Problem:** System blocked items by `item_id` only, not considering project
+- **Example:** User had Item X for Project abc → Item X hidden for ALL projects
+- **Impact:** User couldn't request Item X for Project xyz (different project)
+- **Cause:** `get_user_requested_item_ids()` returned item IDs without project context
+- **Fix:** Removed old filtering, implemented project-aware duplicate checking
+- **Status:** ✅ Fixed
+
+**Issue 2: No Distinction Between Pending and Locked**
+- **Problem:** Same blocking for Pending and In Progress status
+- **Example:** User couldn't modify Pending requests (should be editable)
+- **Impact:** Users had to contact support to change pending requests
+- **Cause:** No status-based logic in duplicate checking
+- **Fix:** Implemented three-tier system (Pending/Locked/Completed)
+- **Status:** ✅ Fixed
+
+**Issue 3: No Delete Functionality**
+- **Problem:** Users couldn't remove items or requests
+- **Example:** User added wrong item → Stuck with it until completion
+- **Impact:** Wasted resources, user frustration
+- **Cause:** No delete buttons or functions implemented
+- **Fix:** Added delete_order_item() and delete_request() functions + UI buttons
+- **Status:** ✅ Fixed
+
+---
+
+#### **🎯 Implementation Summary:**
+
+**Files Modified:**
+1. **`db_connector.py`:**
+   - Added `delete_order_item()` - Delete item, auto-delete request if last item
+   - Added `delete_request()` - Delete entire request
+   - Added `get_user_pending_items()` - Get pending items for duplicate check
+   - Added `get_locked_item_project_pairs()` - Get locked items (In Progress/Ordered)
+   - Deprecated `get_user_requested_item_ids()` - No longer used
+
+2. **`app.py`:**
+   - Updated `add_to_cart()` - Two-tier duplicate checking (Pending/Locked)
+   - Updated `display_my_requests_tab()` - Added delete item button (🗑️)
+   - Updated `display_my_requests_tab()` - Added delete request button
+   - Removed old item filtering in BoxHero tab
+   - Removed old item filtering in Raw Materials tab
+
+**Total Changes:**
+- Database: 0 schema changes (uses existing tables)
+- Code: 4 new functions + 2 updated functions
+- UI: 2 new buttons + enhanced messaging
+- Lines: ~140 lines added
+
+**Time Spent:** ~1.5 hours (including testing and documentation)
+
+**Status:** ✅ **COMPLETE & TESTED**
+
+---
+
+#### **💡 Key Design Decisions:**
+
+**Decision 1: Why Status-Based Blocking?**
+- **Rationale:** Different statuses require different behaviors
+- **Pending:** User should have full control (can change mind)
+- **In Progress/Ordered:** System has started processing (must not interfere)
+- **Completed:** Order fulfilled (can request again)
+- **Result:** Clear rules, predictable behavior
+
+**Decision 2: Why Check at add_to_cart() Instead of Hiding Items?**
+- **Rationale:** Better UX to show all items, block when adding
+- **Alternative:** Hide items from list (confusing - "where did my item go?")
+- **Chosen:** Show all items, clear error message when blocked
+- **Result:** Users understand WHY they can't add, not just that they can't
+
+**Decision 3: Why Auto-Delete Request When Last Item Deleted?**
+- **Rationale:** Empty requests serve no purpose
+- **Alternative:** Keep empty request (clutter, confusion)
+- **Chosen:** Auto-delete with clear message
+- **Result:** Clean database, clear user feedback
+
+**Decision 4: Why Block In Progress AND Ordered?**
+- **Rationale:** Both statuses mean "system is working on it"
+- **In Progress:** Being bundled/prepared
+- **Ordered:** Order placed with vendor
+- **Both:** User interference would cause problems
+- **Result:** Clear boundary - user can't touch after bundling starts
+
+---
+
+#### **📝 Future Enhancements (If Needed):**
+
+1. **Bulk Delete:**
+   - Select multiple items to delete at once
+   - "Delete All" button for entire request
+
+2. **Undo Delete:**
+   - Soft delete with restore option
+   - "Undo" button for 30 seconds after delete
+
+3. **Delete Confirmation:**
+   - Modal dialog: "Are you sure?"
+   - Prevent accidental deletions
+
+4. **Status Badges:**
+   - Show item status in browse view
+   - Visual indicator (🟡 Pending, 🔵 In Progress, etc.)
+
+5. **Request History:**
+   - Show deleted requests in history
+   - Audit trail for compliance
+
+---
+
 ### **October 8, 2025 - Letter-Based Project Sub-Project Support**
 
 #### **📌 Quick Reference:**

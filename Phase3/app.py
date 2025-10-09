@@ -221,25 +221,8 @@ def display_boxhero_tab(db):
             st.info("No BoxHero items available at the moment.")
             return
         
-        # Filter out items that user has already requested (pending/in-progress) with small cache
-        rid_cache_key = 'requested_item_ids_cache'
-        rid_ttl = 60
-        if (rid_cache_key not in st.session_state or 
-            st.session_state[rid_cache_key].get('user_id') != st.session_state.user_id or
-            (now_ts - st.session_state[rid_cache_key]['ts'] > rid_ttl)):
-            requested_item_ids = db.get_user_requested_item_ids(st.session_state.user_id)
-            st.session_state[rid_cache_key] = {
-                'user_id': st.session_state.user_id,
-                'data': requested_item_ids or [],
-                'ts': now_ts
-            }
-        else:
-            requested_item_ids = st.session_state[rid_cache_key]['data']
-        available_items = [item for item in all_items if item['item_id'] not in requested_item_ids]
-        
-        if not available_items:
-            st.info("All BoxHero items are currently in your pending or in-progress requests. Check 'My Requests' tab to manage them.")
-            return
+        # Use all items - duplicate check happens in add_to_cart()
+        available_items = all_items
         
         # Step 1: Select Item Type
         if st.session_state.bh_step >= 1:
@@ -382,25 +365,8 @@ def display_raw_materials_tab(db):
             st.info("No raw materials available at the moment.")
             return
         
-        # Filter out items that user has already requested (pending/in-progress) with small cache
-        rid_cache_key = 'requested_item_ids_cache'
-        rid_ttl = 60
-        if (rid_cache_key not in st.session_state or 
-            st.session_state[rid_cache_key].get('user_id') != st.session_state.user_id or
-            (now_ts - st.session_state[rid_cache_key]['ts'] > rid_ttl)):
-            requested_item_ids = db.get_user_requested_item_ids(st.session_state.user_id)
-            st.session_state[rid_cache_key] = {
-                'user_id': st.session_state.user_id,
-                'data': requested_item_ids or [],
-                'ts': now_ts
-            }
-        else:
-            requested_item_ids = st.session_state[rid_cache_key]['data']
-        available_items = [item for item in all_items if item['item_id'] not in requested_item_ids]
-        
-        if not available_items:
-            st.info("All raw materials are currently in your pending or in-progress requests. Check 'My Requests' tab to manage them.")
-            return
+        # Use all items - duplicate check happens in add_to_cart()
+        available_items = all_items
         
         # Step 1: Select Item Type
         if st.session_state.rm_step >= 1:
@@ -739,12 +705,13 @@ def format_project_display(project_number, sub_project_number=None):
 def add_to_cart(item, quantity, category, project_number=None, project_name=None, parent_project_id=None, sub_project_number=None):
     """Add item to cart with project info"""
     try:
-        # Check if user already has this item+project in pending requests
+        # Check if user already has this item+project in pending or locked status
         if 'user_id' in st.session_state:
             from db_connector import DatabaseConnector
             db = DatabaseConnector()
-            pending_items = db.get_user_pending_items(st.session_state.user_id)
             
+            # Check 1: Pending requests (show warning, suggest edit)
+            pending_items = db.get_user_pending_items(st.session_state.user_id)
             for pending in pending_items:
                 # Check if same item + same project (including sub-project)
                 if (pending['item_id'] == item['item_id'] and 
@@ -758,6 +725,22 @@ def add_to_cart(item, quantity, category, project_number=None, project_name=None
                     st.info(f"Current quantity in **{pending['req_number']}**: {pending['quantity']} pieces")
                     st.info("💡 Go to **'My Requests'** tab to edit the quantity instead of creating a duplicate.")
                     return "duplicate"
+            
+            # Check 2: Locked items (In Progress/Ordered) - block completely
+            locked_items = db.get_locked_item_project_pairs(st.session_state.user_id)
+            for locked in locked_items:
+                # Check if same item + same project (including sub-project)
+                if (locked['item_id'] == item['item_id'] and 
+                    locked['project_number'] == project_number and
+                    locked.get('sub_project_number') == sub_project_number):
+                    
+                    # Block with error message
+                    formatted_project = format_project_display(project_number, sub_project_number)
+                    st.error(f"❌ **This item is already being processed for this project!**")
+                    st.info(f"📋 **{locked['item_name']}** - Project: {formatted_project}")
+                    st.info(f"Request: **{locked['req_number']}** - Status: **{locked['status']}**")
+                    st.info("⏳ Please wait for the current order to complete before requesting this item again.")
+                    return "blocked"
         
         # Check if item already in current cart with same project
         for cart_item in st.session_state.cart_items:
