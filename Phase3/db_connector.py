@@ -919,6 +919,96 @@ class DatabaseConnector:
                 self.conn.rollback()
             raise Exception(f"Failed to update quantity: {str(e)}")
     
+    def delete_order_item(self, req_id, item_id):
+        """Delete an item from a pending request"""
+        try:
+            # Delete the item
+            delete_query = """
+            DELETE FROM requirements_order_items 
+            WHERE req_id = ? AND item_id = ?
+            """
+            self.execute_insert(delete_query, (req_id, item_id))
+            
+            # Check if any items remain
+            check_query = """
+            SELECT COUNT(*) as count 
+            FROM requirements_order_items 
+            WHERE req_id = ?
+            """
+            result = self.execute_query(check_query, (req_id,))
+            
+            if result[0]['count'] == 0:
+                # No items left, delete the entire request
+                delete_request_query = """
+                DELETE FROM requirements_orders 
+                WHERE req_id = ?
+                """
+                self.execute_insert(delete_request_query, (req_id,))
+                self.conn.commit()
+                return "request_deleted"
+            else:
+                # Update total items count
+                update_total_query = """
+                UPDATE requirements_orders 
+                SET total_items = (
+                    SELECT SUM(quantity) 
+                    FROM requirements_order_items 
+                    WHERE req_id = ?
+                )
+                WHERE req_id = ?
+                """
+                self.execute_insert(update_total_query, (req_id, req_id))
+                self.conn.commit()
+                return "item_deleted"
+                
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            raise Exception(f"Failed to delete item: {str(e)}")
+    
+    def delete_request(self, req_id):
+        """Delete an entire pending request"""
+        try:
+            # Delete all items first
+            delete_items_query = """
+            DELETE FROM requirements_order_items 
+            WHERE req_id = ?
+            """
+            self.execute_insert(delete_items_query, (req_id,))
+            
+            # Delete the request
+            delete_request_query = """
+            DELETE FROM requirements_orders 
+            WHERE req_id = ?
+            """
+            self.execute_insert(delete_request_query, (req_id,))
+            
+            self.conn.commit()
+            return True
+            
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            raise Exception(f"Failed to delete request: {str(e)}")
+    
+    def get_user_pending_items(self, user_id):
+        """Get all items in user's pending requests for duplicate detection"""
+        query = """
+        SELECT 
+            ro.req_number,
+            ro.req_id,
+            roi.item_id,
+            roi.project_number,
+            roi.sub_project_number,
+            roi.quantity,
+            i.item_name
+        FROM requirements_orders ro
+        JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+        JOIN items i ON roi.item_id = i.item_id
+        WHERE ro.user_id = ? AND ro.status = 'Pending'
+        """
+        return self.execute_query(query, (user_id,))
+    
     def get_all_pending_requests(self):
         """Get all pending requests for bundling"""
         query = """

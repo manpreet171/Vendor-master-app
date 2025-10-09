@@ -739,6 +739,26 @@ def format_project_display(project_number, sub_project_number=None):
 def add_to_cart(item, quantity, category, project_number=None, project_name=None, parent_project_id=None, sub_project_number=None):
     """Add item to cart with project info"""
     try:
+        # Check if user already has this item+project in pending requests
+        if 'user_id' in st.session_state:
+            from db_connector import DatabaseConnector
+            db = DatabaseConnector()
+            pending_items = db.get_user_pending_items(st.session_state.user_id)
+            
+            for pending in pending_items:
+                # Check if same item + same project (including sub-project)
+                if (pending['item_id'] == item['item_id'] and 
+                    pending['project_number'] == project_number and
+                    pending.get('sub_project_number') == sub_project_number):
+                    
+                    # Show warning
+                    formatted_project = format_project_display(project_number, sub_project_number)
+                    st.warning(f"⚠️ **You already have this item for this project in a pending request!**")
+                    st.info(f"📋 **{pending['item_name']}** - Project: {formatted_project}")
+                    st.info(f"Current quantity in **{pending['req_number']}**: {pending['quantity']} pieces")
+                    st.info("💡 Go to **'My Requests'** tab to edit the quantity instead of creating a duplicate.")
+                    return "duplicate"
+        
         # Check if item already in current cart with same project
         for cart_item in st.session_state.cart_items:
             if (cart_item['item_id'] == item['item_id'] and 
@@ -1006,7 +1026,7 @@ def display_my_requests_tab(db):
                         
                                 # Show quantity with edit option for pending requests
                                 if request['status'] == 'Pending':
-                                    col_item, col_qty, col_btn = st.columns([3, 1, 1])
+                                    col_item, col_qty, col_btn, col_del = st.columns([3, 1, 1, 0.5])
                                     with col_item:
                                         st.write(item_desc)
                                     with col_qty:
@@ -1014,11 +1034,11 @@ def display_my_requests_tab(db):
                                             "Qty", 
                                             min_value=1, 
                                             value=item['quantity'], 
-                                            key=f"qty_{request['req_id']}_{item['item_name']}"
+                                            key=f"qty_{request['req_id']}_{item['item_id']}"
                                         )
                                     with col_btn:
                                         if new_qty != item['quantity']:
-                                            if st.button("Update", key=f"update_{request['req_id']}_{item['item_name']}"):
+                                            if st.button("Update", key=f"update_{request['req_id']}_{item['item_id']}"):
                                                 try:
                                                     success = db.update_order_item_quantity(request['req_id'], item['item_id'], new_qty)
                                                     if success:
@@ -1028,12 +1048,37 @@ def display_my_requests_tab(db):
                                                         st.error("❌ Failed to update")
                                                 except Exception as e:
                                                     st.error(f"❌ Error: {str(e)}")
+                                    with col_del:
+                                        if st.button("🗑️", key=f"delete_{request['req_id']}_{item['item_id']}", help="Delete this item"):
+                                            try:
+                                                result = db.delete_order_item(request['req_id'], item['item_id'])
+                                                if result == "request_deleted":
+                                                    st.success("✅ Last item deleted. Request removed.")
+                                                else:
+                                                    st.success("✅ Item deleted!")
+                                                st.rerun()
+                                            except Exception as e:
+                                                st.error(f"❌ Error: {str(e)}")
                                 else:
                                     # For non-pending requests, just show the quantity
                                     item_desc += f" - {item['quantity']} pieces"
                                     st.write(item_desc)
                         else:
                             st.write("*No items found for this request*")
+                        
+                        # Delete entire request button for pending requests
+                        if request['status'] == 'Pending':
+                            st.markdown("---")
+                            col1, col2, col3 = st.columns([2, 1, 2])
+                            with col2:
+                                if st.button("🗑️ Delete This Request", key=f"delete_req_{request['req_id']}", type="secondary"):
+                                    try:
+                                        success = db.delete_request(request['req_id'])
+                                        if success:
+                                            st.success("✅ Request deleted!")
+                                            st.rerun()
+                                    except Exception as e:
+                                        st.error(f"❌ Error: {str(e)}")
                 
                         # Show order information for non-pending requests (simplified for users)
                         if request['status'] != 'Pending':
