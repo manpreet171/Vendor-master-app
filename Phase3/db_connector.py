@@ -640,9 +640,9 @@ class DatabaseConnector:
         """
         return self.execute_query(query, (bundle_id,))
     
-    def save_order_placement(self, bundle_id, po_number, item_costs):
+    def save_order_placement(self, bundle_id, po_number, expected_delivery_date, item_costs):
         """
-        Save order placement: PO number and update item costs
+        Save order placement: PO number, expected delivery date, and update item costs
         item_costs: dict {item_id: cost}
         Returns: {'success': bool, 'message': str}
         """
@@ -662,15 +662,16 @@ class DatabaseConnector:
             
             vendor_id = vendor_result[0]['recommended_vendor_id']
             
-            # Step 2: Update bundle with PO info and status
+            # Step 2: Update bundle with PO info, delivery date, and status
             update_bundle_query = """
             UPDATE requirements_bundles
             SET po_number = ?,
                 po_date = ?,
+                expected_delivery_date = ?,
                 status = 'Ordered'
             WHERE bundle_id = ?
             """
-            self.execute_insert(update_bundle_query, (po_number, datetime.now(), bundle_id))
+            self.execute_insert(update_bundle_query, (po_number, datetime.now(), expected_delivery_date, bundle_id))
             
             # Step 3: Update costs in ItemVendorMap
             for item_id, cost in item_costs.items():

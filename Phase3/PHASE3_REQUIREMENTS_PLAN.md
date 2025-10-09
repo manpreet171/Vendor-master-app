@@ -813,15 +813,18 @@ Different sub-projects = different projects
 5. ✅ Project ID displays in My Requests tab
 6. ✅ All duplicate checking works correctly
 7. ✅ Status-based permissions enforced
+8. ✅ Bundle duplicate detection fixed (no false warnings)
+9. ✅ Expected delivery date tracking for orders
 
 **User Impact:**
-- **Before:** Rigid system, stuck with mistakes, couldn't see project info
-- **After:** Flexible pending requests, smart blocking, full project visibility
+- **Before:** Rigid system, stuck with mistakes, couldn't see project info, no delivery tracking
+- **After:** Flexible pending requests, smart blocking, full project visibility, know when items arrive
 
 **Technical Achievement:**
-- Zero database changes
-- 5 bugs fixed
-- 150+ lines of code
+- 1 database column added (expected_delivery_date)
+- 6 bugs fixed
+- 1 new feature added
+- ~190 lines of code
 - Complete feature implementation
 
 **Next Steps:**
@@ -883,6 +886,116 @@ WHERE rbi.bundle_id = ?
   - Only checks items physically in the bundle
 
 **Status:** ✅ Fixed and tested
+
+---
+
+#### **🆕 Feature Addition (Same Day - Evening):**
+
+**Feature: Expected Delivery Date for Orders**
+
+**Problem:**
+- Operators placed orders but users didn't know when to expect delivery
+- No way to track expected delivery dates
+- Users had to contact operators to ask "when will it arrive?"
+
+**Solution: Add Expected Delivery Date Field**
+
+**Requirements:**
+1. ✅ Mandatory field when placing order
+2. ✅ Default to today's date
+3. ✅ Only allow today or future dates (no past dates)
+4. ✅ Display in full date format: "October 15, 2025"
+5. ✅ Locked once entered (cannot change after order placed)
+6. ✅ Visible to both operators and users
+
+---
+
+**Implementation Details:**
+
+**1. Database Schema Change:**
+```sql
+ALTER TABLE requirements_bundles
+ADD expected_delivery_date DATE NULL;
+```
+
+**2. Order Placement Form (app.py):**
+```python
+# Added after PO Number input
+expected_delivery = st.date_input(
+    "Expected Delivery Date *",
+    key=f"delivery_date_{bundle_id}",
+    value=date.today(),  # Default to today
+    min_value=date.today(),  # No past dates
+    help="When do you expect this order to be delivered?"
+)
+
+# Updated validation
+if not expected_delivery:
+    st.error("⚠️ Expected Delivery Date is required")
+```
+
+**3. Database Function Update (db_connector.py):**
+```python
+def save_order_placement(self, bundle_id, po_number, expected_delivery_date, item_costs):
+    UPDATE requirements_bundles
+    SET po_number = ?,
+        po_date = ?,
+        expected_delivery_date = ?,  # NEW
+        status = 'Ordered'
+    WHERE bundle_id = ?
+```
+
+**4. Display Updates:**
+
+**User's My Requests Tab:**
+```python
+# Shows in order status section
+📋 PO#: PO-2025-001 | 📅 Order Date: October 09, 2025
+🚚 Expected Delivery: October 15, 2025  # NEW
+```
+
+**Operator Dashboard:**
+```python
+# Shows in 3-column layout
+Order Details:
+├─ PO Number: PO-2025-001
+├─ Order Date: October 09, 2025
+└─ Expected Delivery: October 15, 2025  # NEW
+```
+
+---
+
+**User Benefits:**
+- ✅ Know when to expect their materials
+- ✅ Can plan project work around delivery date
+- ✅ Track multiple orders by delivery date
+- ✅ Reduces support questions ("when will it arrive?")
+
+**Operator Benefits:**
+- ✅ Set clear expectations with users
+- ✅ Track delivery timelines
+- ✅ Better planning and coordination
+
+**Technical Details:**
+- Database: 1 new column (DATE type)
+- Code: ~40 lines added
+- Files modified: 2 (app.py, db_connector.py)
+- Queries updated: 3 SELECT statements
+- Display locations: 2 (user view, operator view)
+
+**Files Modified:**
+1. **`db_connector.py`:**
+   - Updated `save_order_placement()` - Added expected_delivery_date parameter
+   - Updated UPDATE query to include expected_delivery_date
+
+2. **`app.py`:**
+   - Added date_input widget in order placement form
+   - Updated validation to require expected_delivery_date
+   - Updated all SELECT queries to include expected_delivery_date
+   - Updated user My Requests display to show delivery date
+   - Updated operator dashboard display to show delivery date
+
+**Status:** ✅ **COMPLETE & TESTED**
 
 ---
 

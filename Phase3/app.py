@@ -1068,7 +1068,8 @@ def display_my_requests_tab(db):
                                 b.bundle_id,
                                 b.status,
                                 b.po_number,
-                                b.po_date
+                                b.po_date,
+                                b.expected_delivery_date
                             FROM requirements_bundle_mapping rbm
                             JOIN requirements_bundles b ON rbm.bundle_id = b.bundle_id
                             WHERE rbm.req_id = ?
@@ -1125,8 +1126,13 @@ def display_my_requests_tab(db):
                                         if bundle.get('po_number'):
                                             po_date = ""
                                             if bundle.get('po_date'):
-                                                po_date = bundle['po_date'].strftime('%b %d') if hasattr(bundle['po_date'], 'strftime') else str(bundle['po_date'])[:10]
-                                            st.caption(f"     PO#: {bundle['po_number']} | {po_date}")
+                                                po_date = bundle['po_date'].strftime('%B %d, %Y') if hasattr(bundle['po_date'], 'strftime') else str(bundle['po_date'])[:10]
+                                            st.caption(f"     📋 PO#: {bundle['po_number']} | 📅 Order Date: {po_date}")
+                                            
+                                            # Show expected delivery date
+                                            if bundle.get('expected_delivery_date'):
+                                                delivery_date = bundle['expected_delivery_date'].strftime('%B %d, %Y') if hasattr(bundle['expected_delivery_date'], 'strftime') else str(bundle['expected_delivery_date'])[:10]
+                                                st.caption(f"     🚚 Expected Delivery: {delivery_date}")
                                     
                                     st.write("")
                                 
@@ -1746,13 +1752,17 @@ def display_active_bundles_for_operator(db):
                 if bundle['status'] in ('Ordered', 'Completed') and bundle.get('po_number'):
                     st.markdown("---")
                     st.info("📦 **Order Details**")
-                    po_col1, po_col2 = st.columns(2)
+                    po_col1, po_col2, po_col3 = st.columns(3)
                     with po_col1:
                         st.write(f"**PO Number:** {bundle['po_number']}")
                     with po_col2:
                         if bundle.get('po_date'):
-                            po_date = bundle['po_date'].strftime('%Y-%m-%d') if hasattr(bundle['po_date'], 'strftime') else str(bundle['po_date'])[:10]
+                            po_date = bundle['po_date'].strftime('%B %d, %Y') if hasattr(bundle['po_date'], 'strftime') else str(bundle['po_date'])[:10]
                             st.write(f"**Order Date:** {po_date}")
+                    with po_col3:
+                        if bundle.get('expected_delivery_date'):
+                            delivery_date = bundle['expected_delivery_date'].strftime('%B %d, %Y') if hasattr(bundle['expected_delivery_date'], 'strftime') else str(bundle['expected_delivery_date'])[:10]
+                            st.write(f"**Expected Delivery:** {delivery_date}")
                 
                 # Show delivery details if Completed
                 if bundle['status'] == 'Completed' and bundle.get('packing_slip_code'):
@@ -2274,6 +2284,16 @@ def display_order_placement_form(db, bundle):
         placeholder="e.g., PO-2025-001"
     )
     
+    # Expected Delivery Date input
+    from datetime import datetime, date
+    expected_delivery = st.date_input(
+        "Expected Delivery Date *",
+        key=f"delivery_date_{bundle_id}",
+        value=date.today(),  # Default to today
+        min_value=date.today(),  # No past dates
+        help="When do you expect this order to be delivered?"
+    )
+    
     st.markdown("---")
     st.write("**Enter unit costs for each item:**")
     
@@ -2325,6 +2345,8 @@ def display_order_placement_form(db, bundle):
             # Validate
             if not po_number or not po_number.strip():
                 st.error("⚠️ PO Number is required")
+            elif not expected_delivery:
+                st.error("⚠️ Expected Delivery Date is required")
             elif any(cost <= 0 for cost in st.session_state[f'item_costs_{bundle_id}'].values()):
                 st.error("⚠️ All item costs must be greater than 0")
             else:
@@ -2332,6 +2354,7 @@ def display_order_placement_form(db, bundle):
                 result = db.save_order_placement(
                     bundle_id,
                     po_number.strip(),
+                    expected_delivery,
                     st.session_state[f'item_costs_{bundle_id}']
                 )
                 
@@ -2658,7 +2681,8 @@ def display_user_requests(db):
                     b.bundle_name,
                     b.status,
                     b.po_number,
-                    b.po_date
+                    b.po_date,
+                    b.expected_delivery_date
                 FROM requirements_bundle_mapping rbm
                 JOIN requirements_bundles b ON rbm.bundle_id = b.bundle_id
                 WHERE rbm.req_id = ?
@@ -3148,6 +3172,7 @@ def get_bundles_with_vendor_info(db):
             b.duplicates_reviewed,
             b.po_number,
             b.po_date,
+            b.expected_delivery_date,
             b.packing_slip_code,
             v.vendor_name,
             v.vendor_email,
