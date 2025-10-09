@@ -294,7 +294,7 @@ def display_boxhero_tab(db):
                 # Only enable Add to Cart if project is selected
                 if project_number:
                     if st.button("🛒 Add to Cart", type="primary", key="bh_add_to_cart"):
-                        result = add_to_cart(st.session_state.bh_selected_item, quantity, "BoxHero", project_number, project_name, parent_project_id, sub_project_number)
+                        result = add_to_cart(st.session_state.bh_selected_item, quantity, "BoxHero", project_number, project_name, parent_project_id, sub_project_number, db)
                         if result == "added":
                             st.success("✅ Added to cart!")
                             # Reset flow for next selection
@@ -504,7 +504,7 @@ def display_raw_materials_tab(db):
                 # Only enable Add to Cart if project is selected
                 if project_number:
                     if st.button("🛒 Add to Cart", type="primary", key="rm_add_to_cart"):
-                        result = add_to_cart(st.session_state.rm_selected_item, quantity, "Raw Materials", project_number, project_name, parent_project_id, sub_project_number)
+                        result = add_to_cart(st.session_state.rm_selected_item, quantity, "Raw Materials", project_number, project_name, parent_project_id, sub_project_number, db)
                         if result == "added":
                             st.success("✅ Added to cart!")
                             # Reset flow for next selection
@@ -702,13 +702,11 @@ def format_project_display(project_number, sub_project_number=None):
         return f"{project_number} ({sub_project_number})"
     return project_number
 
-def add_to_cart(item, quantity, category, project_number=None, project_name=None, parent_project_id=None, sub_project_number=None):
+def add_to_cart(item, quantity, category, project_number=None, project_name=None, parent_project_id=None, sub_project_number=None, db=None):
     """Add item to cart with project info"""
     try:
         # Check if user already has this item+project in pending or locked status
-        if 'user_id' in st.session_state:
-            from db_connector import DatabaseConnector
-            db = DatabaseConnector()
+        if 'user_id' in st.session_state and db:
             
             # Check 1: Pending requests (show warning, suggest edit)
             pending_items = db.get_user_pending_items(st.session_state.user_id)
