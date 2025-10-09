@@ -1935,6 +1935,25 @@ def display_active_bundles_for_operator(db):
                             sel_row = vendor_rows[options.index(sel)] if options else None
                             if sel_row:
                                 st.info(f"Selected: {sel_row.get('vendor_name')}  |  {sel_row.get('contact_email') or 'No email'}  |  {sel_row.get('contact_phone') or 'No phone'}")
+                                
+                                # Show "Change Vendor" button if different vendor selected
+                                selected_vendor_id = sel_row.get('vendor_id')
+                                current_vendor_id = bundle.get('recommended_vendor_id')
+                                
+                                if selected_vendor_id and selected_vendor_id != current_vendor_id:
+                                    if st.button(f"🔄 Change to {sel_row.get('vendor_name')}", key=f"change_vendor_{bundle.get('bundle_id')}", type="primary"):
+                                        # Move item to selected vendor
+                                        result = db.move_item_to_vendor(
+                                            bundle.get('bundle_id'),
+                                            single_item['item_id'],
+                                            selected_vendor_id
+                                        )
+                                        
+                                        if result.get('success'):
+                                            st.success(f"✅ {result.get('message', 'Item moved successfully!')}")
+                                            st.rerun()
+                                        else:
+                                            st.error(f"❌ {result.get('error', 'Failed to move item')}")
                         # If only one vendor, skip showing the selector entirely
                 except Exception as _e:
                     # Fail silently to avoid breaking bundle view in cloud

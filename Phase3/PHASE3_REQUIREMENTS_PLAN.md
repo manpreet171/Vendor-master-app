@@ -815,16 +815,21 @@ Different sub-projects = different projects
 7. ✅ Status-based permissions enforced
 8. ✅ Bundle duplicate detection fixed (no false warnings)
 9. ✅ Expected delivery date tracking for orders
+10. ✅ Actionable vendor selection for single-item bundles
 
 **User Impact:**
 - **Before:** Rigid system, stuck with mistakes, couldn't see project info, no delivery tracking
 - **After:** Flexible pending requests, smart blocking, full project visibility, know when items arrive
 
+**Operator Impact:**
+- **Before:** View-only vendor alternatives, had to use Report Issue to change vendors
+- **After:** One-click vendor change for single-item bundles, smart consolidation
+
 **Technical Achievement:**
 - 1 database column added (expected_delivery_date)
 - 6 bugs fixed
-- 1 new feature added
-- ~190 lines of code
+- 2 new features added (delivery date + vendor selection)
+- ~210 lines of code
 - Complete feature implementation
 
 **Next Steps:**
@@ -996,6 +1001,245 @@ Order Details:
    - Updated operator dashboard display to show delivery date
 
 **Status:** ✅ **COMPLETE & TESTED**
+
+---
+
+#### **🆕 Feature Enhancement (Same Day - Late Evening):**
+
+**Feature: Actionable Vendor Selection for Single-Item Bundles**
+
+**Problem:**
+- Alternative vendors dropdown was view-only (informational)
+- Operator could see other vendor options but couldn't change vendor
+- Had to use "Report Issue" feature (5 clicks) to change vendor
+- Not intuitive for simple vendor preference changes
+- Alternative vendors shown even for Approved/Ordered bundles (no sense)
+
+**Solution: Add "Change Vendor" Button + Status-Based Display**
+
+**Requirements:**
+1. ✅ Show alternative vendors only for Active/Reviewed bundles
+2. ✅ Hide alternatives once Approved/Ordered/Completed (vendor locked)
+3. ✅ Show "Change Vendor" button only when different vendor selected
+4. ✅ Reuse existing `move_item_to_vendor()` backend logic
+5. ✅ Auto-delete empty bundles after move
+6. ✅ Smart consolidation to existing vendor bundles
+
+---
+
+**Implementation Details:**
+
+**1. Status-Based Display Logic (app.py):**
+
+**Before:**
+```python
+if len(items) == 1:  # Showed for ALL statuses
+    st.caption("Other vendor options...")
+```
+
+**After:**
+```python
+if len(items) == 1 and bundle['status'] in ('Active', 'Reviewed'):
+    st.caption("Other vendor options...")
+    # Only shows when vendor can still be changed
+```
+
+**Status Visibility Matrix:**
+
+| Status | Show Alternatives? | Show Change Button? | Reason |
+|--------|-------------------|---------------------|--------|
+| Active | ✅ YES | ✅ YES | Operator reviewing, can change |
+| Reviewed | ✅ YES | ✅ YES | Reviewed but not locked yet |
+| Approved | ❌ NO | ❌ NO | Vendor locked, ready to order |
+| Ordered | ❌ NO | ❌ NO | Order placed with vendor |
+| Completed | ❌ NO | ❌ NO | Items received, done |
+
+**2. Change Vendor Button (app.py):**
+
+```python
+# After vendor selection in dropdown
+selected_vendor_id = sel_row.get('vendor_id')
+current_vendor_id = bundle.get('recommended_vendor_id')
+
+if selected_vendor_id != current_vendor_id:
+    if st.button(f"🔄 Change to {sel_row.get('vendor_name')}"):
+        result = db.move_item_to_vendor(
+            bundle.get('bundle_id'),
+            single_item['item_id'],
+            selected_vendor_id
+        )
+        
+        if result.get('success'):
+            st.success(f"✅ {result.get('message')}")
+            st.rerun()
+        else:
+            st.error(f"❌ {result.get('error')}")
+```
+
+**Button Behavior:**
+- Only appears when different vendor selected
+- Shows vendor name in button text
+- One-click action
+- Immediate feedback
+
+**3. Backend Logic (db_connector.py - Already Exists):**
+
+**Function: `move_item_to_vendor(current_bundle_id, item_id, new_vendor_id)`**
+
+**What It Does:**
+1. **Recalculates item data** from source orders (fresh user breakdown)
+2. **Checks if new vendor has bundle:**
+   - Has bundle → Add to existing bundle (consolidation)
+   - No bundle → Create new bundle
+3. **Auto-revert logic:** If target bundle was "Reviewed" → Revert to "Active"
+4. **Links requests** to target bundle
+5. **Removes item** from current bundle
+6. **Cleanup:** Deletes current bundle if empty
+7. **Returns success** with descriptive message
+
+**Smart Consolidation:**
+```
+Scenario A: Vendor Y has Bundle B
+├─ Move item to Bundle B
+├─ Delete Bundle A (empty)
+└─ Result: Consolidated to existing bundle ✅
+
+Scenario B: Vendor Y has no bundle
+├─ Create new Bundle C
+├─ Move item to Bundle C
+├─ Delete Bundle A (empty)
+└─ Result: New bundle created ✅
+
+Scenario C: Bundle B was "Reviewed"
+├─ Move item to Bundle B
+├─ Bundle B: Reviewed → Active (auto-revert)
+├─ Delete Bundle A (empty)
+└─ Result: Bundle needs re-review ✅
+```
+
+---
+
+**User Experience Examples:**
+
+**Example 1: Simple Vendor Change**
+```
+Operator View:
+┌─────────────────────────────────────────┐
+│ Bundle A - Vendor: Canal Plastics       │
+│ Status: Active                          │
+│                                         │
+│ Other vendor options for this item      │
+│ Vendor options: [E&T Plastics ▼]       │
+│                                         │
+│ Selected: E&T Plastics                  │
+│ sales@et.com | 212-555-1234            │
+│                                         │
+│ [🔄 Change to E&T Plastics]            │
+└─────────────────────────────────────────┘
+
+Click button:
+✅ Created new bundle BUNDLE-20251009-211500 for E&T Plastics (Original bundle removed)
+
+Result:
+- Bundle A deleted
+- New bundle created with E&T Plastics
+```
+
+**Example 2: Consolidation**
+```
+Before:
+- Bundle A (Canal Plastics): Black Acrylic
+- Bundle B (E&T Plastics): White Acrylic
+
+Operator changes Black Acrylic to E&T Plastics:
+
+After:
+- Bundle B (E&T Plastics): White Acrylic + Black Acrylic
+
+Message: ✅ Item added to existing bundle RM-2025-10-09-001 (Original bundle removed)
+```
+
+**Example 3: Current Vendor Selected**
+```
+Operator View:
+┌─────────────────────────────────────────┐
+│ Bundle A - Vendor: Canal Plastics       │
+│                                         │
+│ Other vendor options for this item      │
+│ Vendor options: [Canal Plastics ▼]     │
+│                                         │
+│ Selected: Canal Plastics                │
+│ sales@cpc.com | 212-555-9999           │
+│                                         │
+│ (No button - already using this vendor)│
+└─────────────────────────────────────────┘
+```
+
+---
+
+**Benefits:**
+
+**For Operators:**
+- ✅ Faster workflow (2 clicks vs 5 clicks)
+- ✅ Intuitive: See alternatives → Select → Change
+- ✅ Clear feedback messages
+- ✅ No manual cleanup needed
+
+**For System:**
+- ✅ Automatic bundle consolidation (fewer bundles)
+- ✅ No orphan/empty bundles
+- ✅ Auto-revert ensures bundles are re-reviewed after changes
+- ✅ Maintains data integrity
+
+**For Business:**
+- ✅ Operators can quickly switch to better vendors
+- ✅ Flexibility in vendor selection
+- ✅ Better pricing opportunities
+- ✅ Cleaner bundle management
+
+**Technical:**
+- ✅ Reuses existing backend (no new database functions)
+- ✅ Minimal code changes (~20 lines)
+- ✅ Leverages proven move logic
+- ✅ Error handling included
+- ✅ Status-based permissions
+
+---
+
+**Files Modified:**
+1. **`app.py`:**
+   - Updated alternative vendors condition: `bundle['status'] in ('Active', 'Reviewed')`
+   - Added "Change Vendor" button with conditional display
+   - Integrated with existing `move_item_to_vendor()` function
+   - Added success/error messaging and page refresh
+
+**Code Statistics:**
+- Lines added: ~20 lines (UI only)
+- Backend changes: 0 (reuses existing function)
+- Database changes: 0 (no schema changes)
+- UI enhancement: 1 button + status-based visibility
+
+**Time Spent:** ~30 minutes
+
+**Status:** ✅ **COMPLETE & READY TO TEST**
+
+---
+
+**Testing Checklist:**
+- [ ] Single-item bundle (Active) → Shows alternatives + change button
+- [ ] Single-item bundle (Reviewed) → Shows alternatives + change button
+- [ ] Single-item bundle (Approved) → No alternatives shown
+- [ ] Single-item bundle (Ordered) → No alternatives shown
+- [ ] Single-item bundle (Completed) → No alternatives shown
+- [ ] Multi-item bundle → No alternatives shown (any status)
+- [ ] Select different vendor → Change button appears
+- [ ] Select current vendor → No button shown
+- [ ] Click change button → Item moves successfully
+- [ ] Original bundle deleted if empty
+- [ ] Item added to existing vendor bundle (consolidation)
+- [ ] New bundle created if vendor has none
+- [ ] Target bundle reverts to Active if was Reviewed
+- [ ] Success message shows bundle name/action taken
 
 ---
 
