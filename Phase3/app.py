@@ -1770,16 +1770,18 @@ def display_active_bundles_for_operator(db):
                             st.write(f"**Expected Delivery:** {delivery_date}")
                 
                 # Show delivery details if Completed
-                if bundle['status'] == 'Completed' and bundle.get('packing_slip_code'):
+                if bundle['status'] == 'Completed':
                     st.success("📦 **Delivery Details**")
-                    delivery_col1, delivery_col2, delivery_col3 = st.columns(3)
+                    delivery_col1, delivery_col2 = st.columns(2)
+                    # PACKING SLIP - HIDDEN (Can reactivate if needed)
+                    # with delivery_col1:
+                    #     if bundle.get('packing_slip_code'):
+                    #         st.write(f"**Packing Slip:** {bundle['packing_slip_code']}")
                     with delivery_col1:
-                        st.write(f"**Packing Slip:** {bundle['packing_slip_code']}")
-                    with delivery_col2:
                         if bundle.get('actual_delivery_date'):
                             delivery_date = bundle['actual_delivery_date'].strftime('%B %d, %Y') if hasattr(bundle['actual_delivery_date'], 'strftime') else str(bundle['actual_delivery_date'])[:10]
                             st.write(f"**Delivered:** {delivery_date}")
-                    with delivery_col3:
+                    with delivery_col2:
                         if bundle.get('completed_at'):
                             completed_date = bundle['completed_at'].strftime('%B %d, %Y') if hasattr(bundle['completed_at'], 'strftime') else str(bundle['completed_at'])[:10]
                             completed_by = bundle.get('completed_by', 'Unknown')
@@ -2412,17 +2414,17 @@ def display_completion_form(db, bundle):
     vendor_name = bundle.get('vendor_name', 'Unknown Vendor')
     
     st.write(f"**Confirm delivery from {vendor_name}**")
-    st.caption("Enter delivery details to complete this bundle")
+    st.caption("Enter delivery date to complete this bundle")
     
-    # Packing slip input
-    packing_slip = st.text_input(
-        "Packing Slip Code *",
-        key=f"packing_slip_{bundle_id}",
-        placeholder="e.g., PS-12345, PKG/2025/001, SLIP-ABC-123",
-        help="Enter the packing slip code from the delivery. Can include letters, numbers, and symbols."
-    )
-    
-    st.caption("**Examples:** PS-12345, PKG/2025/001, SLIP-ABC-123, or any format from your vendor")
+    # PACKING SLIP - HIDDEN (Can reactivate if needed in future)
+    # packing_slip = st.text_input(
+    #     "Packing Slip Code *",
+    #     key=f"packing_slip_{bundle_id}",
+    #     placeholder="e.g., PS-12345, PKG/2025/001, SLIP-ABC-123",
+    #     help="Enter the packing slip code from the delivery. Can include letters, numbers, and symbols."
+    # )
+    # st.caption("**Examples:** PS-12345, PKG/2025/001, SLIP-ABC-123, or any format from your vendor")
+    packing_slip = None  # Not collecting packing slip for now
     
     # Actual delivery date input
     from datetime import date
@@ -2440,22 +2442,19 @@ def display_completion_form(db, bundle):
     with col1:
         if st.button("✅ Confirm Completion", key=f"confirm_complete_{bundle_id}", type="primary"):
             # Validate
-            if not packing_slip or not packing_slip.strip():
-                st.error("⚠️ Packing slip code is required")
-            elif not actual_delivery:
+            if not actual_delivery:
                 st.error("⚠️ Actual delivery date is required")
             else:
-                # Mark as completed with packing slip and delivery date
+                # Mark as completed with delivery date (packing slip hidden)
                 result = mark_bundle_completed_with_packing_slip(
                     db, 
                     bundle_id, 
-                    packing_slip.strip(),
+                    None,  # Packing slip hidden - pass None
                     actual_delivery
                 )
                 
                 if result['success']:
                     st.success(f"✅ Bundle marked as completed!")
-                    st.success(f"📦 Packing Slip: {packing_slip.strip()}")
                     # Clean up session state
                     del st.session_state[f'completing_bundle_{bundle_id}']
                     st.rerun()

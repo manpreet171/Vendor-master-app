@@ -1348,8 +1348,8 @@ WHERE bundle_id = ?
 📦 Delivery Details
 ┌─────────────────────────────────────────────────────┐
 │ Packing Slip: 77654                                 │
-│ Delivered: October 07, 2025  ← actual_delivery_date│
-│ Marked Complete: October 09, 2025  ← completed_at  │
+│ Delivered: October 07, 2025  ← actual_delivery_date │
+│ Marked Complete: October 09, 2025  ← completed_at   │
 │ by John                                             │
 └─────────────────────────────────────────────────────┘
 ```
@@ -1489,6 +1489,64 @@ User Sees:
 **Time Spent:** ~20 minutes
 
 **Status:** ✅ **COMPLETE & TESTED**
+
+---
+
+#### **🔧 Update (Same Day - Evening):**
+
+**Change: Hide Packing Slip Number (Not Needed Currently)**
+
+**Reason:**
+- Packing slip number not required for current workflow
+- Simplify completion form (one field instead of two)
+- Keep database column for future reactivation if needed
+
+**Implementation:**
+```python
+# Commented out (not deleted) - Easy to reactivate
+# packing_slip = st.text_input("Packing Slip Code *", ...)
+packing_slip = None  # Not collecting for now
+
+# Pass None to backend
+result = mark_bundle_completed_with_packing_slip(
+    db, bundle_id, 
+    None,  # Packing slip hidden
+    actual_delivery_date
+)
+```
+
+**What Changed:**
+1. ✅ Packing slip input - Commented out (not deleted)
+2. ✅ Packing slip validation - Removed
+3. ✅ Packing slip display - Hidden in operator dashboard
+4. ✅ Database column - Kept (stores NULL for new records)
+5. ✅ Function signature - Unchanged (accepts None)
+
+**Completion Form Now:**
+```
+📦 Confirm Delivery
+
+Actual Delivery Date *: [📅 Oct 10, 2025]
+
+[✅ Confirm Completion] [Cancel]
+```
+
+**Display Now:**
+```
+📦 Delivery Details
+├─ Delivered: October 07, 2025
+└─ Marked Complete: October 09, 2025 by John
+```
+
+**Easy to Reactivate:**
+- Uncomment 3 code blocks (~10 lines)
+- Change `None` to `packing_slip.strip()`
+- Total: 2 minutes to reactivate if needed
+
+**Files Modified:**
+- `app.py` - Commented out packing slip input, validation, and display
+
+**Status:** ✅ **COMPLETE - Packing Slip Hidden**
 
 ---
 
