@@ -1129,8 +1129,13 @@ def display_my_requests_tab(db):
                                                 po_date = bundle['po_date'].strftime('%B %d, %Y') if hasattr(bundle['po_date'], 'strftime') else str(bundle['po_date'])[:10]
                                             st.caption(f"     📋 PO#: {bundle['po_number']} | 📅 Order Date: {po_date}")
                                             
-                                            # Show expected delivery date
-                                            if bundle.get('expected_delivery_date'):
+                                            # Show delivery dates based on status
+                                            if bundle['status'] == 'Completed' and bundle.get('actual_delivery_date'):
+                                                # Completed: Show actual delivery date
+                                                delivery_date = bundle['actual_delivery_date'].strftime('%B %d, %Y') if hasattr(bundle['actual_delivery_date'], 'strftime') else str(bundle['actual_delivery_date'])[:10]
+                                                st.caption(f"     ✅ Delivered: {delivery_date}")
+                                            elif bundle.get('expected_delivery_date'):
+                                                # Ordered: Show expected delivery date
                                                 delivery_date = bundle['expected_delivery_date'].strftime('%B %d, %Y') if hasattr(bundle['expected_delivery_date'], 'strftime') else str(bundle['expected_delivery_date'])[:10]
                                                 st.caption(f"     🚚 Expected Delivery: {delivery_date}")
                                     
@@ -1767,13 +1772,19 @@ def display_active_bundles_for_operator(db):
                 # Show delivery details if Completed
                 if bundle['status'] == 'Completed' and bundle.get('packing_slip_code'):
                     st.success("📦 **Delivery Details**")
-                    delivery_col1, delivery_col2 = st.columns(2)
+                    delivery_col1, delivery_col2, delivery_col3 = st.columns(3)
                     with delivery_col1:
                         st.write(f"**Packing Slip:** {bundle['packing_slip_code']}")
                     with delivery_col2:
+                        if bundle.get('actual_delivery_date'):
+                            delivery_date = bundle['actual_delivery_date'].strftime('%B %d, %Y') if hasattr(bundle['actual_delivery_date'], 'strftime') else str(bundle['actual_delivery_date'])[:10]
+                            st.write(f"**Delivered:** {delivery_date}")
+                    with delivery_col3:
                         if bundle.get('completed_at'):
-                            completed_date = bundle['completed_at'].strftime('%Y-%m-%d') if hasattr(bundle['completed_at'], 'strftime') else str(bundle['completed_at'])[:10]
-                            st.write(f"**Delivered:** {completed_date}")
+                            completed_date = bundle['completed_at'].strftime('%B %d, %Y') if hasattr(bundle['completed_at'], 'strftime') else str(bundle['completed_at'])[:10]
+                            completed_by = bundle.get('completed_by', 'Unknown')
+                            st.write(f"**Marked Complete:** {completed_date}")
+                            st.caption(f"by {completed_by}")
 
                 st.markdown("---")
                 st.write("**Items in this bundle:**")
@@ -2401,7 +2412,7 @@ def display_completion_form(db, bundle):
     vendor_name = bundle.get('vendor_name', 'Unknown Vendor')
     
     st.write(f"**Confirm delivery from {vendor_name}**")
-    st.caption("Enter packing slip code to complete this bundle")
+    st.caption("Enter delivery details to complete this bundle")
     
     # Packing slip input
     packing_slip = st.text_input(
@@ -2413,6 +2424,16 @@ def display_completion_form(db, bundle):
     
     st.caption("**Examples:** PS-12345, PKG/2025/001, SLIP-ABC-123, or any format from your vendor")
     
+    # Actual delivery date input
+    from datetime import date
+    actual_delivery = st.date_input(
+        "Actual Delivery Date *",
+        key=f"actual_delivery_{bundle_id}",
+        value=date.today(),  # Default to today
+        max_value=date.today(),  # No future dates
+        help="When did the items actually arrive?"
+    )
+    
     # Validation and save
     col1, col2 = st.columns(2)
     
@@ -2421,12 +2442,15 @@ def display_completion_form(db, bundle):
             # Validate
             if not packing_slip or not packing_slip.strip():
                 st.error("⚠️ Packing slip code is required")
+            elif not actual_delivery:
+                st.error("⚠️ Actual delivery date is required")
             else:
-                # Mark as completed with packing slip
+                # Mark as completed with packing slip and delivery date
                 result = mark_bundle_completed_with_packing_slip(
                     db, 
                     bundle_id, 
-                    packing_slip.strip()
+                    packing_slip.strip(),
+                    actual_delivery
                 )
                 
                 if result['success']:
@@ -3192,6 +3216,7 @@ def get_bundles_with_vendor_info(db):
             b.po_number,
             b.po_date,
             b.expected_delivery_date,
+            b.actual_delivery_date,
             b.packing_slip_code,
             v.vendor_name,
             v.vendor_email,
@@ -3320,16 +3345,17 @@ def mark_bundle_completed(db, bundle_id):
             db.conn.rollback()
         raise Exception(f"Failed to mark bundle as completed: {str(e)}")
 
-def mark_bundle_completed_with_packing_slip(db, bundle_id, packing_slip_code):
-    """Mark a bundle as completed with packing slip code and update related requests"""
+def mark_bundle_completed_with_packing_slip(db, bundle_id, packing_slip_code, actual_delivery_date):
+    """Mark a bundle as completed with packing slip code, delivery date, and update related requests"""
     try:
         from datetime import datetime
         
-        # Update bundle status with packing slip
+        # Update bundle status with packing slip and delivery date
         bundle_query = """
         UPDATE requirements_bundles 
         SET status = 'Completed',
             packing_slip_code = ?,
+            actual_delivery_date = ?,
             completed_at = ?,
             completed_by = ?
         WHERE bundle_id = ?
@@ -3337,7 +3363,7 @@ def mark_bundle_completed_with_packing_slip(db, bundle_id, packing_slip_code):
         completed_at = datetime.now()
         completed_by = st.session_state.get('user_id', 'operator')
         
-        db.execute_insert(bundle_query, (packing_slip_code, completed_at, completed_by, bundle_id))
+        db.execute_insert(bundle_query, (packing_slip_code, actual_delivery_date, completed_at, completed_by, bundle_id))
         
         # Get all request IDs in this bundle
         mapping_query = """

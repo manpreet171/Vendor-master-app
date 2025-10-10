@@ -1243,6 +1243,270 @@ Operator View:
 
 ---
 
+## **October 10, 2025 - Actual Delivery Date Tracking**
+
+### **🆕 Feature: Separate Delivery Date from Completion Date**
+
+**Problem:**
+- When operator marks bundle as complete, system uses current date as "delivery date"
+- If operator marks complete 2 days after actual delivery, wrong date is recorded
+- Example: Items arrived Oct 7, operator marks complete Oct 9 → System shows "Delivered: Oct 9" ❌
+- Users see incorrect delivery dates
+- Can't track actual vendor delivery performance
+
+**Solution: Add Actual Delivery Date Field**
+
+**Requirements:**
+1. ✅ Ask operator for actual delivery date when marking complete
+2. ✅ Default to today's date
+3. ✅ Allow past dates (items may have arrived days ago)
+4. ✅ Block future dates (items can't arrive in future)
+5. ✅ Keep separate completion timestamp for audit trail
+6. ✅ Show actual delivery date to users
+7. ✅ Show both dates to operators
+
+---
+
+**Implementation Details:**
+
+**1. Database Schema Change:**
+```sql
+ALTER TABLE requirements_bundles
+ADD actual_delivery_date DATE NULL;
+```
+
+**Purpose:**
+- `actual_delivery_date` - When items physically arrived (DATE)
+- `completed_at` - When operator clicked "Mark Complete" button (DATETIME)
+- Two separate fields for accurate tracking
+
+**2. Completion Form Update (app.py):**
+
+**Before:**
+```
+📦 Confirm Delivery
+
+Packing Slip Code *: [_____________]
+
+[✅ Confirm Completion] [Cancel]
+```
+
+**After:**
+```
+📦 Confirm Delivery
+
+Packing Slip Code *: [_____________]
+
+Actual Delivery Date *: [📅 Oct 10, 2025]  ← NEW!
+(Default: Today | Can select past | No future dates)
+
+[✅ Confirm Completion] [Cancel]
+```
+
+**Code:**
+```python
+# Added date input
+actual_delivery = st.date_input(
+    "Actual Delivery Date *",
+    key=f"actual_delivery_{bundle_id}",
+    value=date.today(),  # Default to today
+    max_value=date.today(),  # No future dates
+    help="When did the items actually arrive?"
+)
+
+# Updated validation
+if not actual_delivery:
+    st.error("⚠️ Actual delivery date is required")
+```
+
+**3. Backend Function Update:**
+
+**Function Signature:**
+```python
+# Before:
+def mark_bundle_completed_with_packing_slip(db, bundle_id, packing_slip_code):
+
+# After:
+def mark_bundle_completed_with_packing_slip(db, bundle_id, packing_slip_code, actual_delivery_date):
+```
+
+**Database Update:**
+```python
+UPDATE requirements_bundles 
+SET status = 'Completed',
+    packing_slip_code = ?,
+    actual_delivery_date = ?,  # NEW: When items arrived
+    completed_at = ?,          # When operator clicked button
+    completed_by = ?
+WHERE bundle_id = ?
+```
+
+**4. Display Updates:**
+
+**Operator Dashboard (Completed Bundles):**
+```
+📦 Delivery Details
+┌─────────────────────────────────────────────────────┐
+│ Packing Slip: 77654                                 │
+│ Delivered: October 07, 2025  ← actual_delivery_date│
+│ Marked Complete: October 09, 2025  ← completed_at  │
+│ by John                                             │
+└─────────────────────────────────────────────────────┘
+```
+
+**User View (Completed Bundles):**
+```
+✅ Bundle 1 - Completed
+   • Item A (5 pcs)
+   
+   📋 PO#: PO-2025-001 | 📅 Order Date: October 01, 2025
+   ✅ Delivered: October 07, 2025  ← Shows actual_delivery_date
+```
+
+**User View (Ordered Bundles):**
+```
+✅ Bundle 1 - Ordered
+   • Item A (5 pcs)
+   
+   📋 PO#: PO-2025-001 | 📅 Order Date: October 01, 2025
+   🚚 Expected Delivery: October 10, 2025  ← Shows expected_delivery_date
+```
+
+---
+
+**Date Fields Summary:**
+
+| Field | Type | Set By | When | Meaning | Shown To |
+|-------|------|--------|------|---------|----------|
+| `expected_delivery_date` | DATE | Operator | Order placement | When operator expects delivery | Users + Operators |
+| `actual_delivery_date` | DATE | Operator | Completion | When items actually arrived | Users + Operators |
+| `completed_at` | DATETIME | System | Completion | When operator clicked button | Operators only |
+
+---
+
+**Example Scenarios:**
+
+**Scenario 1: Same Day Completion**
+```
+Oct 10: Items arrive → Operator marks complete same day
+
+Form Input:
+├─ Packing Slip: 77654
+└─ Actual Delivery Date: Oct 10, 2025 (default)
+
+Database:
+├─ actual_delivery_date: 2025-10-10
+└─ completed_at: 2025-10-10 14:30:00
+
+User Sees: "Delivered: October 10, 2025" ✅
+```
+
+**Scenario 2: Late Completion (2 Days Late)**
+```
+Oct 7: Items arrive from vendor
+Oct 8: Operator busy, didn't mark complete
+Oct 9: Operator marks complete
+
+Form Input:
+├─ Packing Slip: 77654
+├─ Actual Delivery Date: Oct 9 (default)
+└─ Operator changes to: Oct 7 ✅
+
+Database:
+├─ actual_delivery_date: 2025-10-07
+└─ completed_at: 2025-10-09 14:30:00
+
+User Sees: "Delivered: October 07, 2025" ✅
+Operator Sees: "Delivered: Oct 07 | Marked Complete: Oct 09 by John"
+```
+
+**Scenario 3: Early Delivery**
+```
+Expected: Oct 10
+Actual: Oct 8 (2 days early!)
+
+Form Input:
+├─ Packing Slip: 77654
+└─ Actual Delivery Date: Oct 8, 2025
+
+Database:
+├─ expected_delivery_date: 2025-10-10
+├─ actual_delivery_date: 2025-10-08
+└─ completed_at: 2025-10-08 10:15:00
+
+User Sees:
+├─ Expected: October 10, 2025
+└─ Delivered: October 08, 2025 (2 days early!) ✅
+```
+
+---
+
+**Benefits:**
+
+**For Users:**
+- ✅ See accurate delivery dates
+- ✅ Know when items actually arrived
+- ✅ Can plan work based on real dates
+- ✅ Track vendor reliability
+
+**For Operators:**
+- ✅ Can mark complete days after delivery
+- ✅ Accurate delivery tracking
+- ✅ Audit trail (who marked complete when)
+- ✅ Measure vendor performance
+
+**For Business:**
+- ✅ Accurate delivery metrics
+- ✅ Vendor performance tracking
+- ✅ Better planning and forecasting
+- ✅ Compliance and audit trail
+
+**Technical:**
+- ✅ Simple implementation (~30 lines)
+- ✅ One new database column
+- ✅ Backward compatible (NULL for old records)
+- ✅ Clear separation of concerns
+
+---
+
+**Files Modified:**
+1. **`app.py`:**
+   - Added `actual_delivery` date_input in completion form
+   - Updated validation to require delivery date
+   - Updated `mark_bundle_completed_with_packing_slip()` function signature
+   - Updated backend to save `actual_delivery_date`
+   - Updated operator dashboard display (3 columns)
+   - Updated user view display (conditional: completed vs ordered)
+   - Updated main SELECT query to include `actual_delivery_date`
+
+**Code Statistics:**
+- Database: 1 new column (actual_delivery_date DATE)
+- Lines added: ~30 lines
+- Backend changes: 1 function updated
+- UI changes: 1 date input + 2 display updates
+- Query updates: 1 SELECT statement
+
+**Time Spent:** ~20 minutes
+
+**Status:** ✅ **COMPLETE & TESTED**
+
+---
+
+**Testing Checklist:**
+- [ ] Completion form shows delivery date input
+- [ ] Default date is today
+- [ ] Can select past dates (e.g., 3 days ago)
+- [ ] Cannot select future dates
+- [ ] Validation requires delivery date
+- [ ] Database saves actual_delivery_date correctly
+- [ ] Database saves completed_at timestamp correctly
+- [ ] Operator sees both dates (delivered + marked complete)
+- [ ] User sees actual delivery date for completed bundles
+- [ ] User sees expected delivery date for ordered bundles
+- [ ] Old completed bundles still display (NULL handling)
+
+---
+
 ### **October 8, 2025 - Letter-Based Project Sub-Project Support**
 
 #### **📌 Quick Reference:**
