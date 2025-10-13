@@ -170,18 +170,21 @@ def main():
     # Main content area - Simple tab navigation
     if st.session_state.user_role != 'operator':  # Show for all non-operator users
         # Create tabs - clean and simple
-        tab1, tab2, tab3, tab4 = st.tabs(["📦 BoxHero Items", "🔧 Raw Materials", "🛒 My Cart", "📋 My Requests"])
+        # BOXHERO TAB - HIDDEN (Users can't request BoxHero items yet - will enable later)
+        # Uncomment line below and adjust tab variables when ready to enable
+        # tab1, tab2, tab3, tab4 = st.tabs(["📦 BoxHero Items", "🔧 Raw Materials", "🛒 My Cart", "📋 My Requests"])
+        tab1, tab2, tab3 = st.tabs(["🔧 Raw Materials", "🛒 My Cart", "📋 My Requests"])
+        
+        # with tab1:
+        #     display_boxhero_tab(db)
         
         with tab1:
-            display_boxhero_tab(db)
-        
-        with tab2:
             display_raw_materials_tab(db)
         
-        with tab3:
+        with tab2:
             display_cart_tab(db)
         
-        with tab4:
+        with tab3:
             display_my_requests_tab(db)
     
     else:
