@@ -1802,14 +1802,79 @@ def display_active_bundles_for_operator(db):
                             item_costs_map[detail['item_id']] = detail['cost']
                 
                 if items:
+                    # Build HTML table
+                    html_table = """
+                    <style>
+                        .bundle-table {
+                            width: 100%;
+                            border-collapse: collapse;
+                            margin-top: 10px;
+                            font-size: 14px;
+                        }
+                        .bundle-table thead {
+                            background-color: #f0f2f6;
+                        }
+                        .bundle-table th {
+                            padding: 12px 10px;
+                            text-align: left;
+                            border-bottom: 2px solid #ddd;
+                            font-weight: 600;
+                        }
+                        .bundle-table td {
+                            padding: 10px;
+                            border-bottom: 1px solid #eee;
+                            vertical-align: top;
+                        }
+                        .bundle-table tbody tr:nth-child(even) {
+                            background-color: #f9f9f9;
+                        }
+                        .bundle-table tbody tr:hover {
+                            background-color: #f0f0f0;
+                        }
+                        .item-name {
+                            font-weight: 600;
+                            color: #1f1f1f;
+                        }
+                        .item-dims {
+                            font-size: 12px;
+                            color: #666;
+                        }
+                        .item-total {
+                            font-size: 12px;
+                            color: #0066cc;
+                        }
+                        .user-name {
+                            font-weight: 500;
+                            color: #333;
+                        }
+                        .project-icon {
+                            margin-right: 4px;
+                        }
+                        .qty-cell {
+                            text-align: right;
+                            font-weight: 500;
+                        }
+                    </style>
+                    <table class="bundle-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 35%;">Item</th>
+                                <th style="width: 25%;">User</th>
+                                <th style="width: 25%;">Project</th>
+                                <th style="width: 15%; text-align: right;">Quantity</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                    """
+                    
                     for it in items:
-                        # Build dimension text if available
+                        # Build dimension text
                         dims = []
                         for key in ('height', 'width', 'thickness'):
                             sval = fmt_dim(it.get(key))
                             if sval and sval.lower() not in ("n/a", "none", "null"):
                                 dims.append(sval)
-                        dim_txt = f" ({' x '.join(dims)})" if dims else ""
+                        dim_txt = f"{' x '.join(dims)}" if dims else ""
                         
                         # Show cost if Ordered
                         cost_txt = ""
@@ -1817,37 +1882,98 @@ def display_active_bundles_for_operator(db):
                             cost = item_costs_map[it['item_id']]
                             cost_txt = f" @ ${cost:.2f}/pc"
                         
-                        st.write(f"• **{it['item_name']}**{dim_txt} — {it['total_quantity']} pieces{cost_txt}")
-                        # Show per-user breakdown with project info
+                        # Get user breakdown
                         try:
                             breakdown = json.loads(it.get('user_breakdown') or '{}') if isinstance(it.get('user_breakdown'), str) else it.get('user_breakdown') or {}
                         except Exception:
                             breakdown = {}
+                        
                         if breakdown:
                             # Get project breakdown for this item
                             project_breakdown = db.get_bundle_item_project_breakdown(bundle.get('bundle_id'), it['item_id'])
-                            # Create a map of (user_id, project_number) -> quantity
                             project_map = {}
                             for pb in project_breakdown or []:
                                 key = (pb['user_id'], pb.get('project_number'))
                                 project_map[key] = project_map.get(key, 0) + pb['quantity']
                             
-                            # Display breakdown with per-project quantities
+                            # Count total rows for this item (for rowspan)
+                            total_rows = sum(len([(k[1], v) for k, v in project_map.items() if k[0] == int(uid) and k[1]]) or 1 
+                                           for uid in breakdown.keys())
+                            
+                            # First row flag
+                            first_row = True
+                            
                             for uid, qty in breakdown.items():
                                 uname = user_name_map.get(int(uid), f"User {uid}") if str(uid).isdigit() else f"User {uid}"
-                                
-                                # Get per-project breakdown for this user
                                 user_project_breakdown = [(k[1], v) for k, v in project_map.items() if k[0] == int(uid) and k[1]]
                                 
                                 if user_project_breakdown:
-                                    # Show user name with total
-                                    st.write(f"   • **{uname}**: {qty} pcs")
-                                    # Show per-project breakdown
-                                    for project_num, project_qty in user_project_breakdown:
+                                    # Multiple projects for this user
+                                    user_rows = len(user_project_breakdown)
+                                    for idx, (project_num, project_qty) in enumerate(user_project_breakdown):
+                                        html_table += "<tr>"
+                                        
+                                        # Item cell (only on first row)
+                                        if first_row:
+                                            html_table += f"""
+                                            <td rowspan="{total_rows}">
+                                                <div class="item-name">{it['item_name']}</div>
+                                                <div class="item-dims">{dim_txt}</div>
+                                                <div class="item-total">Total: {it['total_quantity']} pcs{cost_txt}</div>
+                                            </td>
+                                            """
+                                            first_row = False
+                                        
+                                        # User cell (rowspan if multiple projects)
+                                        if idx == 0:
+                                            html_table += f'<td rowspan="{user_rows}"><span class="user-name">👤 {uname}</span></td>'
+                                        
+                                        # Project and quantity
                                         formatted_project = format_project_display(project_num, None)
-                                        st.write(f"      - 📋 {formatted_project}: {project_qty} pcs")
+                                        html_table += f"""
+                                        <td><span class="project-icon">📋</span>{formatted_project}</td>
+                                        <td class="qty-cell">{project_qty} pcs</td>
+                                        """
+                                        html_table += "</tr>"
                                 else:
-                                    st.write(f"   • **{uname}**: {qty} pcs")
+                                    # No project info
+                                    html_table += "<tr>"
+                                    if first_row:
+                                        html_table += f"""
+                                        <td rowspan="{total_rows}">
+                                            <div class="item-name">{it['item_name']}</div>
+                                            <div class="item-dims">{dim_txt}</div>
+                                            <div class="item-total">Total: {it['total_quantity']} pcs{cost_txt}</div>
+                                        </td>
+                                        """
+                                        first_row = False
+                                    html_table += f"""
+                                    <td><span class="user-name">👤 {uname}</span></td>
+                                    <td>—</td>
+                                    <td class="qty-cell">{qty} pcs</td>
+                                    </tr>
+                                    """
+                        else:
+                            # No breakdown
+                            html_table += f"""
+                            <tr>
+                                <td>
+                                    <div class="item-name">{it['item_name']}</div>
+                                    <div class="item-dims">{dim_txt}</div>
+                                    <div class="item-total">Total: {it['total_quantity']} pcs{cost_txt}</div>
+                                </td>
+                                <td>—</td>
+                                <td>—</td>
+                                <td class="qty-cell">{it['total_quantity']} pcs</td>
+                            </tr>
+                            """
+                    
+                    html_table += """
+                        </tbody>
+                    </table>
+                    """
+                    
+                    st.markdown(html_table, unsafe_allow_html=True)
                 else:
                     st.write("No items found for this bundle")
 
