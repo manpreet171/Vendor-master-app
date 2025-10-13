@@ -1276,31 +1276,28 @@ def display_operator_dashboard(db):
     st.write("Smart Procurement Management")
 
     # Role-based tabs: Master sees admin tools; Operator/Admin see only operational tabs
+    # Note: Smart Recommendations removed - bundles created automatically by cron job
     if role_val == 'master':
-        tabs = st.tabs(["📋 User Requests", "🎯 Smart Recommendations", "📦 Active Bundles", "📊 Analytics", "🤖 Manual Bundling", "🧹 System Reset", "👤 User Management"])
+        tabs = st.tabs(["📋 User Requests", "📦 Active Bundles", "📊 Analytics", "🤖 Manual Bundling", "🧹 System Reset", "👤 User Management"])
         with tabs[0]:
             display_user_requests_for_operator(db)
         with tabs[1]:
-            display_smart_recommendations(db)
-        with tabs[2]:
             display_active_bundles_for_operator(db)
-        with tabs[3]:
+        with tabs[2]:
             display_analytics_dashboard(db)
-        with tabs[4]:
+        with tabs[3]:
             display_manual_bundling(db)
-        with tabs[5]:
+        with tabs[4]:
             display_system_reset(db)
-        with tabs[6]:
+        with tabs[5]:
             display_user_management_admin(db)
     else:
-        tabs = st.tabs(["📋 User Requests", "🎯 Smart Recommendations", "📦 Active Bundles", "📊 Analytics"])
+        tabs = st.tabs(["📋 User Requests", "📦 Active Bundles", "📊 Analytics"])
         with tabs[0]:
             display_user_requests_for_operator(db)
         with tabs[1]:
-            display_smart_recommendations(db)
-        with tabs[2]:
             display_active_bundles_for_operator(db)
-        with tabs[3]:
+        with tabs[2]:
             display_analytics_dashboard(db)
 
 def display_user_requests_for_operator(db):
@@ -1363,7 +1360,7 @@ def display_user_requests_for_operator(db):
                             st.write("—")
         
         st.markdown("---")
-        st.info("💡 **Next Step:** Go to 'Smart Recommendations' tab to see how to bundle these efficiently!")
+        st.info("💡 **Next Step:** Bundles will be created automatically by the system. Check 'Active Bundles' tab to manage them.")
         
     except Exception as e:
         st.error(f"Error loading user requests: {str(e)}")
