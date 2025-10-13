@@ -1832,16 +1832,22 @@ def display_active_bundles_for_operator(db):
                                 key = (pb['user_id'], pb.get('project_number'))
                                 project_map[key] = project_map.get(key, 0) + pb['quantity']
                             
-                            # Display breakdown with project info
+                            # Display breakdown with per-project quantities
                             for uid, qty in breakdown.items():
                                 uname = user_name_map.get(int(uid), f"User {uid}") if str(uid).isdigit() else f"User {uid}"
-                                # Find projects for this user
-                                user_projects = [k[1] for k in project_map.keys() if k[0] == int(uid) and k[1]]
-                                if user_projects:
-                                    projects_str = ", ".join(set(user_projects))
-                                    st.write(f"   - {uname}: {qty} pcs (📋 {projects_str})")
+                                
+                                # Get per-project breakdown for this user
+                                user_project_breakdown = [(k[1], v) for k, v in project_map.items() if k[0] == int(uid) and k[1]]
+                                
+                                if user_project_breakdown:
+                                    # Show user name with total
+                                    st.write(f"   • **{uname}**: {qty} pcs")
+                                    # Show per-project breakdown
+                                    for project_num, project_qty in user_project_breakdown:
+                                        formatted_project = format_project_display(project_num, None)
+                                        st.write(f"      - 📋 {formatted_project}: {project_qty} pcs")
                                 else:
-                                    st.write(f"   - {uname}: {qty} pcs")
+                                    st.write(f"   • **{uname}**: {qty} pcs")
                 else:
                     st.write("No items found for this bundle")
 
