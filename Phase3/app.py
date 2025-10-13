@@ -1866,7 +1866,7 @@ def display_active_bundles_for_operator(db):
                         for user_data in dup['users']:
                             user_id = user_data['user_id']
                             current_qty = user_data['quantity']
-                            uname = user_name_map.get(user_id, f"User {user_id}")
+                            uname = user_data.get('full_name', user_name_map.get(user_id, f"User {user_id}"))
                             
                             col_name, col_qty, col_btn = st.columns([2, 1, 1])
                             with col_name:

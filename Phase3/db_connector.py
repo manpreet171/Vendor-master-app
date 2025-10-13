@@ -206,7 +206,7 @@ class DatabaseConnector:
     def detect_duplicate_projects_in_bundle(self, bundle_id):
         """
         Detect items where multiple users requested same item for same project.
-        Only checks items ACTUALLY in this bundle (from requirements_bundle_items).
+        Checks items in this bundle by joining through bundle_mapping to order_items.
         For letter-based projects, considers both parent and sub-project.
         Returns list of duplicates with format:
         [{
@@ -214,22 +214,27 @@ class DatabaseConnector:
             'item_name': str,
             'project_number': str,
             'sub_project_number': str (optional),
-            'users': [{'user_id': int, 'quantity': int}, ...]
+            'users': [{'user_id': int, 'full_name': str, 'quantity': int}, ...]
         }]
         """
-        import json
-        
+        # Find items where multiple users requested same item for same project
         query = """
         SELECT 
-            rbi.item_id,
+            roi.item_id,
             i.item_name,
-            rbi.project_number,
-            rbi.sub_project_number,
-            rbi.user_breakdown
-        FROM requirements_bundle_items rbi
-        JOIN items i ON rbi.item_id = i.item_id
-        WHERE rbi.bundle_id = ? AND rbi.project_number IS NOT NULL
-        ORDER BY rbi.item_id, rbi.project_number, rbi.sub_project_number
+            roi.project_number,
+            roi.sub_project_number,
+            ro.user_id,
+            u.full_name,
+            roi.quantity
+        FROM requirements_bundle_mapping rbm
+        JOIN requirements_orders ro ON rbm.req_id = ro.req_id
+        JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+        JOIN items i ON roi.item_id = i.item_id
+        LEFT JOIN requirements_users u ON ro.user_id = u.user_id
+        WHERE rbm.bundle_id = ? 
+          AND roi.project_number IS NOT NULL
+        ORDER BY roi.item_id, roi.project_number, roi.sub_project_number, ro.user_id
         """
         
         results = self.execute_query(query, (bundle_id,))
@@ -237,25 +242,39 @@ class DatabaseConnector:
         if not results:
             return []
         
-        # Build duplicates list from items ACTUALLY in this bundle
-        duplicates = []
+        # Group by (item_id, project_number, sub_project_number)
+        from collections import defaultdict
+        grouped = defaultdict(lambda: {
+            'item_id': None,
+            'item_name': '',
+            'project_number': '',
+            'sub_project_number': None,
+            'users': []
+        })
         
         for row in results:
-            # Parse user_breakdown JSON
-            try:
-                user_breakdown = json.loads(row['user_breakdown']) if row['user_breakdown'] else []
-            except:
-                user_breakdown = []
+            # Create unique key for grouping
+            key = (row['item_id'], row['project_number'], row.get('sub_project_number'))
             
-            # Check if multiple users (duplicate)
-            if len(user_breakdown) > 1:
-                duplicates.append({
-                    'item_id': row['item_id'],
-                    'item_name': row['item_name'],
-                    'project_number': row['project_number'],
-                    'sub_project_number': row.get('sub_project_number'),
-                    'users': user_breakdown  # Already in correct format: [{'user_id': int, 'quantity': int}, ...]
-                })
+            # Initialize if first time seeing this combination
+            if grouped[key]['item_id'] is None:
+                grouped[key]['item_id'] = row['item_id']
+                grouped[key]['item_name'] = row['item_name']
+                grouped[key]['project_number'] = row['project_number']
+                grouped[key]['sub_project_number'] = row.get('sub_project_number')
+            
+            # Add user to list
+            grouped[key]['users'].append({
+                'user_id': row['user_id'],
+                'full_name': row.get('full_name', f"User {row['user_id']}"),
+                'quantity': row['quantity']
+            })
+        
+        # Filter to only duplicates (multiple users)
+        duplicates = []
+        for key, data in grouped.items():
+            if len(data['users']) > 1:
+                duplicates.append(data)
         
         return duplicates
     
