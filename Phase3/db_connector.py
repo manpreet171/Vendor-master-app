@@ -218,6 +218,7 @@ class DatabaseConnector:
         }]
         """
         # Find items where multiple users requested same item for same project
+        # CRITICAL: Only check items that are ACTUALLY in this bundle (in requirements_bundle_items)
         query = """
         SELECT 
             roi.item_id,
@@ -234,10 +235,15 @@ class DatabaseConnector:
         LEFT JOIN requirements_users u ON ro.user_id = u.user_id
         WHERE rbm.bundle_id = ? 
           AND roi.project_number IS NOT NULL
+          AND roi.item_id IN (
+              SELECT item_id 
+              FROM requirements_bundle_items 
+              WHERE bundle_id = ?
+          )
         ORDER BY roi.item_id, roi.project_number, roi.sub_project_number, ro.user_id
         """
         
-        results = self.execute_query(query, (bundle_id,))
+        results = self.execute_query(query, (bundle_id, bundle_id))
         
         if not results:
             return []
