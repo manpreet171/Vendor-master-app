@@ -150,34 +150,18 @@ def display_bundle_items_table(db, bundle_id):
             breakdown = db.get_bundle_item_project_breakdown(bundle_id, item['item_id'])
             
             if breakdown:
-                # Create HTML table
-                html_table = """
-                <table style='width: 100%; border-collapse: collapse; margin: 10px 0;'>
-                    <thead>
-                        <tr style='background-color: #f0f2f6;'>
-                            <th style='padding: 8px; text-align: left; border: 1px solid #ddd;'>Project</th>
-                            <th style='padding: 8px; text-align: center; border: 1px solid #ddd;'>Quantity</th>
-                            <th style='padding: 8px; text-align: left; border: 1px solid #ddd;'>User</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                """
-                
-                for row in breakdown:
-                    html_table += f"""
-                    <tr>
-                        <td style='padding: 8px; border: 1px solid #ddd;'>{row.get('project_number', 'N/A')}</td>
-                        <td style='padding: 8px; text-align: center; border: 1px solid #ddd;'>{row.get('quantity', 0)} pcs</td>
-                        <td style='padding: 8px; border: 1px solid #ddd;'>User #{row.get('user_id', 'N/A')}</td>
-                    </tr>
-                    """
-                
-                html_table += """
-                    </tbody>
-                </table>
-                """
-                
-                st.markdown(html_table, unsafe_allow_html=True)
+                # Use Streamlit's native table instead of HTML
+                import pandas as pd
+                df = pd.DataFrame(breakdown)
+                if not df.empty:
+                    # Rename columns for display
+                    display_df = df[['project_number', 'quantity', 'user_id']].copy()
+                    display_df.columns = ['Project', 'Quantity', 'User']
+                    display_df['Quantity'] = display_df['Quantity'].astype(str) + ' pcs'
+                    display_df['User'] = 'User #' + display_df['User'].astype(str)
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                else:
+                    st.caption(f"Total: {item['total_quantity']} pieces")
             else:
                 st.caption(f"Total: {item['total_quantity']} pieces")
             
