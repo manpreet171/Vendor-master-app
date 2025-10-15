@@ -34,21 +34,13 @@ def main(db=None):
     # db.close_connection()
 
 def display_reviewed_bundles(db):
-    """Display all reviewed bundles for approval/rejection"""
+    """Display all reviewed bundles for approval/rejection - matches operator dashboard style"""
     st.header("📋 Reviewed Bundles")
+    st.caption("Approve or reject bundles that have been reviewed by operators")
     
     try:
-        # Get all reviewed bundles
+        # Get all reviewed bundles with vendor info (same as operator dashboard)
         bundles = db.get_reviewed_bundles_for_operation()
-        
-        # Debug information (collapsed by default)
-        with st.expander("🔍 Debug Info", expanded=False):
-            st.write(f"**Query returned:** {len(bundles) if bundles else 0} bundles")
-            if bundles:
-                for b in bundles:
-                    st.write(f"- {b.get('bundle_name')} (Status: {b.get('status')})")
-            else:
-                st.warning("Query returned empty list or None")
         
         if not bundles:
             st.info("✅ No bundles awaiting approval. All caught up!")
@@ -66,79 +58,41 @@ def display_reviewed_bundles(db):
     except Exception as e:
         st.error(f"Error loading bundles: {str(e)}")
 
-def get_vendor_info(db, vendor_id):
-    """Get vendor information by vendor_id"""
-    query = """
-    SELECT vendor_name, contact_person, vendor_email, vendor_phone
-    FROM Vendors
-    WHERE vendor_id = ?
-    """
-    result = db.execute_query(query, (vendor_id,))
-    return result[0] if result else None
-
 def display_bundle_card(db, bundle):
-    """Display a single bundle card with approve/reject options"""
-    
-    # Get vendor info
-    vendor_info = get_vendor_info(db, bundle.get('recommended_vendor_id'))
+    """Display a single bundle card - matches operator dashboard style"""
     
     # Format dates
     reviewed_date = bundle.get('reviewed_at')
     if reviewed_date and hasattr(reviewed_date, 'strftime'):
         reviewed_date = reviewed_date.strftime('%Y-%m-%d %H:%M')
     
-    created_date = bundle.get('created_at')
-    if created_date and hasattr(created_date, 'strftime'):
-        created_date = created_date.strftime('%Y-%m-%d %H:%M')
-    
-    # Bundle header
+    # Bundle header - simple and clean
     col1, col2 = st.columns([3, 1])
     
     with col1:
         st.subheader(f"📦 {bundle['bundle_name']}")
-        st.caption(f"Reviewed on: {reviewed_date or 'N/A'}")
+        st.caption(f"Vendor: {bundle.get('vendor_name', 'N/A')} | Reviewed: {reviewed_date or 'N/A'}")
     
     with col2:
         st.metric("Status", "🟢 Reviewed")
     
     # Show previous rejection warning if exists
     if bundle.get('rejection_reason'):
-        st.warning("⚠️ **Previously Rejected**")
+        rejected_date = bundle.get('rejected_at')
+        if rejected_date and hasattr(rejected_date, 'strftime'):
+            rejected_date = rejected_date.strftime('%Y-%m-%d %H:%M')
+        
+        st.error(f"⚠️ **REJECTED BY OPERATION TEAM**")
         st.markdown(f"""
-        <div style='background-color: #fff3e0; padding: 10px; border-radius: 5px; border-left: 4px solid #ff9800;'>
-            <p style='margin: 0; color: #e65100;'><strong>Last Rejection:</strong> {bundle.get('rejected_at', 'N/A')}</p>
-            <p style='margin: 5px 0 0 0; color: #e65100;'><strong>Reason:</strong> {bundle.get('rejection_reason', 'N/A')}</p>
+        <div style='background-color: #ffebee; padding: 10px; border-radius: 5px; border-left: 4px solid #f44336;'>
+            <p style='margin: 0; color: #c62828;'><strong>Rejected on:</strong> {rejected_date or 'N/A'}</p>
+            <p style='margin: 5px 0 0 0; color: #c62828;'><strong>Reason:</strong> {bundle.get('rejection_reason', 'N/A')}</p>
         </div>
         """, unsafe_allow_html=True)
-        st.markdown("")
+        st.markdown("---")
     
-    # Bundle details
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.write("**Vendor Information:**")
-        if vendor_info:
-            st.write(f"• **Name:** {vendor_info.get('vendor_name', 'N/A')}")
-            st.write(f"• **Contact:** {vendor_info.get('contact_person', 'N/A')}")
-            st.write(f"• **Email:** {vendor_info.get('vendor_email', 'N/A')}")
-            st.write(f"• **Phone:** {vendor_info.get('vendor_phone', 'N/A')}")
-        else:
-            st.write("• **Vendor info not available**")
-    
-    with col2:
-        st.write("**Bundle Summary:**")
-        st.write(f"• **Total Items:** {bundle.get('total_items', 0)}")
-        st.write(f"• **Total Quantity:** {bundle.get('total_quantity', 0)} pieces")
-        st.write(f"• **Created:** {created_date or 'N/A'}")
-    
-    with col3:
-        st.write("**Actions:**")
-        st.write("Review the bundle details below and decide:")
-        st.write("• ✅ Approve if everything looks good")
-        st.write("• ❌ Reject if issues need fixing")
-    
-    # Expandable section for detailed items
-    with st.expander("📋 View Bundle Items (HTML Table)", expanded=False):
+    # Expandable section for detailed items (same as operator dashboard)
+    with st.expander("📋 View Bundle Items", expanded=False):
         display_bundle_items_table(db, bundle['bundle_id'])
     
     # Action buttons
