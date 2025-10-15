@@ -71,8 +71,21 @@ def display_reviewed_bundles(db):
     except Exception as e:
         st.error(f"Error loading bundles: {str(e)}")
 
+def get_vendor_info(db, vendor_id):
+    """Get vendor information by vendor_id"""
+    query = """
+    SELECT vendor_name, contact_person, vendor_email, vendor_phone
+    FROM Vendors
+    WHERE vendor_id = ?
+    """
+    result = db.execute_query(query, (vendor_id,))
+    return result[0] if result else None
+
 def display_bundle_card(db, bundle):
     """Display a single bundle card with approve/reject options"""
+    
+    # Get vendor info
+    vendor_info = get_vendor_info(db, bundle.get('recommended_vendor_id'))
     
     # Bundle header
     col1, col2 = st.columns([3, 1])
@@ -100,10 +113,13 @@ def display_bundle_card(db, bundle):
     
     with col1:
         st.write("**Vendor Information:**")
-        st.write(f"• **Name:** {bundle.get('vendor_name', 'N/A')}")
-        st.write(f"• **Contact:** {bundle.get('contact_person', 'N/A')}")
-        st.write(f"• **Email:** {bundle.get('email', 'N/A')}")
-        st.write(f"• **Phone:** {bundle.get('phone', 'N/A')}")
+        if vendor_info:
+            st.write(f"• **Name:** {vendor_info.get('vendor_name', 'N/A')}")
+            st.write(f"• **Contact:** {vendor_info.get('contact_person', 'N/A')}")
+            st.write(f"• **Email:** {vendor_info.get('vendor_email', 'N/A')}")
+            st.write(f"• **Phone:** {vendor_info.get('vendor_phone', 'N/A')}")
+        else:
+            st.write("• **Vendor info not available**")
     
     with col2:
         st.write("**Bundle Summary:**")

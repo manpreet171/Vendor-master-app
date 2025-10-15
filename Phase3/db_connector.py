@@ -1435,27 +1435,21 @@ class DatabaseConnector:
         """Get all bundles with status = 'Reviewed' for Operation Team dashboard"""
         query = """
         SELECT 
-            b.bundle_id,
-            b.bundle_name,
-            b.recommended_vendor_id,
-            v.vendor_name,
-            v.contact_person,
-            v.vendor_email as email,
-            v.vendor_phone as phone,
-            b.total_items,
-            b.total_quantity,
-            b.status,
-            b.reviewed_at,
-            b.rejection_reason,
-            b.rejected_at,
-            b.created_at
-        FROM requirements_bundles b
-        LEFT JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
-        WHERE LOWER(b.status) = 'reviewed'
-        ORDER BY b.reviewed_at DESC
+            bundle_id,
+            bundle_name,
+            status,
+            total_items,
+            total_quantity,
+            recommended_vendor_id,
+            created_at,
+            reviewed_at,
+            rejection_reason,
+            rejected_at
+        FROM requirements_bundles
+        WHERE status = 'Reviewed'
+        ORDER BY reviewed_at DESC
         """
         print(f"[DEBUG] Executing query for reviewed bundles...")
-        print(f"[DEBUG] Query: {query}")
         
         try:
             results = self.execute_query(query)
