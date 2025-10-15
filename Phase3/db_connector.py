@@ -1440,8 +1440,8 @@ class DatabaseConnector:
             b.recommended_vendor_id,
             v.vendor_name,
             v.contact_person,
-            v.email,
-            v.phone,
+            v.vendor_email as email,
+            v.vendor_phone as phone,
             b.total_items,
             b.total_quantity,
             b.status,
@@ -1450,7 +1450,7 @@ class DatabaseConnector:
             b.rejected_at,
             b.created_at
         FROM requirements_bundles b
-        LEFT JOIN ItemVendorMap v ON b.recommended_vendor_id = v.vendor_id
+        LEFT JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
         WHERE LOWER(b.status) = 'reviewed'
         ORDER BY b.reviewed_at DESC
         """

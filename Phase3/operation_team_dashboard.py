@@ -40,12 +40,18 @@ def display_reviewed_bundles(db):
         bundles = db.get_reviewed_bundles_for_operation()
         
         # Debug information (can be removed later)
-        with st.expander("🔍 Debug Info", expanded=False):
+        with st.expander("🔍 Debug Info", expanded=True):
             st.write(f"**Query returned:** {len(bundles) if bundles else 0} bundles")
+            st.write(f"**Bundles is None?** {bundles is None}")
+            st.write(f"**Bundles type:** {type(bundles)}")
+            
             if bundles:
                 st.write("**Bundle IDs found:**")
                 for b in bundles:
-                    st.write(f"- {b.get('bundle_name')} (Status: {b.get('status')})")
+                    st.write(f"- {b.get('bundle_name')} (Status: {b.get('status')}, Vendor: {b.get('vendor_name')})")
+                    st.json(b)  # Show full bundle data
+            else:
+                st.warning("Query returned empty list or None")
         
         if not bundles:
             st.info("✅ No bundles awaiting approval. All caught up!")
