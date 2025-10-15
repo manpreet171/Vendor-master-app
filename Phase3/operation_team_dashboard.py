@@ -8,11 +8,8 @@ from datetime import datetime
 from db_connector import DatabaseConnector
 
 def main():
-    st.set_page_config(
-        page_title="Operation Team Dashboard - Phase 3",
-        page_icon="✅",
-        layout="wide"
-    )
+    # Note: set_page_config() is already called in app.py
+    # Do not call it again here to avoid conflict
     
     st.title("✅ Operation Team Dashboard")
     st.caption("Bundle Approval Management")
