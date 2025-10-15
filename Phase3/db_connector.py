@@ -1454,7 +1454,20 @@ class DatabaseConnector:
         WHERE LOWER(b.status) = 'reviewed'
         ORDER BY b.reviewed_at DESC
         """
-        return self.execute_query(query)
+        print(f"[DEBUG] Executing query for reviewed bundles...")
+        print(f"[DEBUG] Query: {query}")
+        
+        try:
+            results = self.execute_query(query)
+            print(f"[DEBUG] Query returned {len(results) if results else 0} results")
+            if results:
+                print(f"[DEBUG] First result: {results[0]}")
+            return results
+        except Exception as e:
+            print(f"[ERROR] Failed to get reviewed bundles: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
     
     def approve_bundle_by_operation(self, bundle_id):
         """

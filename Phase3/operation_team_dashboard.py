@@ -7,15 +7,16 @@ import streamlit as st
 from datetime import datetime
 from db_connector import DatabaseConnector
 
-def main():
+def main(db=None):
     # Note: set_page_config() is already called in app.py
     # Do not call it again here to avoid conflict
     
     st.title("✅ Operation Team Dashboard")
     st.caption("Bundle Approval Management")
     
-    # Initialize database connection
-    db = DatabaseConnector()
+    # Use passed db connection or create new one
+    if db is None:
+        db = DatabaseConnector()
     
     # Sidebar info
     st.sidebar.title("👤 Operation Team")
@@ -29,7 +30,8 @@ def main():
     # Main content - Reviewed Bundles
     display_reviewed_bundles(db)
     
-    db.close_connection()
+    # Don't close connection if it was passed from app.py
+    # db.close_connection()
 
 def display_reviewed_bundles(db):
     """Display all reviewed bundles for approval/rejection"""
