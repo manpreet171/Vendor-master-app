@@ -6,6 +6,553 @@
 
 ## Development Progress Log
 
+### **October 15, 2025 - Operation Team Role & Approval Layer**
+
+#### **✅ Completed Today:**
+
+**Problem Statement:**
+- Operators were handling both review AND approval of bundles (no separation of duties)
+- No oversight layer between operator review and final approval
+- Need for an approval gate where a separate team validates operator decisions
+- Required ability to reject bundles back to operators with detailed reasons
+- Need simple, focused interface for approval team (not full operator dashboard)
+
+**Solution: Introduced "Operation Team" Role with Restricted Approval Powers**
+
+---
+
+#### **🔄 Enhanced Status Workflow:**
+
+```
+Active ←→ Reviewed → Approved → Ordered → Completed
+  ↑         ↑  ↓         ↓
+  └─────────┘  └─ Rejected (with reason)
+  
+Operator:        Reviews (Active → Reviewed)
+                 Can revert (Reviewed → Active, no reason)
+                 
+Operation Team:  Approves (Reviewed → Approved)
+                 Rejects (Reviewed → Active, reason required)
+```
+
+**New Role: Operation Team**
+- **Purpose**: Approval oversight layer between operator and final approval
+- **Access**: ONLY sees Reviewed bundles (no Active, Approved, Ordered, Completed)
+- **Powers**: Can ONLY approve or reject reviewed bundles
+- **Login**: Single shared account (not individual users)
+- **Storage**: Credentials in Streamlit secrets (not database)
+
+---
+
+#### **📊 Database Changes:**
+
+**Modified Table:** `requirements_bundles`
+
+**New Columns Added:**
+```sql
+ALTER TABLE requirements_bundles
+ADD rejection_reason NVARCHAR(500) NULL;
+
+ALTER TABLE requirements_bundles
+ADD rejected_at DATETIME NULL;
+```
+
+**Column Purposes:**
+- `rejection_reason`: Stores why Operation Team rejected bundle (max 500 chars, required)
+- `rejected_at`: Timestamp when bundle was rejected by Operation Team
+
+**Design Decisions:**
+- ✅ Only 2 columns needed (no `rejected_by` - always "Operation Team")
+- ✅ Stores ONLY last rejection (not full history - keeps it simple)
+- ✅ Both columns NULL when bundle approved (rejection data cleared)
+- ✅ No new tables created (minimal schema changes)
+
+---
+
+#### **🔧 Backend Functions Added:**
+
+**File:** `db_connector.py`
+
+**1. `get_reviewed_bundles_for_operation()`**
+```python
+def get_reviewed_bundles_for_operation(self):
+    """Get all bundles with status = 'Reviewed' for Operation Team dashboard"""
+    # Returns: bundle_id, bundle_name, vendor info, total_items, total_quantity
+    # Includes: rejection_reason, rejected_at (if previously rejected)
+```
+
+**2. `approve_bundle_by_operation(bundle_id)`**
+```python
+def approve_bundle_by_operation(self, bundle_id):
+    """Operation Team approves bundle (Reviewed → Approved)"""
+    # Updates status to 'Approved'
+    # Clears rejection_reason and rejected_at (NULL)
+    # Records approved_at timestamp
+```
+
+**3. `reject_bundle_by_operation(bundle_id, rejection_reason)`**
+```python
+def reject_bundle_by_operation(self, bundle_id, rejection_reason):
+    """Operation Team rejects bundle (Reviewed → Active)"""
+    # Updates status to 'Active'
+    # Stores rejection_reason (max 500 chars, required)
+    # Records rejected_at timestamp
+    # Validates reason is not empty
+```
+
+**Modified Functions:**
+
+**`get_all_bundles()` in `operator_dashboard.py`:**
+- Now includes `rejection_reason` and `rejected_at` columns
+- Allows operators to see why bundles were rejected
+
+---
+
+#### **🎨 UI Changes:**
+
+**1. Operator Dashboard (`operator_dashboard.py`)**
+
+**Added: Rejection Warning Display**
+- Shows prominent red error banner for rejected Active bundles
+- Displays rejection date and full reason
+- Helps operator understand what needs fixing
+
+**Visual Design:**
+```
+⚠️ REJECTED BY OPERATION TEAM
+
+┌─────────────────────────────────────────┐
+│ Rejected on: 2025-10-15 21:45:30        │
+│ Reason: Vendor pricing too high,        │
+│         check alternatives              │
+└─────────────────────────────────────────┘
+```
+
+**Implementation:**
+- Red background (#ffebee)
+- Red left border (#f44336)
+- Dark red text (#c62828)
+- Only shows for Active bundles with rejection_reason
+- Clear separation with horizontal line
+
+---
+
+**2. Operation Team Dashboard (`operation_team_dashboard.py`) - NEW FILE**
+
+**Purpose:** Simplified, focused interface for Operation Team approval/rejection
+
+**Features:**
+- ✅ Shows ONLY Reviewed bundles (no other statuses visible)
+- ✅ Bundle card with vendor information
+- ✅ Bundle summary (items, quantities, dates)
+- ✅ Previous rejection warning (if bundle was rejected before)
+- ✅ Expandable HTML table with per-project breakdown
+- ✅ Individual Approve/Reject buttons per bundle
+- ✅ NO bulk approve (one-by-one review required)
+- ✅ NO access to user requests, analytics, or other features
+
+**Rejection Dialog:**
+- Text area for rejection reason (required field)
+- 500 character limit with live counter
+- Validation: Cannot submit empty reason
+- Cancel and Confirm buttons
+- Character count display: "Characters: 245 / 500"
+
+**Bundle Card Layout:**
+```
+📦 BUNDLE-20251015-001          Status: 🟢 Reviewed
+Reviewed on: Oct 15, 2025
+
+⚠️ Previously Rejected (if applicable)
+Last Rejection: Oct 14, 2025
+Reason: "Check vendor pricing"
+
+Vendor Information:
+• Name: S & F Supplies Inc.
+• Contact: John Doe
+• Email: john@supplies.com
+• Phone: (555) 123-4567
+
+Bundle Summary:
+• Total Items: 3
+• Total Quantity: 10 pieces
+• Created: Oct 14, 2025
+
+[View Bundle Items ▼]  [✅ Approve]  [❌ Reject]
+```
+
+---
+
+#### **🔐 Login & Authentication:**
+
+**File:** `app.py`
+
+**Added Operation Team Login:**
+
+**Streamlit Secrets Configuration:**
+```toml
+[app_roles.operation]
+username = "operations"
+password = "your_secure_password_here"
+```
+
+**Environment Variables (Fallback):**
+```bash
+OPERATION_USERNAME=operations
+OPERATION_PASSWORD=your_secure_password_here
+```
+
+**Login Flow:**
+1. User enters username and password
+2. System checks `st.secrets["app_roles"]["operation"]`
+3. If match: Set `user_role = 'operation'`, `username = 'Operation Team'`
+4. Route to `operation_team_dashboard.py`
+
+**Routing Logic:**
+```python
+if user_role == 'operation':
+    display_operation_team_dashboard(db)
+elif user_role in ('operator', 'admin', 'master'):
+    display_operator_dashboard(db)
+else:
+    display_user_dashboard(db)
+```
+
+---
+
+#### **📋 Role Permissions Matrix:**
+
+| Action | User | Operator | Operation Team | Admin | Master |
+|--------|------|----------|----------------|-------|--------|
+| Submit requests | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Review bundles (Active → Reviewed) | ❌ | ✅ | ❌ | ✅ | ✅ |
+| Revert bundles (Reviewed → Active) | ❌ | ✅ | ❌ | ✅ | ✅ |
+| Approve bundles (Reviewed → Approved) | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Reject bundles (with reason) | ❌ | ❌ | ✅ | ❌ | ✅ |
+| Move items between bundles | ❌ | ✅ | ❌ | ✅ | ✅ |
+| Handle duplicates | ❌ | ✅ | ❌ | ✅ | ✅ |
+| Place orders (Approved → Ordered) | ❌ | ✅ | ❌ | ✅ | ✅ |
+| Mark completed | ❌ | ✅ | ❌ | ✅ | ✅ |
+| User management | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Manual bundling | ❌ | ❌ | ❌ | ❌ | ✅ |
+
+**Key Design Decisions:**
+- ✅ **Operator keeps ALL existing powers** (no changes to operator role)
+- ✅ **Operation Team is restricted** (approve/reject only)
+- ✅ **Operator can still approve** (bypass Operation Team if needed)
+- ✅ **Admin cannot reject** (only Master and Operation Team can reject)
+- ✅ **Single shared login** for Operation Team (not individual accounts)
+
+---
+
+#### **🔄 Workflow Examples:**
+
+**Scenario 1: Normal Approval Flow**
+```
+1. USER submits request → Pending
+2. CRON creates bundle → Active
+3. OPERATOR reviews → Reviewed
+4. OPERATION TEAM approves → Approved
+5. OPERATOR places order → Ordered
+6. OPERATOR marks complete → Completed
+```
+
+**Scenario 2: Rejection & Fix Flow**
+```
+1. OPERATOR reviews bundle → Reviewed
+2. OPERATION TEAM sees issue (wrong vendor)
+3. OPERATION TEAM rejects with reason: "Vendor pricing too high, check alternatives"
+4. Bundle status → Active (with rejection_reason stored)
+5. OPERATOR sees rejection warning in dashboard
+6. OPERATOR checks alternative vendors
+7. OPERATOR moves items to cheaper vendor
+8. OPERATOR reviews again → Reviewed
+9. OPERATION TEAM approves → Approved
+10. Continue normal flow...
+```
+
+**Scenario 3: Operator Self-Correction**
+```
+1. OPERATOR reviews bundle → Reviewed
+2. OPERATOR realizes mistake (before Operation Team sees it)
+3. OPERATOR clicks "Revert to Active" (no reason needed)
+4. Bundle status → Active
+5. OPERATOR fixes issue
+6. OPERATOR reviews again → Reviewed
+7. OPERATION TEAM approves → Approved
+```
+
+**Scenario 4: Multiple Rejections**
+```
+1. OPERATOR reviews → Reviewed
+2. OPERATION TEAM rejects: "Check vendor pricing" → Active
+3. OPERATOR fixes, reviews → Reviewed
+4. OPERATION TEAM rejects again: "Items need verification" → Active
+5. OPERATOR verifies, reviews → Reviewed
+6. OPERATION TEAM approves → Approved
+(No limit on rejections - operator must fix until approved)
+```
+
+---
+
+#### **🎯 Business Rules:**
+
+**1. Rejection Rules:**
+- ✅ Rejection reason is **REQUIRED** (cannot be empty)
+- ✅ Maximum 500 characters for rejection reason
+- ✅ Only **LAST rejection** stored (not full history)
+- ✅ Rejection data **CLEARED** when bundle approved
+- ✅ **NO LIMIT** on number of rejections (can reject infinitely)
+- ✅ **NO ESCALATION** process (operator must fix until approved)
+
+**2. Operator Revert vs Operation Reject:**
+
+| Action | Who | Status Change | Reason Required | Use Case |
+|--------|-----|---------------|-----------------|----------|
+| **Revert** | Operator | Reviewed → Active | ❌ No | Self-correction before approval |
+| **Reject** | Operation Team | Reviewed → Active | ✅ Yes | Oversight rejection with feedback |
+
+**3. Approval Gate:**
+- ✅ Operator can approve bundles directly (bypass Operation Team)
+- ✅ Operation Team can only approve bundles that are Reviewed
+- ✅ Once Approved, bundle is **LOCKED** (no changes allowed)
+- ✅ Operator must place order on Approved bundles
+
+**4. Visibility Rules:**
+
+| Role | Can See Active | Can See Reviewed | Can See Approved | Can See Ordered | Can See Completed |
+|------|----------------|------------------|------------------|-----------------|-------------------|
+| Operator | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| Operation Team | ❌ No | ✅ Yes | ❌ No | ❌ No | ❌ No |
+| Admin | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| Master | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+
+---
+
+#### **📁 Files Created:**
+
+1. ✅ **`operation_team_dashboard.py`** (NEW)
+   - Complete dashboard for Operation Team
+   - 265 lines of code
+   - Includes: bundle display, approve/reject logic, rejection dialog, HTML table
+
+2. ✅ **`.secrets.toml.example`** (NEW)
+   - Configuration template for Streamlit secrets
+   - Includes all role credentials (master, operator, operation)
+   - Database connection settings
+
+3. ✅ **`OPERATION_TEAM_IMPLEMENTATION.md`** (NEW)
+   - Complete implementation documentation
+   - Workflow diagrams
+   - Testing checklist
+   - Configuration guide
+
+---
+
+#### **📝 Files Modified:**
+
+1. ✅ **`db_connector.py`**
+   - Added 3 new functions (80+ lines)
+   - `get_reviewed_bundles_for_operation()`
+   - `approve_bundle_by_operation()`
+   - `reject_bundle_by_operation()`
+
+2. ✅ **`operator_dashboard.py`**
+   - Modified `get_all_bundles()` to include rejection columns
+   - Added rejection warning display (15 lines)
+   - Red banner with rejection reason and date
+
+3. ✅ **`app.py`**
+   - Added Operation Team login support (20 lines)
+   - Added routing for Operation Team role
+   - Added `display_operation_team_dashboard()` function
+
+---
+
+#### **🧪 Testing Scenarios:**
+
+**Test 1: Operation Team Login**
+- [ ] Login with operation credentials works
+- [ ] Dashboard shows only Reviewed bundles
+- [ ] No other bundles visible (Active, Approved, etc.)
+
+**Test 2: Approve Bundle**
+- [ ] Approve button changes status to Approved
+- [ ] Rejection data cleared (rejection_reason = NULL)
+- [ ] Success message with balloons
+- [ ] Bundle disappears from Operation Team view
+
+**Test 3: Reject Bundle**
+- [ ] Reject button opens dialog
+- [ ] Empty reason shows error
+- [ ] Valid reason changes status to Active
+- [ ] Rejection reason and timestamp stored
+- [ ] Bundle disappears from Operation Team view
+
+**Test 4: Operator Sees Rejection**
+- [ ] Rejected bundle shows in Active Bundles
+- [ ] Red warning banner displays
+- [ ] Rejection reason shows correctly
+- [ ] Rejection date shows correctly
+- [ ] Operator can review bundle again
+
+**Test 5: Re-Review After Rejection**
+- [ ] Operator fixes issue
+- [ ] Operator reviews bundle → Reviewed
+- [ ] Bundle appears in Operation Team dashboard
+- [ ] Previous rejection warning shows
+- [ ] Operation Team can approve or reject again
+
+**Test 6: Multiple Rejections**
+- [ ] Bundle can be rejected multiple times
+- [ ] Only last rejection shows
+- [ ] No rejection count limit
+- [ ] Operator can keep fixing and re-reviewing
+
+**Test 7: Rejection Data Clearing**
+- [ ] When bundle approved, rejection_reason = NULL
+- [ ] When bundle approved, rejected_at = NULL
+- [ ] No rejection warning shows after approval
+
+---
+
+#### **🔒 Security Considerations:**
+
+**1. Single Shared Account:**
+- Operation Team uses one shared login
+- No individual user tracking
+- Credentials stored in Streamlit secrets (not database)
+- No `rejected_by` column needed (always "Operation Team")
+
+**2. No Database User Entry:**
+- Operation Team not in `requirements_users` table
+- Authentication happens at app level (secrets)
+- Simpler than creating database entries
+
+**3. Rejection Reason Validation:**
+- Server-side validation (cannot be empty)
+- 500 character limit enforced
+- SQL injection protection (parameterized queries)
+
+**4. No Escalation Mechanism:**
+- No automatic escalation after N rejections
+- Manual process if needed
+- Keeps system simple
+
+---
+
+#### **📊 Impact Analysis:**
+
+**Database Impact:**
+- ✅ Minimal: Only 2 columns added
+- ✅ No new tables created
+- ✅ No foreign keys added
+- ✅ Backward compatible (columns are NULL)
+
+**Code Impact:**
+- ✅ No changes to existing operator functions
+- ✅ New dashboard is separate module
+- ✅ Existing workflows unchanged
+- ✅ Operator powers unchanged
+
+**User Impact:**
+- ✅ Regular users: No changes
+- ✅ Operators: See rejection warnings (helpful)
+- ✅ Operation Team: New role with focused interface
+- ✅ Admin/Master: No changes
+
+**Performance Impact:**
+- ✅ Minimal: 2 extra columns in SELECT queries
+- ✅ No additional JOINs required
+- ✅ Indexes not needed (status already indexed)
+
+---
+
+#### **🎓 Key Learnings:**
+
+**1. Separation of Duties:**
+- Clear separation between review and approval
+- Operator focuses on technical review
+- Operation Team focuses on business approval
+- Better oversight and quality control
+
+**2. Simple Design Wins:**
+- Single shared login (no complex user management)
+- Only 2 database columns (no new tables)
+- Minimal code changes (separate module)
+- Easy to understand and maintain
+
+**3. Rejection Feedback Loop:**
+- Rejection reason provides clear feedback
+- Operator knows exactly what to fix
+- No ambiguity or guesswork
+- Faster resolution of issues
+
+**4. Flexibility:**
+- Operator can still approve directly (bypass if needed)
+- No hard limit on rejections (fix until right)
+- Previous rejection visible (context for re-review)
+- Simple revert for operator self-correction
+
+---
+
+#### **📈 Future Enhancements (Not Implemented):**
+
+**1. Rejection History Tracking:**
+- Store all rejections (not just last one)
+- Show rejection count
+- Rejection trend analytics
+- Identify problematic vendors/items
+
+**2. Bulk Approve:**
+- Currently: Individual approve only
+- Future: Select multiple bundles and approve at once
+- Checkbox selection with "Approve Selected (N)" button
+
+**3. Email Notifications:**
+- Notify operator when bundle rejected
+- Notify operation team when bundle re-reviewed
+- Daily digest of pending approvals
+
+**4. Rejection Categories:**
+- Predefined rejection reasons (dropdown)
+- Category-based analytics
+- Common issues identification
+- Training opportunities
+
+**5. Escalation Process:**
+- Automatic escalation after N rejections
+- Manager approval for disputed bundles
+- Escalation timeline tracking
+
+**6. Individual Operation Team Accounts:**
+- Track who approved/rejected
+- Audit trail for accountability
+- Performance metrics per approver
+
+---
+
+#### **✅ Acceptance Criteria Met:**
+
+- [x] Operation Team can login with shared credentials
+- [x] Operation Team sees ONLY Reviewed bundles
+- [x] Operation Team can approve bundles (Reviewed → Approved)
+- [x] Operation Team can reject bundles with reason (Reviewed → Active)
+- [x] Rejection reason is required (cannot be empty)
+- [x] Rejection reason limited to 500 characters
+- [x] Operator sees rejection warning for rejected bundles
+- [x] Operator can see rejection reason and date
+- [x] Operator can fix and re-review rejected bundles
+- [x] Previous rejection shows when bundle re-reviewed
+- [x] Rejection data cleared when bundle approved
+- [x] No limit on number of rejections
+- [x] Operator can still approve bundles directly
+- [x] Operator can revert bundles without reason
+- [x] HTML table shows per-project breakdown
+- [x] All existing operator powers unchanged
+
+---
+
 ### **October 6, 2025 - Bundle Review Workflow & Approval Gate System**
 
 #### **✅ Completed Today:**

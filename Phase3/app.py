@@ -49,8 +49,9 @@ def require_login():
                             st.error(f"Database connection failed: {db.connection_error}")
                             return
                         
-                        # 1) Check for Master/Operator credentials from Streamlit secrets (preferred)
+                        # 1) Check for Master/Operator/Operation credentials from Streamlit secrets (preferred)
                         master_user = master_pass = operator_user = operator_pass = None
+                        operation_user = operation_pass = None
                         try:
                             master_user = st.secrets["app_roles"]["master"].get("username")
                             master_pass = st.secrets["app_roles"]["master"].get("password")
@@ -61,6 +62,11 @@ def require_login():
                             operator_pass = st.secrets["app_roles"]["operator"].get("password")
                         except Exception:
                             pass
+                        try:
+                            operation_user = st.secrets["app_roles"]["operation"].get("username")
+                            operation_pass = st.secrets["app_roles"]["operation"].get("password")
+                        except Exception:
+                            pass
 
                         # 2) Fallback to environment variables only if secrets are not configured
                         if not master_user:
@@ -69,6 +75,9 @@ def require_login():
                         if not operator_user:
                             operator_user = os.getenv('OPERATOR_USERNAME')
                             operator_pass = os.getenv('OPERATOR_PASSWORD')
+                        if not operation_user:
+                            operation_user = os.getenv('OPERATION_USERNAME')
+                            operation_pass = os.getenv('OPERATION_PASSWORD')
 
                         entered = user.strip()
                         if master_user and entered == master_user and pwd == (master_pass or ''):
@@ -86,6 +95,14 @@ def require_login():
                             st.session_state.user_id = 'operator'
                             st.session_state.username = operator_user
                             st.success("Logged in successfully as Operator")
+                            st.rerun()
+                        elif operation_user and entered == operation_user and pwd == (operation_pass or ''):
+                            # Operation Team login via secrets/env
+                            st.session_state.logged_in = True
+                            st.session_state.user_role = 'operation'
+                            st.session_state.user_id = 'operation'
+                            st.session_state.username = 'Operation Team'
+                            st.success("Logged in successfully as Operation Team")
                             st.rerun()
                         else:
                             # Try to authenticate regular user from database
@@ -124,7 +141,11 @@ def main():
     require_login()
     
     # Role-based routing
-    if str(st.session_state.user_role or '').lower() in ('operator', 'admin', 'master'):
+    if str(st.session_state.user_role or '').lower() == 'operation':
+        # Load operation team dashboard
+        display_operation_team_dashboard(db)
+        return
+    elif str(st.session_state.user_role or '').lower() in ('operator', 'admin', 'master'):
         # Load operator/master dashboard
         display_operator_dashboard(db)
         return
@@ -1231,6 +1252,15 @@ def submit_cart_as_request(db):
     except Exception as e:
         st.error(f"Error submitting request: {str(e)}")
         return False
+
+def display_operation_team_dashboard(db):
+    """Operation Team Dashboard - Load from separate module"""
+    try:
+        import operation_team_dashboard
+        operation_team_dashboard.main()
+    except Exception as e:
+        st.error(f"Error loading Operation Team Dashboard: {str(e)}")
+        st.info("Please ensure operation_team_dashboard.py exists in the Phase3 directory.")
 
 def display_operator_dashboard(db):
     """Operator Dashboard integrated into main app"""

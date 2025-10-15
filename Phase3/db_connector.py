@@ -1426,3 +1426,83 @@ class DatabaseConnector:
                 self.conn.rollback()
             print(f"Error approving bundles: {str(e)}")
             return {'success': False, 'error': str(e)}
+    
+    # ========== Operation Team Functions ==========
+    
+    def get_reviewed_bundles_for_operation(self):
+        """Get all bundles with status = 'Reviewed' for Operation Team dashboard"""
+        query = """
+        SELECT 
+            b.bundle_id,
+            b.bundle_name,
+            b.recommended_vendor_id,
+            v.vendor_name,
+            v.contact_person,
+            v.email,
+            v.phone,
+            b.total_items,
+            b.total_quantity,
+            b.status,
+            b.reviewed_at,
+            b.rejection_reason,
+            b.rejected_at,
+            b.created_at
+        FROM requirements_bundles b
+        LEFT JOIN ItemVendorMap v ON b.recommended_vendor_id = v.vendor_id
+        WHERE b.status = 'Reviewed'
+        ORDER BY b.reviewed_at DESC
+        """
+        return self.execute_query(query)
+    
+    def approve_bundle_by_operation(self, bundle_id):
+        """
+        Operation Team approves bundle (Reviewed → Approved)
+        Clears rejection data when approved
+        """
+        try:
+            update_q = """
+            UPDATE requirements_bundles
+            SET status = 'Approved',
+                rejection_reason = NULL,
+                rejected_at = NULL,
+                approved_at = GETDATE()
+            WHERE bundle_id = ?
+              AND status = 'Reviewed'
+            """
+            self.execute_insert(update_q, (bundle_id,))
+            self.conn.commit()
+            return {'success': True}
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            print(f"Error approving bundle by operation: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def reject_bundle_by_operation(self, bundle_id, rejection_reason):
+        """
+        Operation Team rejects bundle (Reviewed → Active)
+        Stores rejection reason and timestamp
+        """
+        try:
+            if not rejection_reason or not rejection_reason.strip():
+                return {'success': False, 'error': 'Rejection reason is required'}
+            
+            # Limit to 500 characters
+            rejection_reason = rejection_reason.strip()[:500]
+            
+            update_q = """
+            UPDATE requirements_bundles
+            SET status = 'Active',
+                rejection_reason = ?,
+                rejected_at = GETDATE()
+            WHERE bundle_id = ?
+              AND status = 'Reviewed'
+            """
+            self.execute_insert(update_q, (rejection_reason, bundle_id))
+            self.conn.commit()
+            return {'success': True}
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            print(f"Error rejecting bundle by operation: {str(e)}")
+            return {'success': False, 'error': str(e)}
