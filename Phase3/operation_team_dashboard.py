@@ -39,6 +39,14 @@ def display_reviewed_bundles(db):
         # Get all reviewed bundles
         bundles = db.get_reviewed_bundles_for_operation()
         
+        # Debug information (can be removed later)
+        with st.expander("🔍 Debug Info", expanded=False):
+            st.write(f"**Query returned:** {len(bundles) if bundles else 0} bundles")
+            if bundles:
+                st.write("**Bundle IDs found:**")
+                for b in bundles:
+                    st.write(f"- {b.get('bundle_name')} (Status: {b.get('status')})")
+        
         if not bundles:
             st.info("✅ No bundles awaiting approval. All caught up!")
             return

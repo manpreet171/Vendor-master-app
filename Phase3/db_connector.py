@@ -1449,7 +1449,7 @@ class DatabaseConnector:
             b.created_at
         FROM requirements_bundles b
         LEFT JOIN ItemVendorMap v ON b.recommended_vendor_id = v.vendor_id
-        WHERE b.status = 'Reviewed'
+        WHERE LOWER(b.status) = 'reviewed'
         ORDER BY b.reviewed_at DESC
         """
         return self.execute_query(query)
