@@ -112,9 +112,11 @@ def display_bundle_card(db, bundle):
         show_rejection_dialog(db, bundle)
 
 def display_bundle_items_table(db, bundle_id):
-    """Display HTML table with per-project breakdown for bundle items"""
+    """Display HTML table with per-project breakdown - EXACT copy from operator dashboard"""
     try:
-        # Get bundle items
+        import json
+        
+        # Get bundle items with user breakdown
         query = """
         SELECT 
             bi.item_id,
@@ -122,7 +124,8 @@ def display_bundle_items_table(db, bundle_id):
             i.height,
             i.width,
             i.thickness,
-            bi.total_quantity
+            bi.total_quantity,
+            bi.user_breakdown
         FROM requirements_bundle_items bi
         LEFT JOIN Items i ON bi.item_id = i.item_id
         WHERE bi.bundle_id = ?
@@ -134,38 +137,191 @@ def display_bundle_items_table(db, bundle_id):
             st.info("No items found in this bundle.")
             return
         
-        # Display each item with project breakdown
-        for item in items:
-            st.markdown(f"**{item['item_name']}**")
-            
-            # Get dimensions
+        # Get user names for display
+        user_ids_set = set()
+        for it in items:
+            try:
+                breakdown = json.loads(it.get('user_breakdown') or '{}') if isinstance(it.get('user_breakdown'), str) else it.get('user_breakdown') or {}
+            except Exception:
+                breakdown = {}
+            for uid in breakdown.keys():
+                if str(uid).isdigit():
+                    user_ids_set.add(int(uid))
+        
+        user_name_map = {}
+        if user_ids_set:
+            user_ids_list = list(user_ids_set)
+            placeholders = ','.join(['?' for _ in user_ids_list])
+            user_query = f"SELECT user_id, full_name FROM requirements_users WHERE user_id IN ({placeholders})"
+            user_results = db.execute_query(user_query, user_ids_list)
+            for u in user_results or []:
+                user_name_map[u['user_id']] = u.get('full_name') or f"User {u['user_id']}"
+        
+        # Build HTML table (EXACT copy from operator dashboard)
+        html_table = """
+        <style>
+            .bundle-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 10px;
+                font-size: 14px;
+            }
+            .bundle-table thead {
+                background-color: #f0f2f6;
+            }
+            .bundle-table th {
+                padding: 12px 10px;
+                text-align: left;
+                border-bottom: 2px solid #ddd;
+                font-weight: 600;
+            }
+            .bundle-table td {
+                padding: 10px;
+                border-bottom: 1px solid #eee;
+                vertical-align: top;
+            }
+            .bundle-table tbody tr:nth-child(even) {
+                background-color: #f9f9f9;
+            }
+            .bundle-table tbody tr:hover {
+                background-color: #f0f0f0;
+            }
+            .item-name {
+                font-weight: 600;
+                color: #1f1f1f;
+            }
+            .item-dims {
+                font-size: 12px;
+                color: #666;
+            }
+            .item-total {
+                font-size: 12px;
+                color: #0066cc;
+            }
+            .user-name {
+                font-weight: 500;
+                color: #333;
+            }
+            .project-icon {
+                margin-right: 4px;
+            }
+            .qty-cell {
+                text-align: right;
+                font-weight: 500;
+            }
+        </style>
+        <table class="bundle-table">
+            <thead>
+                <tr>
+                    <th style="width: 35%;">Item</th>
+                    <th style="width: 25%;">User</th>
+                    <th style="width: 25%;">Project</th>
+                    <th style="width: 15%; text-align: right;">Quantity</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+        
+        for it in items:
+            # Build dimension text
             dims = []
-            if item.get('height'): dims.append(f"H: {item['height']}\"")
-            if item.get('width'): dims.append(f"W: {item['width']}\"")
-            if item.get('thickness'): dims.append(f"T: {item['thickness']}\"")
-            if dims:
-                st.caption(" | ".join(dims))
+            for key in ('height', 'width', 'thickness'):
+                val = it.get(key)
+                if val:
+                    dims.append(str(val))
+            dim_txt = f"{' x '.join(dims)}" if dims else ""
             
-            # Get project breakdown
-            breakdown = db.get_bundle_item_project_breakdown(bundle_id, item['item_id'])
+            # Get user breakdown
+            try:
+                breakdown = json.loads(it.get('user_breakdown') or '{}') if isinstance(it.get('user_breakdown'), str) else it.get('user_breakdown') or {}
+            except Exception:
+                breakdown = {}
             
             if breakdown:
-                # Use Streamlit's native table instead of HTML
-                import pandas as pd
-                df = pd.DataFrame(breakdown)
-                if not df.empty:
-                    # Rename columns for display
-                    display_df = df[['project_number', 'quantity', 'user_id']].copy()
-                    display_df.columns = ['Project', 'Quantity', 'User']
-                    display_df['Quantity'] = display_df['Quantity'].astype(str) + ' pcs'
-                    display_df['User'] = 'User #' + display_df['User'].astype(str)
-                    st.dataframe(display_df, use_container_width=True, hide_index=True)
-                else:
-                    st.caption(f"Total: {item['total_quantity']} pieces")
+                # Get project breakdown for this item
+                project_breakdown = db.get_bundle_item_project_breakdown(bundle_id, it['item_id'])
+                project_map = {}
+                for pb in project_breakdown or []:
+                    key = (pb['user_id'], pb.get('project_number'))
+                    project_map[key] = project_map.get(key, 0) + pb['quantity']
+                
+                # Count total rows for this item (for rowspan)
+                total_rows = sum(len([(k[1], v) for k, v in project_map.items() if k[0] == int(uid) and k[1]]) or 1 
+                               for uid in breakdown.keys())
+                
+                # First row flag
+                first_row = True
+                
+                for uid, qty in breakdown.items():
+                    uname = user_name_map.get(int(uid), f"User {uid}") if str(uid).isdigit() else f"User {uid}"
+                    user_project_breakdown = [(k[1], v) for k, v in project_map.items() if k[0] == int(uid) and k[1]]
+                    
+                    if user_project_breakdown:
+                        # Multiple projects for this user
+                        user_rows = len(user_project_breakdown)
+                        for idx, (project_num, project_qty) in enumerate(user_project_breakdown):
+                            html_table += "<tr>"
+                            
+                            # Item cell (only on first row)
+                            if first_row:
+                                html_table += f"""
+                                <td rowspan="{total_rows}">
+                                    <div class="item-name">{it['item_name']}</div>
+                                    <div class="item-dims">{dim_txt}</div>
+                                    <div class="item-total">Total: {it['total_quantity']} pcs</div>
+                                </td>
+                                """
+                                first_row = False
+                            
+                            # User cell (rowspan if multiple projects)
+                            if idx == 0:
+                                html_table += f'<td rowspan="{user_rows}"><span class="user-name">👤 {uname}</span></td>'
+                            
+                            # Project and quantity
+                            html_table += f"""
+                            <td><span class="project-icon">📋</span>{project_num}</td>
+                            <td class="qty-cell">{project_qty} pcs</td>
+                            """
+                            html_table += "</tr>"
+                    else:
+                        # No project info
+                        html_table += "<tr>"
+                        if first_row:
+                            html_table += f"""
+                            <td rowspan="{total_rows}">
+                                <div class="item-name">{it['item_name']}</div>
+                                <div class="item-dims">{dim_txt}</div>
+                                <div class="item-total">Total: {it['total_quantity']} pcs</div>
+                            </td>
+                            """
+                            first_row = False
+                        html_table += f"""
+                        <td><span class="user-name">👤 {uname}</span></td>
+                        <td>—</td>
+                        <td class="qty-cell">{qty} pcs</td>
+                        </tr>
+                        """
             else:
-                st.caption(f"Total: {item['total_quantity']} pieces")
-            
-            st.markdown("---")
+                # No breakdown
+                html_table += f"""
+                <tr>
+                    <td>
+                        <div class="item-name">{it['item_name']}</div>
+                        <div class="item-dims">{dim_txt}</div>
+                        <div class="item-total">Total: {it['total_quantity']} pcs</div>
+                    </td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td class="qty-cell">{it['total_quantity']} pcs</td>
+                </tr>
+                """
+        
+        html_table += """
+            </tbody>
+        </table>
+        """
+        
+        st.markdown(html_table, unsafe_allow_html=True)
     
     except Exception as e:
         st.error(f"Error loading bundle items: {str(e)}")
