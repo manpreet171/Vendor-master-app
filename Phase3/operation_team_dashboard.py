@@ -41,17 +41,12 @@ def display_reviewed_bundles(db):
         # Get all reviewed bundles
         bundles = db.get_reviewed_bundles_for_operation()
         
-        # Debug information (can be removed later)
-        with st.expander("🔍 Debug Info", expanded=True):
+        # Debug information (collapsed by default)
+        with st.expander("🔍 Debug Info", expanded=False):
             st.write(f"**Query returned:** {len(bundles) if bundles else 0} bundles")
-            st.write(f"**Bundles is None?** {bundles is None}")
-            st.write(f"**Bundles type:** {type(bundles)}")
-            
             if bundles:
-                st.write("**Bundle IDs found:**")
                 for b in bundles:
-                    st.write(f"- {b.get('bundle_name')} (Status: {b.get('status')}, Vendor: {b.get('vendor_name')})")
-                    st.json(b)  # Show full bundle data
+                    st.write(f"- {b.get('bundle_name')} (Status: {b.get('status')})")
             else:
                 st.warning("Query returned empty list or None")
         
@@ -87,12 +82,21 @@ def display_bundle_card(db, bundle):
     # Get vendor info
     vendor_info = get_vendor_info(db, bundle.get('recommended_vendor_id'))
     
+    # Format dates
+    reviewed_date = bundle.get('reviewed_at')
+    if reviewed_date and hasattr(reviewed_date, 'strftime'):
+        reviewed_date = reviewed_date.strftime('%Y-%m-%d %H:%M')
+    
+    created_date = bundle.get('created_at')
+    if created_date and hasattr(created_date, 'strftime'):
+        created_date = created_date.strftime('%Y-%m-%d %H:%M')
+    
     # Bundle header
     col1, col2 = st.columns([3, 1])
     
     with col1:
         st.subheader(f"📦 {bundle['bundle_name']}")
-        st.caption(f"Reviewed on: {bundle.get('reviewed_at', 'N/A')}")
+        st.caption(f"Reviewed on: {reviewed_date or 'N/A'}")
     
     with col2:
         st.metric("Status", "🟢 Reviewed")
@@ -125,7 +129,7 @@ def display_bundle_card(db, bundle):
         st.write("**Bundle Summary:**")
         st.write(f"• **Total Items:** {bundle.get('total_items', 0)}")
         st.write(f"• **Total Quantity:** {bundle.get('total_quantity', 0)} pieces")
-        st.write(f"• **Created:** {bundle.get('created_at', 'N/A')}")
+        st.write(f"• **Created:** {created_date or 'N/A'}")
     
     with col3:
         st.write("**Actions:**")
