@@ -509,7 +509,8 @@ class DatabaseConnector:
                 if existing_bundle.get('status') == 'Reviewed':
                     revert_query = """
                     UPDATE requirements_bundles
-                    SET status = 'Active'
+                    SET status = 'Active',
+                        reviewed_at = NULL
                     WHERE bundle_id = ?
                     """
                     self.execute_insert(revert_query, (target_bundle_id,))
@@ -1376,7 +1377,8 @@ class DatabaseConnector:
         try:
             update_q = """
             UPDATE requirements_bundles
-            SET status = 'Reviewed'
+            SET status = 'Reviewed',
+                reviewed_at = GETDATE()
             WHERE bundle_id = ? AND status = 'Active'
             """
             self.execute_insert(update_q, (bundle_id,))
@@ -1494,7 +1496,9 @@ class DatabaseConnector:
             UPDATE requirements_bundles
             SET status = 'Active',
                 rejection_reason = ?,
-                rejected_at = GETDATE()
+                rejected_at = GETDATE(),
+                reviewed_at = NULL,
+                approved_at = NULL
             WHERE bundle_id = ?
               AND status = 'Reviewed'
             """

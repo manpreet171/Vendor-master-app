@@ -50,6 +50,14 @@ Operation Team:  Approves (Reviewed → Approved)
 
 **New Columns Added:**
 ```sql
+-- Timestamp columns for review workflow
+ALTER TABLE requirements_bundles
+ADD reviewed_at DATETIME NULL;
+
+ALTER TABLE requirements_bundles
+ADD approved_at DATETIME NULL;
+
+-- Rejection tracking columns
 ALTER TABLE requirements_bundles
 ADD rejection_reason NVARCHAR(500) NULL;
 
@@ -58,13 +66,17 @@ ADD rejected_at DATETIME NULL;
 ```
 
 **Column Purposes:**
+- `reviewed_at`: Timestamp when bundle was reviewed by operator
+- `approved_at`: Timestamp when bundle was approved
 - `rejection_reason`: Stores why Operation Team rejected bundle (max 500 chars, required)
 - `rejected_at`: Timestamp when bundle was rejected by Operation Team
 
 **Design Decisions:**
-- ✅ Only 2 columns needed (no `rejected_by` - always "Operation Team")
+- ✅ 4 columns total (reviewed_at, approved_at, rejection_reason, rejected_at)
+- ✅ No `rejected_by` column (always "Operation Team")
 - ✅ Stores ONLY last rejection (not full history - keeps it simple)
-- ✅ Both columns NULL when bundle approved (rejection data cleared)
+- ✅ Rejection columns NULL when bundle approved (rejection data cleared)
+- ✅ Timestamp columns NULL when status reverts
 - ✅ No new tables created (minimal schema changes)
 
 ---
