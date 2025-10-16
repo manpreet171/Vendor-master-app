@@ -6,6 +6,262 @@
 
 ## Development Progress Log
 
+### **October 16, 2025 - Bug Fix: Completed Orders Not Showing Actual Delivery Date**
+
+#### **🐛 Bug Discovered:**
+
+**Problem Statement:**
+- Users reported that completed orders in "My Requests" tab were showing incorrect delivery information
+- When operator marks bundle as "Completed" with actual delivery date, users see the status as "Completed" ✅
+- BUT the delivery date shown was "Expected Delivery" instead of "Actual Delivery" ❌
+- Made it look like order was still in "Ordered" status, not truly completed
+
+**User Experience (Before Fix):**
+```
+📋 My Requests → Completed Tab
+✅ Delivered:
+   • Aluminum 5052 H32 (10 pcs)
+   📋 PO#: PO-2025-001 | 📅 Order Date: October 10, 2025
+   🚚 Expected Delivery: October 15, 2025    ❌ WRONG! Should show actual delivery
+```
+
+---
+
+#### **🔍 Root Cause Analysis:**
+
+**Investigation Process:**
+1. Reviewed past week's logs and implementation history
+2. Found that packing slip was hidden on October 10, 2025 (not related to bug)
+3. Checked "My Requests" tab query in `app.py` (lines 1090-1101)
+4. Discovered query was missing `actual_delivery_date` column
+
+**The Bug:**
+- **Location:** `app.py` line 1090-1101 - `display_my_requests_tab()` function
+- **Query:** Fetches bundle information for user's requests
+- **Missing Column:** `b.actual_delivery_date` was NOT in SELECT statement
+- **Impact:** Code on line 1157 tries to display `actual_delivery_date` but gets `None`
+
+**Query Before Fix:**
+```sql
+SELECT DISTINCT
+    b.bundle_id,
+    b.status,
+    b.po_number,
+    b.po_date,
+    b.expected_delivery_date    -- ❌ Missing: actual_delivery_date
+FROM requirements_bundle_mapping rbm
+JOIN requirements_bundles b ON rbm.bundle_id = b.bundle_id
+WHERE rbm.req_id = ?
+```
+
+**Display Logic (Lines 1157-1164):**
+```python
+# Code tries to check actual_delivery_date
+if bundle['status'] == 'Completed' and bundle.get('actual_delivery_date'):
+    # Show actual delivery date
+    st.caption(f"✅ Delivered: {delivery_date}")
+elif bundle.get('expected_delivery_date'):
+    # Falls back to expected delivery (WRONG for completed bundles)
+    st.caption(f"🚚 Expected Delivery: {delivery_date}")
+```
+
+**Why It Failed:**
+1. Query doesn't fetch `actual_delivery_date`
+2. `bundle.get('actual_delivery_date')` returns `None`
+3. Condition `bundle['status'] == 'Completed' and bundle.get('actual_delivery_date')` fails
+4. Falls through to `elif` → Shows expected delivery date instead
+5. User sees wrong information
+
+---
+
+#### **✅ Solution Implemented:**
+
+**Fix:** Add `actual_delivery_date` to the query
+
+**Query After Fix:**
+```sql
+SELECT DISTINCT
+    b.bundle_id,
+    b.status,
+    b.po_number,
+    b.po_date,
+    b.expected_delivery_date,
+    b.actual_delivery_date        -- ✅ ADDED
+FROM requirements_bundle_mapping rbm
+JOIN requirements_bundles b ON rbm.bundle_id = b.bundle_id
+WHERE rbm.req_id = ?
+```
+
+**Files Modified:**
+- ✅ `app.py` - Line 1097 - Added `b.actual_delivery_date` to query
+
+**Lines Changed:** 1 line added
+
+---
+
+#### **✅ User Experience (After Fix):**
+
+**For Completed Bundles:**
+```
+📋 My Requests → Completed Tab
+✅ Delivered:
+   • Aluminum 5052 H32 (10 pcs)
+   📋 PO#: PO-2025-001 | 📅 Order Date: October 10, 2025
+   ✅ Delivered: October 12, 2025    ✅ CORRECT! Shows actual delivery date
+```
+
+**For Ordered Bundles (Still in Transit):**
+```
+📋 My Requests → Ordered Tab
+✅ Ordered:
+   • Brushed Stainless Steel (5 pcs)
+   📋 PO#: PO-2025-002 | 📅 Order Date: October 14, 2025
+   🚚 Expected Delivery: October 20, 2025    ✅ CORRECT! Shows expected delivery
+```
+
+---
+
+#### **📋 How It Works Now:**
+
+**Display Logic (Lines 1157-1164):**
+1. **Check if Completed:** `if bundle['status'] == 'Completed'`
+2. **Check if actual_delivery_date exists:** `and bundle.get('actual_delivery_date')`
+3. **If both true:** Show "✅ Delivered: [actual date]"
+4. **If Ordered (not completed):** Show "🚚 Expected Delivery: [expected date]"
+
+**Status-Based Display:**
+| Bundle Status | Date Shown | Icon | Example |
+|---------------|------------|------|---------|
+| **Completed** | `actual_delivery_date` | ✅ | Delivered: October 12, 2025 |
+| **Ordered** | `expected_delivery_date` | 🚚 | Expected Delivery: October 20, 2025 |
+| **In Progress** | None | ⏳ | Processing... |
+
+---
+
+#### **🔍 Related Context - Packing Slip:**
+
+**Note:** During investigation, reviewed packing slip implementation (October 10, 2025)
+
+**Packing Slip Status:**
+- ✅ **Hidden** from UI (not deleted)
+- ✅ **Database column exists** (stores NULL for new records)
+- ✅ **Not displayed** to users or operators
+- ✅ **Easy to reactivate** (uncomment 3 code blocks)
+
+**Why Packing Slip Not Needed for This Fix:**
+- Packing slip is hidden by design (not a bug)
+- Not displayed in user's "My Requests" tab
+- Not displayed in operator dashboard
+- Only `actual_delivery_date` was missing from query
+
+---
+
+#### **🧪 Testing Checklist:**
+
+**Test 1: Completed Bundle Display**
+- [ ] User has completed order in "My Requests" → Completed tab
+- [ ] Status shows "🎉 Completed"
+- [ ] Delivery date shows "✅ Delivered: [actual date]"
+- [ ] Actual delivery date matches what operator entered
+- [ ] No "Expected Delivery" shown for completed bundles
+
+**Test 2: Ordered Bundle Display**
+- [ ] User has ordered (not completed) order in "My Requests" → Ordered tab
+- [ ] Status shows "✅ Ordered"
+- [ ] Delivery date shows "🚚 Expected Delivery: [expected date]"
+- [ ] Expected delivery date matches PO information
+
+**Test 3: In Progress Bundle Display**
+- [ ] User has in-progress order in "My Requests" → In Progress tab
+- [ ] Status shows "🔵 In Progress"
+- [ ] Shows "⏳ Processing..." (no delivery date yet)
+
+**Test 4: Multiple Bundles**
+- [ ] User has order split across multiple bundles
+- [ ] Some bundles Completed, some Ordered
+- [ ] Each bundle shows correct delivery date based on its status
+- [ ] Completed bundles show actual delivery
+- [ ] Ordered bundles show expected delivery
+
+---
+
+#### **📊 Impact Analysis:**
+
+**User Impact:**
+- ✅ **High Impact** - Users now see correct delivery information
+- ✅ **Better Transparency** - Clear distinction between expected vs actual delivery
+- ✅ **Improved Trust** - System shows accurate completion status
+
+**Code Impact:**
+- ✅ **Minimal Change** - Only 1 line added to query
+- ✅ **No Breaking Changes** - Existing functionality preserved
+- ✅ **Backward Compatible** - Works with old and new data
+
+**Database Impact:**
+- ✅ **Zero Impact** - No schema changes
+- ✅ **Column Already Exists** - `actual_delivery_date` was in table
+- ✅ **Just Query Fix** - Only SELECT statement modified
+
+---
+
+#### **🎓 Key Learnings:**
+
+**1. Query Completeness:**
+- Always verify query includes ALL columns used in display logic
+- Missing columns cause silent failures (returns NULL instead of error)
+- Review display code and query together
+
+**2. Status-Based Display Logic:**
+- Different statuses require different data
+- Completed bundles need `actual_delivery_date`
+- Ordered bundles need `expected_delivery_date`
+- Query must fetch both to support all statuses
+
+**3. Testing User-Facing Features:**
+- Test from user's perspective, not just operator's
+- Verify data flows correctly through entire system
+- Check edge cases (completed vs ordered vs in-progress)
+
+**4. Code Review Process:**
+- When adding display logic, verify query has required columns
+- When modifying queries, verify all display code still works
+- Keep query and display logic in sync
+
+---
+
+#### **📈 Future Improvements (Not Implemented):**
+
+**1. Query Validation:**
+- Add runtime check: if displaying field, verify it's in query results
+- Log warning if trying to display NULL field
+- Helps catch similar bugs early
+
+**2. Delivery Date Tracking:**
+- Show both expected and actual dates for completed bundles
+- Compare expected vs actual (on-time vs delayed)
+- Delivery performance metrics
+
+**3. User Notifications:**
+- Email user when bundle completed
+- Include actual delivery date in email
+- Link to "My Requests" tab
+
+---
+
+#### **✅ Status:**
+
+**Bug:** ✅ **FIXED & READY FOR TESTING**
+
+**Time Spent:** ~30 minutes (investigation + fix + documentation)
+
+**Files Modified:** 1 file (`app.py`)
+
+**Lines Changed:** 1 line added
+
+**Testing Required:** Manual testing of user's "My Requests" tab with completed orders
+
+---
+
 ### **October 15, 2025 - Operation Team Role & Approval Layer**
 
 #### **✅ Completed Today:**
