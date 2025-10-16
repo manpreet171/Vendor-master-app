@@ -345,8 +345,9 @@ else:
 
 1. ✅ **`operation_team_dashboard.py`** (NEW)
    - Complete dashboard for Operation Team
-   - 265 lines of code
-   - Includes: bundle display, approve/reject logic, rejection dialog, HTML table
+   - ~330 lines of code
+   - Uses EXACT same HTML table code as operator dashboard
+   - Includes: bundle display, approve/reject logic, rejection dialog, per-project breakdown table
 
 2. ✅ **`.secrets.toml.example`** (NEW)
    - Configuration template for Streamlit secrets
@@ -359,25 +360,76 @@ else:
    - Testing checklist
    - Configuration guide
 
+4. ✅ **`SQL_ADD_MISSING_COLUMNS.sql`** (NEW)
+   - Script to add 4 missing columns to requirements_bundles
+   - Includes: reviewed_at, approved_at, rejection_reason, rejected_at
+
+5. ✅ **`BUGFIX_MISSING_COLUMNS.md`** (NEW)
+   - Documentation of column issue and fix
+   - Root cause analysis
+   - Testing steps
+
 ---
 
 #### **📝 Files Modified:**
 
 1. ✅ **`db_connector.py`**
    - Added 3 new functions (80+ lines)
-   - `get_reviewed_bundles_for_operation()`
-   - `approve_bundle_by_operation()`
-   - `reject_bundle_by_operation()`
+   - `get_reviewed_bundles_for_operation()` - Includes LEFT JOIN with Vendors table for vendor info
+   - `approve_bundle_by_operation()` - Sets approved_at, clears rejection data
+   - `reject_bundle_by_operation()` - Sets rejection_reason, rejected_at, clears reviewed_at/approved_at
+   - Updated `mark_bundle_reviewed()` to set reviewed_at timestamp
+   - Updated auto-revert logic to clear reviewed_at when bundle changes
 
 2. ✅ **`operator_dashboard.py`**
-   - Modified `get_all_bundles()` to include rejection columns
-   - Added rejection warning display (15 lines)
-   - Red banner with rejection reason and date
+   - Modified `get_all_bundles()` to include rejection_reason and rejected_at columns
+   - Added rejection warning display (red banner with reason and date)
+   - Shows for Active bundles that were previously rejected
 
 3. ✅ **`app.py`**
-   - Added Operation Team login support (20 lines)
-   - Added routing for Operation Team role
-   - Added `display_operation_team_dashboard()` function
+   - Added Operation Team login support (checks st.secrets["app_roles"]["operation"])
+   - Added routing: if user_role == 'operation' → display_operation_team_dashboard(db)
+   - Added `display_operation_team_dashboard(db)` function that passes db connection to operation_team_dashboard.main(db)
+   - **CRITICAL:** Must pass db connection to avoid creating duplicate connections
+
+---
+
+#### **🔧 Implementation Details & Lessons Learned:**
+
+**1. Database Connection Pattern:**
+- **Issue:** operation_team_dashboard.py was creating its own DatabaseConnector instead of using the one from app.py
+- **Fix:** Updated main(db=None) to accept db parameter, app.py now passes db to main(db)
+- **Lesson:** Always reuse existing database connections to avoid connection issues
+
+**2. Query Simplification:**
+- **Initial approach:** Complex query with multiple JOINs
+- **Final approach:** Simple query matching operator dashboard pattern
+- **Query structure:**
+  ```sql
+  SELECT b.*, v.vendor_name, v.vendor_email, v.vendor_phone
+  FROM requirements_bundles b
+  LEFT JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
+  WHERE b.status = 'Reviewed'
+  ```
+- **Lesson:** Copy proven patterns from existing code rather than reinventing
+
+**3. HTML Table Display:**
+- **Issue:** HTML table code was rendering as raw text instead of formatted table
+- **Root cause:** Attempted to write custom HTML instead of copying working code
+- **Fix:** Copied EXACT HTML table code from operator dashboard (app.py lines 1835-2006)
+- **Result:** Professional table with CSS styling, rowspan for multi-project items, user names, project breakdown
+- **Lesson:** When similar functionality exists, copy the exact working code - don't rewrite
+
+**4. Column Names:**
+- **Issue:** Vendors table doesn't have `contact_person` column
+- **Fix:** Only query vendor_name, vendor_email, vendor_phone
+- **Lesson:** Verify table schema before writing queries
+
+**5. Missing Database Columns:**
+- **Issue:** Code referenced reviewed_at and approved_at columns that didn't exist
+- **Root cause:** Columns were discussed but never added to schema
+- **Fix:** Added 4 columns: reviewed_at, approved_at, rejection_reason, rejected_at
+- **Lesson:** Always verify database schema matches code requirements before deployment
 
 ---
 

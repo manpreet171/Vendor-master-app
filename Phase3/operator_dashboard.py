@@ -87,24 +87,31 @@ def display_bundle_overview(db):
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.write(f"**Created:** {bundle['created_date']}")
+                    # Format created_at datetime
+                    created_date = bundle.get('created_at')
+                    if created_date and hasattr(created_date, 'strftime'):
+                        created_str = created_date.strftime('%Y-%m-%d %H:%M')
+                    else:
+                        created_str = str(created_date) if created_date else 'N/A'
+                    
+                    st.write(f"**Created:** {created_str}")
                     st.write(f"**Status:** {get_status_badge(bundle['status'])}")
-                    st.write(f"**Total Requests:** {bundle['total_requests']}")
                     st.write(f"**Total Items:** {bundle['total_items']}")
+                    st.write(f"**Total Quantity:** {bundle.get('total_quantity', 0)} pcs")
                 
                 with col2:
-                    # Show vendor recommendations
-                    if bundle.get('vendor_info'):
-                        try:
-                            vendor_data = eval(bundle['vendor_info'])  # Convert string back to dict
-                            if vendor_data and len(vendor_data) > 0:
-                                st.write("**Top Vendor Recommendation:**")
-                                top_vendor = vendor_data[0]
-                                st.write(f"• {top_vendor['vendor_name']} ({top_vendor['coverage_percentage']}% coverage)")
-                                st.write(f"• Contact: {top_vendor['contact_email']}")
-                                st.write(f"• Items: {top_vendor['items_covered']}")
-                        except:
-                            st.write("**Vendor Info:** Available in details")
+                    # Show vendor info
+                    vendor_id = bundle.get('recommended_vendor_id')
+                    if vendor_id:
+                        vendor_query = "SELECT vendor_name, vendor_email FROM Vendors WHERE vendor_id = ?"
+                        vendor_result = db.execute_query(vendor_query, (vendor_id,))
+                        if vendor_result:
+                            st.write("**Recommended Vendor:**")
+                            st.write(f"• {vendor_result[0]['vendor_name']}")
+                            if vendor_result[0].get('vendor_email'):
+                                st.write(f"• {vendor_result[0]['vendor_email']}")
+                    else:
+                        st.write("**Vendor:** Not assigned")
                 
                 # Action buttons
                 if bundle['status'] == 'Active':
@@ -406,10 +413,10 @@ def display_user_management(db: DatabaseConnector):
 def get_all_bundles(db):
     """Get all bundles from database"""
     query = """
-    SELECT bundle_id, bundle_name, status, total_requests, total_items, 
-           created_date, vendor_info, rejection_reason, rejected_at
+    SELECT bundle_id, bundle_name, status, total_items, total_quantity,
+           created_at, rejection_reason, rejected_at, recommended_vendor_id
     FROM requirements_bundles
-    ORDER BY created_date DESC
+    ORDER BY created_at DESC
     """
     return db.execute_query(query)
 
