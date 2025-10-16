@@ -262,6 +262,370 @@ WHERE rbm.req_id = ?
 
 ---
 
+### **October 16, 2025 (Afternoon) - Bug Fix: Rejection Warning Not Showing to Operator**
+
+#### **🐛 Bug Discovered:**
+
+**Problem Statement:**
+- Operation Team rejected a bundle with reason "wrong vendor"
+- Bundle correctly reverted from "Reviewed" to "Active" status ✅
+- Database correctly stored `rejection_reason` and `rejected_at` ✅
+- BUT operator logging back in saw NO rejection warning ❌
+- Operator had no idea WHY bundle was rejected ❌
+- Operator might review and submit same thing again without fixing issue ❌
+
+**User Experience (Before Fix):**
+```
+📦 BUNDLE-20251016-092527-01 - 🟡 Active
+
+Vendor: Grimco
+📧 Nicholas.Mariani@grimco.com
+📞 800-542-9941
+
+Items: 1
+Pieces: 7
+Status: 🟡 Active
+
+❌ NO REJECTION WARNING SHOWN!
+```
+
+**Expected Behavior (From October 15 Documentation):**
+```
+📦 BUNDLE-20251016-092527-01 - 🟡 Active
+
+⚠️ REJECTED BY OPERATION TEAM
+
+┌─────────────────────────────────────────┐
+│ Rejected on: 2025-10-16 15:01:23        │
+│ Reason: wrong vendor                    │
+└─────────────────────────────────────────┘
+
+Vendor: Grimco
+...
+```
+
+---
+
+#### **🔍 Root Cause Analysis:**
+
+**Investigation Process:**
+1. User tested complete workflow: Operator → Review → Operation Team → Reject
+2. Rejection worked correctly (status reverted, data saved)
+3. But operator saw no warning when logging back in
+4. Checked documentation - rejection warning was implemented on October 15
+5. Searched codebase for rejection warning code
+
+**The Bug - Two Separate Issues:**
+
+**Issue 1: Query Missing Columns**
+- **Location:** `app.py` line 3369-3392 - `get_bundles_with_vendor_info()` function
+- **Problem:** Query fetches bundle data but missing `rejection_reason` and `rejected_at` columns
+- **Impact:** Even if display code existed, it would get `None` values
+
+**Query Before Fix:**
+```sql
+SELECT 
+    b.bundle_id,
+    b.bundle_name,
+    b.status,
+    ...
+    b.completed_at,
+    b.completed_by
+    -- ❌ Missing: rejection_reason, rejected_at
+FROM requirements_bundles b
+LEFT JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
+```
+
+**Issue 2: Display Code Missing**
+- **Location:** `app.py` line 1767 - Inside `display_active_bundles_for_operator()` function
+- **Problem:** NO code to check and display rejection warning
+- **Impact:** Even with data in query, nothing displays it to operator
+
+**Why This Happened:**
+- On October 15, rejection warning was added to `operator_dashboard.py` ✅
+- BUT `operator_dashboard.py` is NOT being used! ❌
+- Operator sees bundles through `app.py` → `display_active_bundles_for_operator()` ❌
+- This function was never updated with rejection warning code ❌
+- **Two separate codebases:**
+  - `operator_dashboard.py` - Has rejection warning (NOT USED)
+  - `app.py` - Missing rejection warning (ACTUALLY USED)
+
+**Code Comparison:**
+
+**operator_dashboard.py (Lines 76-85) - HAS THE CODE:**
+```python
+# Show rejection warning if bundle was rejected by Operation Team
+if bundle['status'] == 'Active' and bundle.get('rejection_reason'):
+    st.error("⚠️ **REJECTED BY OPERATION TEAM**")
+    st.markdown(f"""
+    <div style='background-color: #ffebee; ...'>
+        <p><strong>Rejected on:</strong> {bundle.get('rejected_at', 'N/A')}</p>
+        <p><strong>Reason:</strong> {bundle.get('rejection_reason', 'No reason provided')}</p>
+    </div>
+    """, unsafe_allow_html=True)
+```
+
+**app.py (Line 1767) - MISSING THE CODE:**
+```python
+with expander_obj:
+    # Vendor details already joined
+    vendor_name = bundle.get('vendor_name') or "Unknown Vendor"
+    # ❌ NO REJECTION WARNING CODE HERE!
+```
+
+---
+
+#### **✅ Solution Implemented:**
+
+**Fix 1: Add Missing Columns to Query**
+
+**Location:** `app.py` line 3389-3390
+
+**Added:**
+```python
+b.rejection_reason,
+b.rejected_at
+```
+
+**Query After Fix:**
+```sql
+SELECT 
+    b.bundle_id,
+    b.bundle_name,
+    b.status,
+    ...
+    b.completed_at,
+    b.completed_by,
+    b.rejection_reason,      -- ✅ ADDED
+    b.rejected_at            -- ✅ ADDED
+FROM requirements_bundles b
+LEFT JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
+```
+
+---
+
+**Fix 2: Add Rejection Warning Display Code**
+
+**Location:** `app.py` line 1768-1780 (inside `display_active_bundles_for_operator()`)
+
+**Added:**
+```python
+with expander_obj:
+    # Show rejection warning if bundle was rejected by Operation Team
+    if bundle['status'] == 'Active' and bundle.get('rejection_reason'):
+        st.error("⚠️ **REJECTED BY OPERATION TEAM**")
+        rejected_date = bundle.get('rejected_at', 'N/A')
+        if hasattr(rejected_date, 'strftime'):
+            rejected_date = rejected_date.strftime('%Y-%m-%d %H:%M:%S')
+        st.markdown(f"""
+        <div style='background-color: #ffebee; padding: 15px; border-radius: 5px; border-left: 5px solid #f44336;'>
+            <p style='margin: 0; color: #c62828;'><strong>Rejected on:</strong> {rejected_date}</p>
+            <p style='margin: 5px 0 0 0; color: #c62828;'><strong>Reason:</strong> {bundle.get('rejection_reason', 'No reason provided')}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("---")
+    
+    # Vendor details already joined
+    vendor_name = bundle.get('vendor_name') or "Unknown Vendor"
+    ...
+```
+
+**Files Modified:**
+- ✅ `app.py` - Line 3389-3390 - Added 2 columns to query
+- ✅ `app.py` - Line 1768-1780 - Added 13 lines of rejection warning display code
+
+**Total Lines Changed:** 15 lines added
+
+---
+
+#### **✅ User Experience (After Fix):**
+
+**For Active Bundles That Were Rejected:**
+```
+📦 BUNDLE-20251016-092527-01 - 🟡 Active
+
+⚠️ REJECTED BY OPERATION TEAM
+
+┌─────────────────────────────────────────┐
+│ Rejected on: 2025-10-16 15:01:23        │
+│ Reason: wrong vendor                    │
+└─────────────────────────────────────────┘
+
+Vendor: Grimco
+📧 Nicholas.Mariani@grimco.com
+📞 800-542-9941
+
+Items: 1
+Pieces: 7
+Status: 🟡 Active
+```
+
+**Operator Now Knows:**
+- ✅ Bundle was rejected by Operation Team
+- ✅ When it was rejected (timestamp)
+- ✅ Why it was rejected (specific reason)
+- ✅ What needs to be fixed before re-reviewing
+
+---
+
+#### **📋 How It Works Now:**
+
+**Display Logic:**
+1. **Check Status:** `if bundle['status'] == 'Active'`
+2. **Check Rejection:** `and bundle.get('rejection_reason')`
+3. **If Both True:** Show red error banner with rejection details
+4. **Format Date:** Convert timestamp to readable format
+5. **Display:** Red background, red border, dark red text
+6. **Separator:** Horizontal line after warning
+
+**Visual Design:**
+- **Background:** Light red (#ffebee)
+- **Border:** Solid red left border (#f44336)
+- **Text:** Dark red (#c62828)
+- **Icon:** ⚠️ warning emoji
+- **Bold Title:** "REJECTED BY OPERATION TEAM"
+- **Two Lines:** Rejection date + Rejection reason
+
+---
+
+#### **🧪 Testing Checklist:**
+
+**Test 1: Rejection Warning Display**
+- [x] Operation Team rejects bundle with reason "wrong vendor"
+- [x] Bundle status changes to Active
+- [x] Operator logs back in
+- [x] Operator sees red warning banner at top of bundle
+- [x] Rejection date displays correctly
+- [x] Rejection reason displays correctly
+
+**Test 2: Multiple Rejections**
+- [ ] Operation Team rejects bundle first time
+- [ ] Operator fixes issue, reviews again
+- [ ] Operation Team rejects again with different reason
+- [ ] Operator sees NEW rejection reason (not old one)
+- [ ] Only last rejection shows (as designed)
+
+**Test 3: After Approval**
+- [ ] Bundle rejected by Operation Team
+- [ ] Operator fixes issue, reviews again
+- [ ] Operation Team approves
+- [ ] Bundle moves to Approved status
+- [ ] NO rejection warning shows (rejection data cleared)
+
+**Test 4: Non-Rejected Active Bundles**
+- [ ] Operator creates new bundle (never rejected)
+- [ ] Bundle status is Active
+- [ ] NO rejection warning shows (rejection_reason is NULL)
+- [ ] Normal bundle display
+
+**Test 5: Reviewed Bundles**
+- [ ] Bundle was rejected, then fixed and reviewed
+- [ ] Bundle status is Reviewed
+- [ ] NO rejection warning shows (only for Active status)
+- [ ] Previous rejection warning visible when Operation Team sees it
+
+---
+
+#### **📊 Impact Analysis:**
+
+**User Impact:**
+- ✅ **Critical Fix** - Operator now sees why bundles were rejected
+- ✅ **Better Communication** - Clear feedback loop between Operation Team and Operator
+- ✅ **Prevents Rework** - Operator knows what to fix before re-reviewing
+- ✅ **Improved Efficiency** - No guessing or back-and-forth communication needed
+
+**Code Impact:**
+- ✅ **Minimal Change** - Only 15 lines added
+- ✅ **No Breaking Changes** - Existing functionality preserved
+- ✅ **Consistent Design** - Matches October 15 documentation
+- ✅ **Reusable Pattern** - Same code as operator_dashboard.py
+
+**Database Impact:**
+- ✅ **Zero Impact** - No schema changes
+- ✅ **Columns Already Exist** - rejection_reason and rejected_at were added October 15
+- ✅ **Just Query Fix** - Only SELECT statement modified
+
+---
+
+#### **🎓 Key Learnings:**
+
+**1. Code Duplication Issue:**
+- Two separate files implementing operator dashboard (`operator_dashboard.py` and `app.py`)
+- Only one is actually used (`app.py`)
+- Changes to unused file don't affect production
+- **Lesson:** Identify which code is actually running before making changes
+
+**2. Testing End-to-End Workflows:**
+- October 15 implementation was correct in `operator_dashboard.py`
+- But wasn't tested end-to-end with actual operator login
+- Bug only discovered when user tested complete workflow
+- **Lesson:** Always test from user's perspective, not just code perspective
+
+**3. Documentation vs Reality:**
+- Documentation said rejection warning was implemented
+- Code existed in repository
+- But wrong file was updated
+- **Lesson:** Verify implementation matches documentation with actual testing
+
+**4. Query and Display Sync:**
+- Display code needs data from query
+- Query must fetch all columns used in display
+- Both must be updated together
+- **Lesson:** When adding display features, always check query includes required data
+
+**5. Multiple Codebases:**
+- Phase 3 has evolved with different approaches
+- Some features in separate files, some integrated
+- Need to identify active codebase
+- **Lesson:** Consolidate or clearly document which code is active
+
+---
+
+#### **📈 Future Improvements (Not Implemented):**
+
+**1. Consolidate Operator Dashboard Code:**
+- Merge `operator_dashboard.py` into `app.py` completely
+- Remove unused file to prevent confusion
+- Single source of truth for operator features
+
+**2. Rejection History:**
+- Show all rejections (not just last one)
+- Track how many times bundle was rejected
+- Identify patterns (same reason multiple times)
+
+**3. Rejection Categories:**
+- Predefined rejection reasons (dropdown)
+- Categorize rejections (vendor issue, pricing issue, item issue)
+- Analytics on rejection types
+
+**4. Notification System:**
+- Email operator when bundle rejected
+- Include rejection reason in email
+- Link to bundle in dashboard
+
+**5. Rejection Metrics:**
+- Track rejection rate per operator
+- Average time to fix rejected bundles
+- Most common rejection reasons
+
+---
+
+#### **✅ Status:**
+
+**Bug:** ✅ **FIXED & TESTED**
+
+**Time Spent:** ~45 minutes (investigation + fix + testing + documentation)
+
+**Files Modified:** 1 file (`app.py`)
+
+**Lines Changed:** 15 lines added (2 in query, 13 in display)
+
+**Testing Status:** Manual testing completed - rejection warning now displays correctly
+
+**User Feedback:** User confirmed bug is fixed and warning displays as expected
+
+---
+
 ### **October 15, 2025 - Operation Team Role & Approval Layer**
 
 #### **✅ Completed Today:**
