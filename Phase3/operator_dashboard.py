@@ -72,62 +72,39 @@ def display_bundle_overview(db):
         
         # Display each bundle
         for bundle in bundles:
-            # Show rejection warning OUTSIDE expander if bundle was rejected by Operation Team
-            if bundle['status'] == 'Active' and bundle.get('rejection_reason'):
-                # Format rejected_at datetime
-                rejected_date = bundle.get('rejected_at')
-                if rejected_date and hasattr(rejected_date, 'strftime'):
-                    rejected_str = rejected_date.strftime('%Y-%m-%d %H:%M')
-                else:
-                    rejected_str = str(rejected_date) if rejected_date else 'N/A'
-                
-                st.error(f"🚨 **BUNDLE REJECTED BY OPERATION TEAM** - {bundle['bundle_name']}")
-                st.markdown(f"""
-                <div style='background-color: #ffebee; padding: 20px; border-radius: 8px; border-left: 6px solid #f44336; margin-bottom: 15px;'>
-                    <p style='margin: 0; color: #c62828; font-size: 16px;'><strong>❌ Rejected on:</strong> {rejected_str}</p>
-                    <p style='margin: 10px 0; color: #c62828; font-size: 16px;'><strong>📝 Reason:</strong> {bundle.get('rejection_reason', 'No reason provided')}</p>
-                    <p style='margin: 10px 0 0 0; color: #d32f2f; font-size: 14px; font-weight: 600;'>
-                        ⚠️ <strong>ACTION REQUIRED:</strong> Please rectify the issues mentioned above, make necessary changes, 
-                        and re-review this bundle before submitting again.
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Add REJECTED indicator to expander title if rejected
-            expander_title = f"📦 {bundle['bundle_name']} - {get_status_badge(bundle['status'])}"
-            if bundle['status'] == 'Active' and bundle.get('rejection_reason'):
-                expander_title = f"🚨 REJECTED - {bundle['bundle_name']} - {get_status_badge(bundle['status'])}"
-            
-            with st.expander(expander_title, expanded=False):
+            with st.expander(f"📦 {bundle['bundle_name']} - {get_status_badge(bundle['status'])}", expanded=False):
+                # Show rejection warning if bundle was rejected by Operation Team
+                if bundle['status'] == 'Active' and bundle.get('rejection_reason'):
+                    st.error("⚠️ **REJECTED BY OPERATION TEAM**")
+                    st.markdown(f"""
+                    <div style='background-color: #ffebee; padding: 15px; border-radius: 5px; border-left: 5px solid #f44336;'>
+                        <p style='margin: 0; color: #c62828;'><strong>Rejected on:</strong> {bundle.get('rejected_at', 'N/A')}</p>
+                        <p style='margin: 5px 0 0 0; color: #c62828;'><strong>Reason:</strong> {bundle.get('rejection_reason', 'No reason provided')}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.markdown("---")
                 
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    # Format created_at datetime
-                    created_date = bundle.get('created_at')
-                    if created_date and hasattr(created_date, 'strftime'):
-                        created_str = created_date.strftime('%Y-%m-%d %H:%M')
-                    else:
-                        created_str = str(created_date) if created_date else 'N/A'
-                    
-                    st.write(f"**Created:** {created_str}")
+                    st.write(f"**Created:** {bundle['created_date']}")
                     st.write(f"**Status:** {get_status_badge(bundle['status'])}")
+                    st.write(f"**Total Requests:** {bundle['total_requests']}")
                     st.write(f"**Total Items:** {bundle['total_items']}")
-                    st.write(f"**Total Quantity:** {bundle.get('total_quantity', 0)} pcs")
                 
                 with col2:
-                    # Show vendor info
-                    vendor_id = bundle.get('recommended_vendor_id')
-                    if vendor_id:
-                        vendor_query = "SELECT vendor_name, vendor_email FROM Vendors WHERE vendor_id = ?"
-                        vendor_result = db.execute_query(vendor_query, (vendor_id,))
-                        if vendor_result:
-                            st.write("**Recommended Vendor:**")
-                            st.write(f"• {vendor_result[0]['vendor_name']}")
-                            if vendor_result[0].get('vendor_email'):
-                                st.write(f"• {vendor_result[0]['vendor_email']}")
-                    else:
-                        st.write("**Vendor:** Not assigned")
+                    # Show vendor recommendations
+                    if bundle.get('vendor_info'):
+                        try:
+                            vendor_data = eval(bundle['vendor_info'])  # Convert string back to dict
+                            if vendor_data and len(vendor_data) > 0:
+                                st.write("**Top Vendor Recommendation:**")
+                                top_vendor = vendor_data[0]
+                                st.write(f"• {top_vendor['vendor_name']} ({top_vendor['coverage_percentage']}% coverage)")
+                                st.write(f"• Contact: {top_vendor['contact_email']}")
+                                st.write(f"• Items: {top_vendor['items_covered']}")
+                        except:
+                            st.write("**Vendor Info:** Available in details")
                 
                 # Action buttons
                 if bundle['status'] == 'Active':
@@ -429,10 +406,10 @@ def display_user_management(db: DatabaseConnector):
 def get_all_bundles(db):
     """Get all bundles from database"""
     query = """
-    SELECT bundle_id, bundle_name, status, total_items, total_quantity,
-           created_at, rejection_reason, rejected_at, recommended_vendor_id
+    SELECT bundle_id, bundle_name, status, total_requests, total_items, 
+           created_date, vendor_info, rejection_reason, rejected_at
     FROM requirements_bundles
-    ORDER BY created_at DESC
+    ORDER BY created_date DESC
     """
     return db.execute_query(query)
 

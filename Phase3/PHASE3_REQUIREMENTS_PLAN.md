@@ -120,22 +120,13 @@ def reject_bundle_by_operation(self, bundle_id, rejection_reason):
 
 ---
 
-#### **🎨 UI/UX Design:**
+#### **🎨 UI Changes:**
 
-**Rejection Warning Banner:**
-- **CRITICAL:** Displays OUTSIDE and ABOVE the bundle expander (not hidden inside)
-- Shows prominently so operator sees it immediately without opening expander
-- Red error message: "🚨 BUNDLE REJECTED BY OPERATION TEAM"
-- Large red box with:
-  - ❌ Rejected on: [timestamp]
-  - 📝 Reason: [rejection reason]
-  - ⚠️ ACTION REQUIRED: Clear instruction to rectify and re-review
-- Red background (#ffebee)
-- Red left border (6px, #f44336)
-- Dark red text (#c62828)
-- Larger font size (16px) for visibility
-- Only shows for Active bundles with rejection_reason
-- Expander title also shows "🚨 REJECTED" prefix for rejected bundles
+**1. Operator Dashboard (`operator_dashboard.py`)**
+
+**Added: Rejection Warning Display**
+- Shows prominent red error banner for rejected Active bundles
+- Displays rejection date and full reason
 - Helps operator understand what needs fixing
 
 **Visual Design:**
