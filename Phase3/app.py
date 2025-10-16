@@ -1093,7 +1093,8 @@ def display_my_requests_tab(db):
                                 b.status,
                                 b.po_number,
                                 b.po_date,
-                                b.expected_delivery_date
+                                b.expected_delivery_date,
+                                b.actual_delivery_date
                             FROM requirements_bundle_mapping rbm
                             JOIN requirements_bundles b ON rbm.bundle_id = b.bundle_id
                             WHERE rbm.req_id = ?
