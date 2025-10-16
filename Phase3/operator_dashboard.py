@@ -72,17 +72,33 @@ def display_bundle_overview(db):
         
         # Display each bundle
         for bundle in bundles:
-            with st.expander(f"📦 {bundle['bundle_name']} - {get_status_badge(bundle['status'])}", expanded=False):
-                # Show rejection warning if bundle was rejected by Operation Team
-                if bundle['status'] == 'Active' and bundle.get('rejection_reason'):
-                    st.error("⚠️ **REJECTED BY OPERATION TEAM**")
-                    st.markdown(f"""
-                    <div style='background-color: #ffebee; padding: 15px; border-radius: 5px; border-left: 5px solid #f44336;'>
-                        <p style='margin: 0; color: #c62828;'><strong>Rejected on:</strong> {bundle.get('rejected_at', 'N/A')}</p>
-                        <p style='margin: 5px 0 0 0; color: #c62828;'><strong>Reason:</strong> {bundle.get('rejection_reason', 'No reason provided')}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    st.markdown("---")
+            # Show rejection warning OUTSIDE expander if bundle was rejected by Operation Team
+            if bundle['status'] == 'Active' and bundle.get('rejection_reason'):
+                # Format rejected_at datetime
+                rejected_date = bundle.get('rejected_at')
+                if rejected_date and hasattr(rejected_date, 'strftime'):
+                    rejected_str = rejected_date.strftime('%Y-%m-%d %H:%M')
+                else:
+                    rejected_str = str(rejected_date) if rejected_date else 'N/A'
+                
+                st.error(f"🚨 **BUNDLE REJECTED BY OPERATION TEAM** - {bundle['bundle_name']}")
+                st.markdown(f"""
+                <div style='background-color: #ffebee; padding: 20px; border-radius: 8px; border-left: 6px solid #f44336; margin-bottom: 15px;'>
+                    <p style='margin: 0; color: #c62828; font-size: 16px;'><strong>❌ Rejected on:</strong> {rejected_str}</p>
+                    <p style='margin: 10px 0; color: #c62828; font-size: 16px;'><strong>📝 Reason:</strong> {bundle.get('rejection_reason', 'No reason provided')}</p>
+                    <p style='margin: 10px 0 0 0; color: #d32f2f; font-size: 14px; font-weight: 600;'>
+                        ⚠️ <strong>ACTION REQUIRED:</strong> Please rectify the issues mentioned above, make necessary changes, 
+                        and re-review this bundle before submitting again.
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Add REJECTED indicator to expander title if rejected
+            expander_title = f"📦 {bundle['bundle_name']} - {get_status_badge(bundle['status'])}"
+            if bundle['status'] == 'Active' and bundle.get('rejection_reason'):
+                expander_title = f"🚨 REJECTED - {bundle['bundle_name']} - {get_status_badge(bundle['status'])}"
+            
+            with st.expander(expander_title, expanded=False):
                 
                 col1, col2 = st.columns(2)
                 
