@@ -1765,6 +1765,20 @@ def display_active_bundles_for_operator(db):
                 expander_obj = st.expander(f"📦 {bundle['bundle_name']} - {get_status_badge(bundle['status'])}", expanded=False)
             
             with expander_obj:
+                # Show rejection warning if bundle was rejected by Operation Team
+                if bundle['status'] == 'Active' and bundle.get('rejection_reason'):
+                    st.error("⚠️ **REJECTED BY OPERATION TEAM**")
+                    rejected_date = bundle.get('rejected_at', 'N/A')
+                    if hasattr(rejected_date, 'strftime'):
+                        rejected_date = rejected_date.strftime('%Y-%m-%d %H:%M:%S')
+                    st.markdown(f"""
+                    <div style='background-color: #ffebee; padding: 15px; border-radius: 5px; border-left: 5px solid #f44336;'>
+                        <p style='margin: 0; color: #c62828;'><strong>Rejected on:</strong> {rejected_date}</p>
+                        <p style='margin: 5px 0 0 0; color: #c62828;'><strong>Reason:</strong> {bundle.get('rejection_reason', 'No reason provided')}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.markdown("---")
+                
                 # Vendor details already joined
                 vendor_name = bundle.get('vendor_name') or "Unknown Vendor"
                 vendor_email = bundle.get('vendor_email') or ""
@@ -3385,7 +3399,9 @@ def get_bundles_with_vendor_info(db):
             v.vendor_phone,
             b.created_at,
             b.completed_at,
-            b.completed_by
+            b.completed_by,
+            b.rejection_reason,
+            b.rejected_at
         FROM requirements_bundles b
         LEFT JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
         ORDER BY b.bundle_id DESC
