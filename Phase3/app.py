@@ -2059,11 +2059,10 @@ def display_active_bundles_for_operator(db):
                                         </td>
                                         """
                                         first_row = False
-                                    html_table += f"""<td><span class="user-name">{user_icon} {uname}</span></td>
-                                    <td>—</td>
-                                    <td class="qty-cell">{qty} pcs</td>
-                                    </tr>
-                                    """
+                                    html_table += f'<td><span class="user-name">{user_icon} {uname}</span></td>'
+                                    html_table += '<td>—</td>'
+                                    html_table += f'<td class="qty-cell">{qty} pcs</td>'
+                                    html_table += '</tr>'
                         else:
                             # No breakdown
                             html_table += f"""
