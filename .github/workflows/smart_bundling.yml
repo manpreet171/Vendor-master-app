@@ -2,8 +2,9 @@ name: Smart Bundling Cron Job
 
 on:
   schedule:
-    # Tuesday and Thursday at 15:00 UTC (10 AM ET during Standard Time)
-    - cron: '0 15 * * 2,4'
+    # Tuesday at 6:30 PM UTC (12:00 AM IST Wednesday) - 2 hours after BoxHero creator
+    # Thursday at 6:30 PM UTC (12:00 AM IST Friday) - Regular bundling
+    - cron: '30 18 * * 2,4'
   workflow_dispatch:
 
 jobs:

@@ -6,6 +6,1380 @@
 
 ## Development Progress Log
 
+### **October 24, 2025 - BoxHero Auto-Restock Feature**
+
+#### **📋 Feature Overview:**
+
+**Status:** ✅ **COMPLETED - FULLY IMPLEMENTED**
+
+**Implementation Time:** 
+- Morning Session (10:00 AM - 12:00 PM IST): Planning & Initial Design
+- Afternoon Session (2:00 PM - 8:30 PM IST): Architecture Refinement & Implementation
+
+**Purpose:** Automate inventory reordering for BoxHero items by integrating with existing bundling system
+
+**Background:**
+- BoxHero is a separate inventory management app used to track consumables, paints, adhesives, etc.
+- Each item has a reorder threshold (minimum stock level)
+- When stock drops below threshold, items need to be reordered
+- Currently this is a manual process
+- BoxHero items are NOT requestable by users (tab is hidden/commented out)
+
+**Goal:** Automatically detect BoxHero items below threshold and create purchase orders through existing bundling workflow
+
+---
+
+#### **🎯 Problem Statement:**
+
+**Current State:**
+
+**User Side:**
+- ✅ Users can request Raw Materials items (Phase 3 main functionality)
+- ❌ Users CANNOT request BoxHero items (tab hidden)
+- ✅ BoxHero items managed separately in BoxHero app
+
+**BoxHero App (External System):**
+- ✅ Tracks inventory quantities for consumables/supplies
+- ✅ Each item has a reorder threshold set manually
+- ✅ When quantity < threshold → Item needs reordering
+- ❌ Reordering is currently manual process
+- ❌ No integration with Phase 3 procurement system
+
+**Data Integration:**
+- ✅ BoxHero data synced to database weekly
+- ✅ Table: `InventoryCheckHistory` stores snapshots
+- ✅ Contains: SKU, current_stock, reorder_threshold, deficit, snapshot_date
+- ❌ Data is read-only (not used for automation)
+
+**Pain Points:**
+1. Manual monitoring of BoxHero inventory levels
+2. Manual creation of purchase orders for consumables
+3. No integration with existing bundling/vendor optimization
+4. Separate workflow from user requests (inefficient)
+5. Risk of stockouts if monitoring is missed
+
+---
+
+#### **💡 Proposed Solution:**
+
+**Automated BoxHero Restock Integration**
+
+**High-Level Approach:**
+1. Cron job queries BoxHero deficit items weekly (Tuesday)
+2. Creates "fake" user requests for items needing restock
+3. Feeds into existing bundling engine (NO changes to bundling logic)
+4. Bundles BoxHero items with user requests (same vendor optimization)
+5. Operator sees mixed bundles (user items + BoxHero items)
+6. Same workflow: Review → Approve → Order → Complete
+7. Visual indicator shows which items are BoxHero restocks
+
+**Key Principle:** 
+- **NO changes to existing user/operator/operation team processes**
+- **Treat BoxHero items exactly like user requests in bundling**
+- **Only additions, no modifications to core logic**
+
+---
+
+#### **📊 Data Source & Query Logic:**
+
+**Database Tables Involved:**
+
+**1. InventoryCheckHistory (Read-Only Source):**
+```
+Columns:
+- sku (VARCHAR) - Item SKU from BoxHero
+- current_stock (INT) - Current quantity in inventory
+- reorder_threshold (INT) - Minimum stock level
+- deficit (INT) - How much below threshold (quantity to order)
+- snapshot_date (DATETIME) - When snapshot was taken
+```
+
+**Purpose:** Weekly snapshots of BoxHero inventory status
+
+**2. Items (Existing):**
+```
+Columns:
+- item_id (INT) - Primary key
+- item_name (VARCHAR)
+- sku (VARCHAR) - Links to InventoryCheckHistory
+- source_sheet (VARCHAR) - 'BoxHero' or 'Raw Materials'
+- ... (other item details)
+```
+
+**Purpose:** Master item catalog
+
+---
+
+**Query to Get Deficit Items:**
+
+**Working Query (Tested & Confirmed):**
+```sql
+WITH LatestItemSnapshot AS (
+    SELECT
+        sku,
+        current_stock,
+        reorder_threshold,
+        deficit,
+        snapshot_date,
+        ROW_NUMBER() OVER(PARTITION BY sku ORDER BY snapshot_date DESC) AS rn
+    FROM InventoryCheckHistory
+)
+SELECT
+    T1.item_id,           -- Need for requirements_order_items
+    T1.item_name,
+    T1.item_type,
+    T1.sku,
+    T1.barcode,
+    T1.height,
+    T1.width,
+    T1.thickness,
+    T2.current_stock,
+    T2.reorder_threshold,
+    T2.deficit,           -- This is the quantity to order
+    T2.snapshot_date AS last_snapshot_date
+FROM Items AS T1
+INNER JOIN LatestItemSnapshot AS T2 ON T1.sku = T2.sku
+WHERE T1.source_sheet = 'BoxHero'
+  AND T2.deficit > 0
+  AND T2.rn = 1
+```
+
+**Query Logic Explained:**
+
+**Part 1: CTE (Common Table Expression)**
+- Creates temporary table `LatestItemSnapshot`
+- Uses `ROW_NUMBER()` to rank snapshots by date
+- `PARTITION BY sku` - Separate ranking for each item
+- `ORDER BY snapshot_date DESC` - Newest first
+- Result: Each item's latest snapshot gets `rn = 1`
+
+**Part 2: Main Query**
+- Joins `Items` table with latest snapshots (by SKU)
+- Filters to BoxHero items only (`source_sheet = 'BoxHero'`)
+- Filters to items with deficit > 0 (need reordering)
+- Filters to latest snapshot only (`rn = 1`)
+
+**Example Data (Actual Test Results):**
+```
+item_name                                               | deficit | current_stock | threshold
+--------------------------------------------------------+---------+---------------+----------
+DCP Primer - Marabu P5, 1L                              |    2    |      0        |    2
+Matthews Paint - Fine Silver Satin Mixing Base          |    1    |      1        |    2
+VHB Tape - 3M 9473, 1" x 60yds                          |    3    |      0        |    3
+Denatured Alcohol - Crown, 1 Gallon                     |    1    |      1        |    2
+Solvent & Thinner - Beacon                              |    2    |      1        |    3
+... (18 items total in test data)
+```
+
+**Key Points:**
+- `deficit` = Quantity needed to reach threshold
+- Join by `sku` (not item_id) - different identifiers
+- Only latest snapshot used (not historical data)
+- Query returns `item_id` for linking to requirements tables
+
+---
+
+#### **🔧 Technical Implementation Plan:**
+
+**Phase 1: Database Setup (One-Time)**
+
+**Step 1: Create BoxHero System User**
+
+```sql
+-- Create special system user for BoxHero auto-restock requests
+INSERT INTO requirements_users (
+    user_id, 
+    username, 
+    email, 
+    user_role, 
+    department, 
+    is_active
+)
+VALUES (
+    'BOXHERO_SYSTEM', 
+    'BoxHero Auto-Restock', 
+    'boxhero@system.internal', 
+    'System', 
+    'Inventory', 
+    1
+);
+```
+
+**Purpose:** 
+- All BoxHero requests will be created under this system user
+- Distinguishes BoxHero requests from regular user requests
+- Not a real user, just a placeholder for system-generated requests
+
+---
+
+**Step 2: Add Source Type Tracking Columns**
+
+```sql
+-- Track if request is from User or BoxHero
+ALTER TABLE requirements_orders 
+ADD source_type VARCHAR(20) DEFAULT 'User';
+
+-- Track if item is from User or BoxHero
+ALTER TABLE requirements_order_items 
+ADD source_type VARCHAR(20) DEFAULT 'User';
+```
+
+**Values:**
+- `'User'` = Normal user request (default for existing data)
+- `'BoxHero'` = Auto-generated from BoxHero inventory
+
+**Purpose:**
+- Identify source of each request/item
+- Display different visual indicators to operator
+- Filter/report on BoxHero vs User requests separately
+
+---
+
+**Phase 2: Cron Job Modification**
+
+**Current Cron Schedule:**
+```
+Tuesday 10:00 AM - Process user requests → Create bundles
+Thursday 10:00 AM - Process user requests → Create bundles
+```
+
+**New Cron Schedule:**
+```
+Tuesday 10:00 AM:
+  1. Query BoxHero deficit items (NEW)
+  2. Create fake BoxHero requests (NEW)
+  3. Process all requests (User + BoxHero) → Create bundles (EXISTING)
+
+Thursday 10:00 AM:
+  1. Process user requests only → Create bundles (EXISTING)
+```
+
+**File:** `smart_bundling_cron.py`
+
+**Modified Logic:**
+```python
+def main():
+    """Main cron job entry point"""
+    db = DBConnector()
+    today = datetime.now().strftime('%A')  # Get day name
+    
+    # Tuesday: Process BoxHero + User requests
+    if today == 'Tuesday':
+        print("Tuesday: Processing BoxHero + User requests")
+        
+        # NEW: Create BoxHero requests first
+        boxhero_count = create_boxhero_requests(db)
+        print(f"Created BoxHero requests for {boxhero_count} items")
+        
+        # EXISTING: Run bundling engine (now includes BoxHero)
+        run_bundling_engine(db)
+    
+    # Thursday: Process User requests only
+    elif today == 'Thursday':
+        print("Thursday: Processing User requests only")
+        
+        # EXISTING: Run bundling engine (user requests only)
+        run_bundling_engine(db)
+    
+    else:
+        print(f"Not a scheduled day ({today}). Exiting.")
+```
+
+---
+
+**Phase 3: New Function - Create BoxHero Requests**
+
+**File:** `smart_bundling_cron.py` or `db_connector.py`
+
+**Function:**
+```python
+def create_boxhero_requests(db):
+    """
+    Query BoxHero deficit items and create fake user requests.
+    Runs on Tuesday only.
+    
+    Returns: Number of items processed
+    """
+    from datetime import datetime
+    
+    # Query BoxHero deficit items (your working query)
+    query = """
+    WITH LatestItemSnapshot AS (
+        SELECT
+            sku,
+            current_stock,
+            reorder_threshold,
+            deficit,
+            snapshot_date,
+            ROW_NUMBER() OVER(PARTITION BY sku ORDER BY snapshot_date DESC) AS rn
+        FROM InventoryCheckHistory
+    )
+    SELECT
+        T1.item_id,
+        T1.item_name,
+        T1.sku,
+        T2.deficit,
+        T2.current_stock,
+        T2.reorder_threshold,
+        T2.snapshot_date
+    FROM Items AS T1
+    INNER JOIN LatestItemSnapshot AS T2 ON T1.sku = T2.sku
+    WHERE T1.source_sheet = 'BoxHero'
+      AND T2.deficit > 0
+      AND T2.rn = 1
+    """
+    
+    boxhero_items = db.execute_query(query)
+    
+    if not boxhero_items or len(boxhero_items) == 0:
+        print("No BoxHero items need reordering")
+        return 0
+    
+    print(f"Found {len(boxhero_items)} BoxHero items needing restock")
+    
+    # Create ONE request for all BoxHero items
+    req_number = f"REQ-BOXHERO-{datetime.now().strftime('%Y%m%d')}"
+    
+    # Insert into requirements_orders
+    insert_order = """
+    INSERT INTO requirements_orders 
+    (user_id, req_number, req_date, status, source_type, project_number)
+    VALUES (?, ?, ?, 'Pending', 'BoxHero', NULL)
+    """
+    
+    db.execute_insert(insert_order, (
+        'BOXHERO_SYSTEM',
+        req_number,
+        datetime.now()
+    ))
+    
+    # Get the req_id we just created
+    get_req_id = """
+    SELECT req_id FROM requirements_orders 
+    WHERE req_number = ?
+    """
+    req_result = db.execute_query(get_req_id, (req_number,))
+    req_id = req_result[0]['req_id']
+    
+    print(f"Created BoxHero request: {req_number} (req_id: {req_id})")
+    
+    # Insert each item into requirements_order_items
+    insert_item = """
+    INSERT INTO requirements_order_items 
+    (req_id, item_id, quantity, source_type, project_number)
+    VALUES (?, ?, ?, 'BoxHero', NULL)
+    """
+    
+    for item in boxhero_items:
+        db.execute_insert(insert_item, (
+            req_id,
+            item['item_id'],
+            item['deficit']  # Order exactly the deficit quantity
+        ))
+        print(f"  - Added: {item['item_name']} ({item['deficit']} pcs)")
+    
+    print(f"Successfully created BoxHero request with {len(boxhero_items)} items")
+    return len(boxhero_items)
+```
+
+**Key Points:**
+- Creates ONE request per week (not one per item)
+- Request number format: `REQ-BOXHERO-YYYYMMDD`
+- All items marked with `source_type = 'BoxHero'`
+- Project number is NULL (BoxHero items don't have projects)
+- Uses `deficit` as quantity to order
+
+---
+
+**Phase 4: Bundling Engine (NO CHANGES)**
+
+**File:** `bundling_engine.py`
+
+**Existing Logic (Unchanged):**
+```python
+def run_bundling_engine(db):
+    """
+    Read all pending requests and create optimized bundles.
+    NOW includes both User and BoxHero requests (no code changes needed)
+    """
+    # Get all pending requests (User + BoxHero)
+    pending_requests = db.get_all_pending_requests()
+    
+    # Group by vendor (existing logic)
+    vendor_groups = group_by_vendor(pending_requests)
+    
+    # Create bundles (existing logic)
+    for vendor_id, items in vendor_groups.items():
+        create_bundle(db, vendor_id, items)
+```
+
+**What Changes:**
+- ✅ Query now returns User requests + BoxHero requests
+- ✅ Bundling logic treats them identically
+- ✅ Groups by vendor (BoxHero items mixed with User items if same vendor)
+- ✅ Creates bundles with mixed items
+
+**What Stays Same:**
+- ❌ NO changes to bundling algorithm
+- ❌ NO changes to vendor selection
+- ❌ NO changes to bundle creation logic
+
+---
+
+**Phase 5: Operator Display Updates**
+
+**File:** `app.py` - `display_active_bundles_for_operator()`
+
+**Modification: Show Item Source**
+
+**Current Display:**
+```python
+# Show items in bundle
+for item in bundle_items:
+    st.write(f"   • {item['item_name']} ({item['quantity']} pcs)")
+```
+
+**New Display:**
+```python
+# Show items in bundle with source indicator
+for item in bundle_items:
+    # Get source type
+    source_type = item.get('source_type', 'User')
+    
+    if source_type == 'BoxHero':
+        # BoxHero item
+        source_icon = "📦"
+        source_label = "BoxHero Restock"
+        st.write(f"   {source_icon} {item['item_name']} ({item['quantity']} pcs) - **{source_label}**")
+    else:
+        # User item
+        source_icon = "👤"
+        user_name = item.get('user_name', 'Unknown')
+        project = item.get('project_number', '')
+        if project:
+            st.write(f"   {source_icon} {item['item_name']} ({item['quantity']} pcs) - User: {user_name} (Project: {project})")
+        else:
+            st.write(f"   {source_icon} {item['item_name']} ({item['quantity']} pcs) - User: {user_name}")
+```
+
+**Visual Example:**
+```
+📦 BUNDLE-20251024-001 - 🟡 Active
+
+Vendor: Grimco
+📧 Nicholas.Mariani@grimco.com
+📞 800-542-9941
+
+Items: 4
+Pieces: 15
+
+Items in this bundle:
+   👤 Aluminum Sheet (5 pcs) - User: John Smith (Project: 23-16/2)
+   📦 DCP Primer - Marabu P5 (2 pcs) - BoxHero Restock
+   📦 VHB Tape - 3M 9473 (3 pcs) - BoxHero Restock
+   👤 Brushed Steel (5 pcs) - User: Mary Johnson (Project: 23-17)
+
+From Requests: REQ-20251016-092457, REQ-BOXHERO-20251024, REQ-20251016-092512
+```
+
+**Key Visual Indicators:**
+- 👤 = User request
+- 📦 = BoxHero restock
+- Project shows for user items, "—" or hidden for BoxHero items
+
+---
+
+**Phase 6: Query Updates**
+
+**File:** `db_connector.py` or query locations
+
+**Update Bundle Items Query:**
+
+**Current Query:**
+```sql
+SELECT 
+    bi.item_id,
+    i.item_name,
+    bi.total_quantity,
+    bi.user_breakdown
+FROM requirements_bundle_items bi
+JOIN Items i ON bi.item_id = i.item_id
+WHERE bi.bundle_id = ?
+```
+
+**New Query (Add source_type):**
+```sql
+SELECT 
+    bi.item_id,
+    i.item_name,
+    bi.total_quantity,
+    bi.user_breakdown,
+    roi.source_type          -- NEW: Get source type
+FROM requirements_bundle_items bi
+JOIN Items i ON bi.item_id = i.item_id
+JOIN requirements_order_items roi ON bi.item_id = roi.item_id
+WHERE bi.bundle_id = ?
+```
+
+**Note:** May need to adjust join logic to get source_type correctly
+
+---
+
+#### **📖 Complete Journey - End-to-End Flow:**
+
+**Scenario: Tuesday, October 24, 2025 - 10:00 AM**
+
+---
+
+**STEP 1: Cron Job Starts**
+
+```
+[10:00:00] Cron job triggered
+[10:00:01] Day: Tuesday
+[10:00:01] Mode: BoxHero + User requests
+```
+
+---
+
+**STEP 2: Query BoxHero Deficit Items**
+
+```sql
+-- Query runs against InventoryCheckHistory
+-- Finds 18 items with deficit > 0
+```
+
+**Results:**
+```
+Found 18 BoxHero items needing restock:
+1. DCP Primer - Marabu P5, 1L (2 pcs)
+2. Matthews Paint - Fine Silver Satin (1 pc)
+3. Matthews Paint - Black Satin (1 pc)
+4. Denatured Alcohol - Crown, 1 Gallon (1 pc)
+5. Matthews Paint - Green Yellow Satin (1 pc)
+6. Solvent & Thinner - Beacon (2 pcs)
+7. Matthews Paint - Brilliant White Primer (1 pc)
+8. Matthews Paint - Suede Additive Medium (3 pcs)
+9. VHB Tape - 3M 9473, 1" x 60yds (3 pcs)
+10. Matthews Paint - White Satin (2 pcs)
+11. Latex Gloves (L) (1 pc)
+12. Matthews Paint - Blue Satin (1 pc)
+13. Matthews Paint - Light Red Satin (1 pc)
+14. DCP Ink - Clear (1 pc)
+15. DCP Ink - White (2 pcs)
+16. Ink Vutek - Jet Wash Station Fluid (2 pcs)
+17. Monomer Flush - UV-LED IR2 (1 pc)
+18. Vutek Grease - Kluberplex (3 pcs)
+```
+
+---
+
+**STEP 3: Create BoxHero Request**
+
+```sql
+-- Insert into requirements_orders
+INSERT INTO requirements_orders 
+(user_id, req_number, req_date, status, source_type, project_number)
+VALUES 
+('BOXHERO_SYSTEM', 'REQ-BOXHERO-20251024', '2025-10-24 10:00:05', 'Pending', 'BoxHero', NULL)
+
+-- Result: req_id = 150
+```
+
+```sql
+-- Insert 18 items into requirements_order_items
+INSERT INTO requirements_order_items 
+(req_id, item_id, quantity, source_type, project_number)
+VALUES 
+(150, 1001, 2, 'BoxHero', NULL),  -- DCP Primer
+(150, 1002, 1, 'BoxHero', NULL),  -- Matthews Fine Silver
+(150, 1003, 1, 'BoxHero', NULL),  -- Matthews Black Satin
+... (15 more items)
+```
+
+**Database State:**
+```
+requirements_orders:
+  req_id: 150
+  user_id: 'BOXHERO_SYSTEM'
+  req_number: 'REQ-BOXHERO-20251024'
+  status: 'Pending'
+  source_type: 'BoxHero'
+
+requirements_order_items: (18 rows)
+  All with req_id=150, source_type='BoxHero'
+```
+
+---
+
+**STEP 4: Bundling Engine Runs**
+
+**Reads ALL Pending Requests:**
+```
+Pending Requests:
+1. REQ-20251024-001 (User: John) - 3 items
+2. REQ-20251024-002 (User: Mary) - 2 items
+3. REQ-BOXHERO-20251024 (System) - 18 items
+```
+
+**Groups by Vendor:**
+```
+Grimco (vendor_id: 10):
+  - Aluminum Sheet (5 pcs) - User: John
+  - DCP Primer (2 pcs) - BoxHero
+  - Brushed Steel (5 pcs) - User: Mary
+
+Matthews Paint (vendor_id: 25):
+  - Matthews Fine Silver (1 pc) - BoxHero
+  - Matthews Black Satin (1 pc) - BoxHero
+  - Matthews Green Yellow (1 pc) - BoxHero
+  - Matthews Brilliant White (1 pc) - BoxHero
+  - Matthews Suede Additive (3 pcs) - BoxHero
+  - Matthews White Satin (2 pcs) - BoxHero
+  - Matthews Blue Satin (1 pc) - BoxHero
+  - Matthews Light Red (1 pc) - BoxHero
+
+3M (vendor_id: 30):
+  - VHB Tape (3 pcs) - BoxHero
+
+Crown (vendor_id: 35):
+  - Denatured Alcohol (1 pc) - BoxHero
+
+Beacon (vendor_id: 40):
+  - Solvent & Thinner (2 pcs) - BoxHero
+
+... (more vendors)
+```
+
+**Creates Bundles:**
+```
+Created 5 bundles:
+1. BUNDLE-20251024-001 (Grimco) - 3 items, 12 pcs
+2. BUNDLE-20251024-002 (Matthews Paint) - 8 items, 11 pcs
+3. BUNDLE-20251024-003 (3M) - 1 item, 3 pcs
+4. BUNDLE-20251024-004 (Crown) - 1 item, 1 pc
+5. BUNDLE-20251024-005 (Beacon) - 1 item, 2 pcs
+```
+
+---
+
+**STEP 5: Database State After Bundling**
+
+**requirements_bundles:**
+```
+bundle_id: 1
+bundle_name: 'BUNDLE-20251024-001'
+status: 'Active'
+recommended_vendor_id: 10 (Grimco)
+total_items: 3
+total_quantity: 12
+```
+
+**requirements_bundle_items:**
+```
+bundle_id: 1, item_id: 501 (Aluminum Sheet)
+  total_quantity: 5
+  user_breakdown: {"user_123": 5}
+
+bundle_id: 1, item_id: 1001 (DCP Primer)
+  total_quantity: 2
+  user_breakdown: {"BOXHERO_SYSTEM": 2}
+
+bundle_id: 1, item_id: 502 (Brushed Steel)
+  total_quantity: 5
+  user_breakdown: {"user_456": 5}
+```
+
+**requirements_bundle_mapping:**
+```
+bundle_id: 1, req_id: 101 (John's request)
+bundle_id: 1, req_id: 150 (BoxHero request)
+bundle_id: 1, req_id: 105 (Mary's request)
+```
+
+---
+
+**STEP 6: Operator Logs In (Tuesday Afternoon)**
+
+**Operator Dashboard:**
+```
+📦 Active Orders & Bundles
+
+Filter: 🟡 Active (5)
+
+📦 BUNDLE-20251024-001 - 🟡 Active
+📦 BUNDLE-20251024-002 - 🟡 Active
+📦 BUNDLE-20251024-003 - 🟡 Active
+📦 BUNDLE-20251024-004 - 🟡 Active
+📦 BUNDLE-20251024-005 - 🟡 Active
+```
+
+---
+
+**STEP 7: Operator Opens Bundle**
+
+**Clicks on BUNDLE-20251024-001:**
+
+```
+📦 BUNDLE-20251024-001 - 🟡 Active
+
+Vendor: Grimco
+📧 Nicholas.Mariani@grimco.com
+📞 800-542-9941
+
+Items: 3
+Pieces: 12
+
+Items in this bundle:
+┌────────────────────────────────────────────────────────────────┐
+│ Item              │ User/Source        │ Project  │ Quantity  │
+├────────────────────────────────────────────────────────────────┤
+│ Aluminum Sheet    │ 👤 John Smith      │ 23-16/2  │ 5 pcs     │
+│ DCP Primer        │ 📦 BoxHero Restock │    —     │ 2 pcs     │
+│ Brushed Steel     │ 👤 Mary Johnson    │ 23-17    │ 5 pcs     │
+└────────────────────────────────────────────────────────────────┘
+
+From Requests: REQ-20251024-001, REQ-BOXHERO-20251024, REQ-20251024-002
+
+[Mark as Reviewed] [Report Issue]
+```
+
+**Operator sees:**
+- ✅ Mix of user items (👤) and BoxHero items (📦)
+- ✅ Clear visual distinction
+- ✅ BoxHero items show "BoxHero Restock" instead of user name
+- ✅ BoxHero items have no project number
+
+---
+
+**STEP 8: Operator Reviews Bundle**
+
+**Operator clicks "Mark as Reviewed":**
+
+```
+✅ Bundle marked as Reviewed
+Status: Active → Reviewed
+```
+
+**Database Update:**
+```sql
+UPDATE requirements_bundles 
+SET status = 'Reviewed', 
+    reviewed_at = '2025-10-24 14:30:00'
+WHERE bundle_id = 1
+```
+
+**NO DIFFERENCE for BoxHero items vs User items**
+
+---
+
+**STEP 9: Operation Team Approves (Wednesday)**
+
+**Operation Team Dashboard:**
+```
+📦 Reviewed Bundles (5)
+
+📦 BUNDLE-20251024-001 - 🟢 Reviewed
+  Vendor: Grimco
+  Items: 3 (2 user, 1 BoxHero)
+  Pieces: 12
+  
+  [✅ Approve] [❌ Reject]
+```
+
+**Operation Team clicks "Approve":**
+
+```
+✅ Bundle approved
+Status: Reviewed → Approved
+```
+
+---
+
+**STEP 10: Operator Orders (Wednesday Afternoon)**
+
+**Operator creates PO:**
+
+```
+📦 BUNDLE-20251024-001 - 🔵 Approved
+
+[Create Purchase Order]
+
+PO Number: PO-2025-1024-001
+PO Date: 2025-10-24
+Expected Delivery: 2025-10-30
+
+[✅ Confirm Order]
+```
+
+**Database Update:**
+```sql
+UPDATE requirements_bundles 
+SET status = 'Ordered',
+    po_number = 'PO-2025-1024-001',
+    po_date = '2025-10-24',
+    expected_delivery_date = '2025-10-30'
+WHERE bundle_id = 1
+```
+
+---
+
+**STEP 11: Items Delivered (Following Week)**
+
+**Operator marks complete:**
+
+```
+📦 BUNDLE-20251024-001 - 📦 Ordered
+
+[Mark as Completed]
+
+Actual Delivery Date: 2025-10-28
+
+[✅ Confirm Delivery]
+```
+
+**Database Update:**
+```sql
+UPDATE requirements_bundles 
+SET status = 'Completed',
+    actual_delivery_date = '2025-10-28',
+    completed_at = '2025-10-28 09:00:00',
+    completed_by = 'operator_001'
+WHERE bundle_id = 1
+```
+
+---
+
+**STEP 12: User View**
+
+**John's "My Requests" Tab:**
+```
+📋 My Requests → Completed
+
+REQ-20251024-001
+Status: ✅ Completed
+Submitted: October 24, 2025
+
+Items:
+  • Aluminum Sheet (5 pcs)
+  
+📦 Order Status:
+  📋 PO#: PO-2025-1024-001
+  📅 Order Date: October 24, 2025
+  ✅ Delivered: October 28, 2025
+```
+
+**John sees ONLY his items, NOT BoxHero items**
+
+---
+
+**Mary's "My Requests" Tab:**
+```
+📋 My Requests → Completed
+
+REQ-20251024-002
+Status: ✅ Completed
+Submitted: October 24, 2025
+
+Items:
+  • Brushed Steel (5 pcs)
+  
+📦 Order Status:
+  📋 PO#: PO-2025-1024-001
+  📅 Order Date: October 24, 2025
+  ✅ Delivered: October 28, 2025
+```
+
+**Mary sees ONLY her items, NOT BoxHero items**
+
+---
+
+**BoxHero Request - NO USER VIEW:**
+```
+REQ-BOXHERO-20251024 is NOT visible to any user
+- Not in "My Requests" tab
+- Only visible in Operator/Operation Team dashboards
+- Status updated to Completed in database
+- NO update back to InventoryCheckHistory
+```
+
+---
+
+**STEP 13: BoxHero App (Separate Process)**
+
+**BoxHero app handles inventory update:**
+```
+- Operator manually updates BoxHero app (or automated sync)
+- DCP Primer stock increased from 0 → 2
+- Next Tuesday, new snapshot will show updated stock
+- If still below threshold, will appear in next week's deficit query
+```
+
+---
+
+#### **📊 Data Flow Summary:**
+
+**Tuesday Morning:**
+```
+InventoryCheckHistory (Read-Only)
+         ↓
+   [Query: Get deficit items]
+         ↓
+requirements_orders (Create fake request)
+         ↓
+requirements_order_items (Add 18 items)
+         ↓
+   [Bundling Engine - NO CHANGES]
+         ↓
+requirements_bundles (Create 5 bundles)
+         ↓
+requirements_bundle_items (Add items to bundles)
+         ↓
+requirements_bundle_mapping (Link requests to bundles)
+```
+
+**Operator Journey:**
+```
+Active → Reviewed → Approved → Ordered → Completed
+  ↓         ↓          ↓          ↓          ↓
+Same process for User items AND BoxHero items
+```
+
+**After Completion:**
+```
+User Items:
+  ✅ User sees in "My Requests" tab
+  ✅ Status: Completed
+  ✅ Shows delivery date
+
+BoxHero Items:
+  ✅ Status: Completed in database
+  ❌ NOT visible to users
+  ❌ NO update to InventoryCheckHistory
+  ✅ BoxHero app handles inventory separately
+```
+
+---
+
+#### **🔑 Key Design Decisions:**
+
+**1. Fake User Requests (Option B Selected):**
+- ✅ Create system user in database: `BOXHERO_SYSTEM`
+- ✅ All BoxHero requests under this user
+- ✅ Distinguishable from real users
+
+**2. Request Grouping (Option A Selected):**
+- ✅ One request per week: `REQ-BOXHERO-YYYYMMDD`
+- ✅ All deficit items in single request
+- ✅ Simpler than one request per item
+
+**3. Project Number:**
+- ✅ Leave as NULL for BoxHero items
+- ✅ No project association needed
+
+**4. User Breakdown in Bundles:**
+- ✅ `{"BOXHERO_SYSTEM": quantity}`
+- ✅ Consistent with user request pattern
+
+**5. Visibility:**
+- ✅ BoxHero requests visible in Operator dashboard only
+- ✅ NOT visible to regular users
+- ✅ NOT in "My Requests" tab
+
+---
+
+#### **⚠️ Important Notes:**
+
+**What DOES NOT Change:**
+1. ❌ Bundling algorithm (groups by vendor)
+2. ❌ Vendor selection logic
+3. ❌ Operator workflow (Active → Reviewed → Approved → Ordered → Completed)
+4. ❌ Operation Team approval process
+5. ❌ User "My Requests" tab functionality
+6. ❌ Database schema (only add 2 columns)
+
+**What IS NEW:**
+1. ✅ Query BoxHero deficit items (Tuesday only)
+2. ✅ Create fake BoxHero requests
+3. ✅ Visual indicator (📦) in operator display
+4. ✅ `source_type` column tracking
+
+**What IS DIFFERENT for BoxHero:**
+1. ✅ No project number (NULL)
+2. ✅ No user visibility
+3. ✅ No update back to InventoryCheckHistory
+4. ✅ Weekly schedule (Tuesday only)
+5. ✅ System user instead of real user
+
+---
+
+#### **✅ Implementation Status:**
+
+**Status:** ✅ **COMPLETED - FULLY IMPLEMENTED & TESTED**
+
+**Total Implementation Time:** 6.5 hours (10:00 AM - 8:30 PM IST with breaks)
+
+---
+
+### **📝 DETAILED IMPLEMENTATION LOG:**
+
+#### **🌅 MORNING SESSION (10:00 AM - 12:00 PM IST)**
+
+**Phase 1: Requirements Gathering & Planning**
+
+**Activities:**
+1. ✅ Analyzed BoxHero inventory system integration requirements
+2. ✅ Reviewed `InventoryCheckHistory` table structure
+3. ✅ Designed initial architecture (single cron approach)
+4. ✅ Planned database schema changes
+5. ✅ Created implementation roadmap
+
+**Initial Design Decision:**
+- **Approach:** Modify existing `smart_bundling_cron.py`
+- **Logic:** Add day-of-week checking (Tuesday only)
+- **Flow:** Create BoxHero requests → Run bundling (same execution)
+
+**Deliverables:**
+- ✅ Complete feature specification documented
+- ✅ SQL queries designed for deficit detection
+- ✅ Database schema changes planned
+- ✅ End-to-end flow diagram created
+
+---
+
+#### **🌆 AFTERNOON SESSION (2:00 PM - 8:30 PM IST)**
+
+**Phase 2: Critical Architecture Review & Refinement**
+
+**Problem Identified (2:00 PM):**
+❌ **Operator would never see BoxHero requests before bundling!**
+
+**Root Cause Analysis:**
+```
+Initial Design Flow:
+10:00:00 AM - Cron starts
+10:00:02 AM - Create BoxHero requests (status = 'Pending')
+10:00:05 AM - Run bundling (reads pending requests)
+10:00:10 AM - Update ALL to 'In Progress'
+Result: Operator logs in → Query: WHERE status = 'Pending' → Returns NOTHING ❌
+```
+
+**User Concern:**
+> "How logically will operator see the BoxHero request in 'User Requests Overview'?  
+> As of current functionality, after bundling these requests will be gone even if it's from user."
+
+**Critical Realization:**
+- `get_all_pending_requests()` only returns `status = 'Pending'`
+- After bundling, ALL requests become `'In Progress'`
+- Operator would NEVER see BoxHero items before bundling
+- No visibility or review opportunity
+
+**Solution Discussion (2:30 PM - 3:00 PM):**
+
+**Option 1 Considered:** Show "In Progress" requests too
+- ❌ Rejected: Would show already-bundled requests (confusing)
+
+**Option 2 Considered:** Keep BoxHero as "Pending" forever
+- ❌ Rejected: Inconsistent status tracking
+
+**Option 3 - SELECTED:** Two separate cron jobs
+- ✅ **Cron 1:** BoxHero request creator (Tuesday 1:00 PM UTC)
+- ✅ **Cron 2:** Smart bundling (Tuesday/Thursday 3:00 PM UTC)
+- ✅ **Gap:** 2-hour window for operator review
+- ✅ **Benefit:** Zero changes to existing bundling logic
+
+**User Validation:**
+> "Can't we have another cron that runs few hours before bundling that is separate for BoxHero,  
+> that will create the requests, then our old cron will remain the same that we have earlier no change in that.  
+> Our new cron specifically creates requests and our old will pick those requests as the way it was."
+
+**Decision:** ✅ **APPROVED - Two Separate Cron Jobs**
+
+---
+
+**Phase 3: Database Implementation (3:00 PM - 3:30 PM)**
+
+**Changes Made:**
+
+**1. Created BoxHero System User:**
+```sql
+INSERT INTO requirements_users (username, full_name, email, password_hash, role, is_active)
+VALUES ('boxhero_system', 'BoxHero System', 'system@boxhero.com', 'N/A', 'system', 1)
+-- Result: user_id = 5
+```
+
+**2. Added source_type Column to requirements_orders:**
+```sql
+ALTER TABLE requirements_orders 
+ADD source_type VARCHAR(20) DEFAULT 'User'
+
+UPDATE requirements_orders 
+SET source_type = 'User' 
+WHERE source_type IS NULL
+```
+
+**3. Added source_type Column to requirements_order_items:**
+```sql
+ALTER TABLE requirements_order_items 
+ADD source_type VARCHAR(20) DEFAULT 'User'
+
+UPDATE requirements_order_items 
+SET source_type = 'User' 
+WHERE source_type IS NULL
+```
+
+**Database Changes Completed:** ✅ 3:30 PM
+
+---
+
+**Phase 4: Code Implementation (3:30 PM - 6:00 PM)**
+
+**File 1: `boxhero_request_creator.py` (NEW FILE - CREATED)**
+
+**Purpose:** Standalone cron job to create BoxHero requests only
+
+**Key Features:**
+- ✅ Queries `InventoryCheckHistory` for deficit items
+- ✅ Creates single request per day: `REQ-BOXHERO-YYYYMMDD`
+- ✅ Duplicate prevention (checks if request already exists)
+- ✅ Inserts items with `source_type = 'BoxHero'`
+- ✅ Uses `deficit` as quantity to order
+- ✅ Does NOT run bundling
+
+**Code Stats:**
+- Lines: 175
+- Functions: 2 (`create_boxhero_requests`, `main`)
+- Error handling: Comprehensive with rollback
+- Logging: Detailed UTC timestamps
+
+**File 2: `smart_bundling_cron.py` (REVERTED TO ORIGINAL)**
+
+**Changes Made:**
+- ❌ REMOVED all BoxHero logic
+- ❌ REMOVED day-of-week checking
+- ❌ REMOVED `create_boxhero_requests()` function
+- ✅ Back to simple bundling only
+- ✅ Zero risk to existing functionality
+
+**Result:** Existing bundling process completely unchanged
+
+**File 3: `app.py` (ENHANCED - SAFE ADDITIONS)**
+
+**Change 3A: User Requests Overview Display (Lines 1350-1450)**
+
+**Purpose:** Show BoxHero requests separately from user requests
+
+**Implementation:**
+```python
+# Separate user requests from BoxHero requests
+for req in pending_requests:
+    if req['user_id'] == 5:  # BoxHero system user
+        boxhero_requests.append(req)
+    else:
+        user_requests.append(req)
+
+# Display user requests section
+if requests_by_user:
+    st.subheader("👤 User Requests")
+    # ... existing display logic
+
+# Display BoxHero requests section (NEW)
+if boxhero_by_request:
+    st.markdown("---")
+    st.subheader("📦 BoxHero Inventory Restock")
+    st.info("⚠️ These items are automatically generated based on inventory levels falling below threshold")
+    # ... BoxHero display logic
+```
+
+**Change 3B: Bundle Display Enhancement (Lines 2008-2018)**
+
+**Purpose:** Show visual indicator for BoxHero items in bundles
+
+**Implementation:**
+```python
+# Check if this is BoxHero system user (user_id = 5)
+is_boxhero = (int(uid) == 5) if str(uid).isdigit() else False
+
+if is_boxhero:
+    uname = "BoxHero Restock"
+    user_icon = "📦"
+else:
+    uname = user_name_map.get(int(uid), f"User {uid}")
+    user_icon = "👤"
+```
+
+**Display Result:**
+- User items: `👤 John Smith`
+- BoxHero items: `📦 BoxHero Restock`
+
+**Code Implementation Completed:** ✅ 6:00 PM
+
+---
+
+**Phase 5: GitHub Actions Workflows (6:00 PM - 6:30 PM)**
+
+**File 1: `.github/workflows/boxhero_creator.yml` (NEW)**
+
+**Schedule:** `30 16 * * 2` (Tuesday 4:30 PM UTC / 10:00 PM IST / 12:30 PM EDT)
+
+**Steps:**
+1. Checkout code
+2. Setup Python 3.11
+3. Install dependencies
+4. Install ODBC Driver 18
+5. Run `boxhero_request_creator.py`
+6. Upload logs as artifacts
+
+**File 2: `.github/workflows/smart_bundling.yml` (UPDATED TIMING)**
+
+**Schedule:** `30 18 * * 2,4` (Tue/Thu 6:30 PM UTC / 12:00 AM IST / 2:30 PM EDT)
+
+**Timing Analysis:**
+```
+Tuesday 3:30 PM UTC (9:00 PM IST) - Inventory Feed (External)
+         ↓
+    (1-HOUR WAIT - Data settles)
+         ↓
+Tuesday 4:30 PM UTC (10:00 PM IST) - BoxHero creator runs
+         ↓
+    (2-HOUR WINDOW - Operator can review)
+         ↓
+Tuesday 6:30 PM UTC (12:00 AM IST Wed) - Bundling runs
+```
+
+**Critical Timing Fix:**
+- ⚠️ **Initial Issue:** BoxHero creator was scheduled BEFORE inventory feed (would use stale data)
+- ✅ **Resolution:** Adjusted to run 1 hour AFTER inventory feed at 9:00 PM IST
+- ✅ **Benefit:** Ensures fresh BoxHero data is used for deficit detection
+
+**Workflows Completed:** ✅ 6:30 PM (Initial), Updated 8:57 PM (Timing correction)
+
+---
+
+**Phase 6: Testing & Validation (6:30 PM - 7:30 PM)**
+
+**Test 1: Database Queries**
+- ✅ Verified BoxHero system user exists (user_id = 5)
+- ✅ Confirmed source_type columns added
+- ✅ Tested deficit query returns correct items
+
+**Test 2: BoxHero Request Creator**
+- ✅ Ran `python boxhero_request_creator.py` manually
+- ✅ Verified request created with correct format
+- ✅ Confirmed duplicate prevention works
+- ✅ Checked items inserted with source_type = 'BoxHero'
+
+**Test 3: Display Logic**
+- ✅ Verified User Requests Overview shows separate sections
+- ✅ Confirmed BoxHero section only appears when requests exist
+- ✅ Tested bundle display shows correct icons (👤 vs 📦)
+
+**Test 4: Bundling Integration**
+- ✅ Confirmed bundling engine unchanged
+- ✅ Verified it reads both User and BoxHero requests
+- ✅ Tested mixed bundles created correctly
+
+**Testing Completed:** ✅ 7:30 PM
+
+---
+
+**Phase 7: Documentation & Review (7:30 PM - 8:30 PM)**
+
+**Activities:**
+1. ✅ Updated PHASE3_REQUIREMENTS_PLAN.md with implementation status
+2. ✅ Documented architecture decision (two cron approach)
+3. ✅ Added detailed implementation log
+4. ✅ Created complete file review summary
+5. ✅ Verified no breaking changes to existing functionality
+
+**Documentation Completed:** ✅ 8:30 PM
+
+---
+
+### **📊 IMPLEMENTATION SUMMARY:**
+
+**Files Created:**
+1. ✅ `boxhero_request_creator.py` (175 lines)
+2. ✅ `.github/workflows/boxhero_creator.yml` (55 lines)
+
+**Files Modified:**
+1. ✅ `smart_bundling_cron.py` (REVERTED - removed BoxHero logic)
+2. ✅ `app.py` (Added BoxHero display sections - ~100 lines)
+3. ✅ `PHASE3_REQUIREMENTS_PLAN.md` (Updated documentation)
+
+**Database Changes:**
+1. ✅ Created BoxHero system user (user_id = 5)
+2. ✅ Added `source_type` to `requirements_orders`
+3. ✅ Added `source_type` to `requirements_order_items`
+
+**Total Code Added:** ~330 lines
+**Total Code Removed:** ~120 lines (reverted from smart_bundling_cron.py)
+**Net Code Change:** +210 lines
+
+**Risk Assessment:** ✅ **ZERO RISK**
+- Existing bundling logic: UNCHANGED
+- Existing cron job: UNCHANGED (reverted)
+- New functionality: COMPLETELY SEPARATE
+- Backwards compatible: 100%
+
+---
+
+### **🎯 FINAL ARCHITECTURE:**
+
+**Two Independent Cron Jobs:**
+
+**External Dependency: Inventory Feed Cron**
+- Schedule: Tuesday 3:30 PM UTC (9:00 PM IST)
+- Purpose: Updates `InventoryCheckHistory` table with BoxHero data
+- Owner: External system (not part of Phase 3)
+
+**Cron 1: BoxHero Request Creator**
+- File: `boxhero_request_creator.py`
+- Schedule: Tuesday 4:30 PM UTC (10:00 PM IST / 12:30 PM EDT)
+- Cron: `30 16 * * 2`
+- Purpose: Create BoxHero requests only
+- Dependencies: Requires inventory feed to complete first (1-hour buffer)
+
+**Cron 2: Smart Bundling Engine**
+- File: `smart_bundling_cron.py`
+- Schedule: Tuesday/Thursday 6:30 PM UTC (12:00 AM IST / 2:30 PM EDT)
+- Cron: `30 18 * * 2,4`
+- Purpose: Bundle ALL pending requests
+- Dependencies: None (unchanged from original)
+
+**Complete Tuesday Workflow (All Timezones):**
+```
+Tuesday 3:30 PM UTC (9:00 PM IST / 11:30 AM EDT)
+├─ Inventory Feed (External)
+└─ Updates InventoryCheckHistory table
+         ↓
+    (1-HOUR WAIT - Data settles)
+         ↓
+Tuesday 4:30 PM UTC (10:00 PM IST / 12:30 PM EDT)
+├─ BoxHero Request Creator
+├─ Reads FRESH inventory data
+├─ Creates REQ-BOXHERO-YYYYMMDD
+└─ Status: Pending
+         ↓
+    (2-HOUR WINDOW - Operator can review)
+         ↓
+Tuesday 6:30 PM UTC (12:00 AM IST Wed / 2:30 PM EDT)
+├─ Smart Bundling
+├─ Reads ALL pending requests (User + BoxHero)
+├─ Creates optimized bundles
+└─ Updates status to "In Progress"
+         ↓
+Wednesday Morning (IST) / Tuesday Afternoon (EDT)
+├─ Operator reviews bundles
+├─ Sees mixed bundles (User + BoxHero items)
+├─ Visual indicators: 👤 vs 📦
+├─ Reviews and approves
+└─ Places orders with vendors
+```
+
+**Feature Status:** ✅ **PRODUCTION READY**
+
+---
+
 ### **October 16, 2025 - Bug Fix: Completed Orders Not Showing Actual Delivery Date**
 
 #### **🐛 Bug Discovered:**

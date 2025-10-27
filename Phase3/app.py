@@ -1347,9 +1347,20 @@ def display_user_requests_for_operator(db):
             st.info("✅ No pending requests - all caught up!")
             return
         
-        # Group by user and request
-        requests_by_user = {}
+        # Separate user requests from BoxHero requests
+        user_requests = []
+        boxhero_requests = []
+        
         for req in pending_requests:
+            # Check if this is BoxHero request (user_id = 5)
+            if req['user_id'] == 5:
+                boxhero_requests.append(req)
+            else:
+                user_requests.append(req)
+        
+        # Group user requests by user and request
+        requests_by_user = {}
+        for req in user_requests:
             user_key = f"{req['user_id']} - {req['req_number']}"
             if user_key not in requests_by_user:
                 requests_by_user[user_key] = {
@@ -1369,29 +1380,74 @@ def display_user_requests_for_operator(db):
             })
             requests_by_user[user_key]['total_pieces'] += req['quantity']
         
-        st.write(f"**📊 Summary: {len(requests_by_user)} requests from users with {len(pending_requests)} total items**")
+        # Group BoxHero requests
+        boxhero_by_request = {}
+        for req in boxhero_requests:
+            req_key = req['req_number']
+            if req_key not in boxhero_by_request:
+                boxhero_by_request[req_key] = {
+                    'req_number': req['req_number'],
+                    'req_date': req['req_date'],
+                    'items': [],
+                    'total_pieces': 0
+                }
+            boxhero_by_request[req_key]['items'].append({
+                'item_name': req['item_name'],
+                'quantity': req['quantity'],
+                'source_sheet': req['source_sheet']
+            })
+            boxhero_by_request[req_key]['total_pieces'] += req['quantity']
         
-        # Display each request in a clean format
-        for user_key, req_data in requests_by_user.items():
-            with st.expander(f"👤 User {req_data['user_id']} - {req_data['req_number']} ({req_data['total_pieces']} pieces total)", expanded=True):
-                st.write(f"**Request Date:** {req_data['req_date']}")
-                st.write(f"**Items Requested:**")
-                
-                # Create a clean table of items
-                for i, item in enumerate(req_data['items'], 1):
-                    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
-                    with col1:
-                        st.write(f"{i}. **{item['item_name']}**")
-                    with col2:
-                        st.write(f"**{item['quantity']} pieces**")
-                    with col3:
-                        st.write(f"*{item['source_sheet']}*")
-                    with col4:
-                        if item.get('project_number'):
-                            formatted_project = format_project_display(item['project_number'], item.get('sub_project_number'))
-                            st.write(f"📋 {formatted_project}")
-                        else:
-                            st.write("—")
+        # Summary
+        total_user_items = len(user_requests)
+        total_boxhero_items = len(boxhero_requests)
+        st.write(f"**📊 Summary: {len(requests_by_user)} user requests ({total_user_items} items) + {len(boxhero_by_request)} BoxHero requests ({total_boxhero_items} items)**")
+        
+        # Display user requests
+        if requests_by_user:
+            st.subheader("👤 User Requests")
+            for user_key, req_data in requests_by_user.items():
+                with st.expander(f"👤 User {req_data['user_id']} - {req_data['req_number']} ({req_data['total_pieces']} pieces total)", expanded=True):
+                    st.write(f"**Request Date:** {req_data['req_date']}")
+                    st.write(f"**Items Requested:**")
+                    
+                    # Create a clean table of items
+                    for i, item in enumerate(req_data['items'], 1):
+                        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                        with col1:
+                            st.write(f"{i}. **{item['item_name']}**")
+                        with col2:
+                            st.write(f"**{item['quantity']} pieces**")
+                        with col3:
+                            st.write(f"*{item['source_sheet']}*")
+                        with col4:
+                            if item.get('project_number'):
+                                formatted_project = format_project_display(item['project_number'], item.get('sub_project_number'))
+                                st.write(f"📋 {formatted_project}")
+                            else:
+                                st.write("—")
+        
+        # Display BoxHero requests separately
+        if boxhero_by_request:
+            st.markdown("---")
+            st.subheader("📦 BoxHero Inventory Restock")
+            st.info("⚠️ These items are automatically generated based on inventory levels falling below threshold")
+            
+            for req_key, req_data in boxhero_by_request.items():
+                with st.expander(f"📦 {req_data['req_number']} - BoxHero Auto-Restock ({req_data['total_pieces']} pieces total)", expanded=True):
+                    st.write(f"**Generated Date:** {req_data['req_date']}")
+                    st.warning("🔄 **Automatic Restock Request** - Items below reorder threshold")
+                    st.write(f"**Items Needing Restock:**")
+                    
+                    # Create a clean table of items
+                    for i, item in enumerate(req_data['items'], 1):
+                        col1, col2, col3 = st.columns([4, 1, 1])
+                        with col1:
+                            st.write(f"{i}. **{item['item_name']}**")
+                        with col2:
+                            st.write(f"**{item['quantity']} pieces**")
+                        with col3:
+                            st.write(f"*{item['source_sheet']}*")
         
         st.markdown("---")
         st.info("💡 **Next Step:** Bundles will be created automatically by the system. Check 'Active Bundles' tab to manage them.")
@@ -1949,7 +2005,18 @@ def display_active_bundles_for_operator(db):
                             first_row = True
                             
                             for uid, qty in breakdown.items():
-                                uname = user_name_map.get(int(uid), f"User {uid}") if str(uid).isdigit() else f"User {uid}"
+                                # Check if this is BoxHero system user (user_id = 5)
+                                is_boxhero = (int(uid) == 5) if str(uid).isdigit() else False
+                                
+                                if is_boxhero:
+                                    # BoxHero item - show special indicator
+                                    uname = "BoxHero Restock"
+                                    user_icon = "📦"
+                                else:
+                                    # Regular user item
+                                    uname = user_name_map.get(int(uid), f"User {uid}") if str(uid).isdigit() else f"User {uid}"
+                                    user_icon = "👤"
+                                
                                 user_project_breakdown = [(k[1], v) for k, v in project_map.items() if k[0] == int(uid) and k[1]]
                                 
                                 if user_project_breakdown:
@@ -1971,7 +2038,7 @@ def display_active_bundles_for_operator(db):
                                         
                                         # User cell (rowspan if multiple projects)
                                         if idx == 0:
-                                            html_table += f'<td rowspan="{user_rows}"><span class="user-name">👤 {uname}</span></td>'
+                                            html_table += f'<td rowspan="{user_rows}"><span class="user-name">{user_icon} {uname}</span></td>'
                                         
                                         # Project and quantity
                                         formatted_project = format_project_display(project_num, None)
@@ -1981,7 +2048,7 @@ def display_active_bundles_for_operator(db):
                                         """
                                         html_table += "</tr>"
                                 else:
-                                    # No project info
+                                    # No project info (typical for BoxHero items)
                                     html_table += "<tr>"
                                     if first_row:
                                         html_table += f"""
@@ -1993,7 +2060,7 @@ def display_active_bundles_for_operator(db):
                                         """
                                         first_row = False
                                     html_table += f"""
-                                    <td><span class="user-name">👤 {uname}</span></td>
+                                    <td><span class="user-name">{user_icon} {uname}</span></td>
                                     <td>—</td>
                                     <td class="qty-cell">{qty} pcs</td>
                                     </tr>
