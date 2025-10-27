@@ -91,8 +91,8 @@ def create_boxhero_requests(db: DatabaseConnector) -> int:
         # Insert into requirements_orders
         insert_order = """
         INSERT INTO requirements_orders 
-        (user_id, req_number, req_date, status, source_type, project_number)
-        VALUES (?, ?, ?, 'Pending', 'BoxHero', NULL)
+        (user_id, req_number, req_date, status, source_type)
+        VALUES (?, ?, ?, 'Pending', 'BoxHero')
         """
         
         db.execute_insert(insert_order, (
