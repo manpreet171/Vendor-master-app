@@ -54,11 +54,15 @@ class SmartBundlingEngine:
             self.db.update_requests_to_in_progress(request_ids)
             print(f"Updated {len(request_ids)} requests to 'In Progress'")
             
-            # Step 6: Create multiple bundles in database (one per vendor)
+            # Step 6: Create/merge bundles in database (one per vendor)
             created_bundles = []
+            merged_bundles = []
             timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
             
             for i, bundle in enumerate(optimization_result['bundles'], 1):
+                vendor_id = bundle['vendor_id']
+                vendor_name = bundle['vendor_name']
+                
                 # Find which requests contain items in this bundle
                 bundle_item_ids = [item['item_id'] for item in bundle['items_list']]
                 bundle_request_ids = list(set([
@@ -67,31 +71,66 @@ class SmartBundlingEngine:
                     if req['item_id'] in bundle_item_ids
                 ]))
                 
-                bundle_data = {
-                    'timestamp': f"{timestamp}-{i:02d}",
-                    'total_requests': len(bundle_request_ids),
-                    'total_items': bundle['total_quantity'],
-                    'vendor_recommendations': [bundle],  # Single vendor per bundle
-                    'items': bundle['items_list'],
-                    'request_ids': bundle_request_ids,  # Only requests with items in THIS bundle
-                    'bundle_number': i,
-                    'vendor_name': bundle['vendor_name']
-                }
+                # Check for existing Active/Reviewed bundle for this vendor
+                existing_bundle = self.db.get_active_bundle_for_vendor(vendor_id)
                 
-                bundle_id = self.db.create_bundle(bundle_data)
-                created_bundles.append({
-                    'bundle_id': bundle_id,
-                    'bundle_name': f"BUNDLE-{bundle_data['timestamp']}",
-                    'vendor_name': bundle['vendor_name'],
-                    'items_count': bundle['items_count'],
-                    'total_quantity': bundle['total_quantity']
-                })
-                print(f"Created Bundle {i}: {bundle['vendor_name']} - {bundle['items_count']} items")
+                if existing_bundle:
+                    # MERGE: Add items to existing bundle
+                    print(f"\n[MERGE] Found existing bundle for {vendor_name}")
+                    print(f"        Bundle ID: {existing_bundle['bundle_id']}")
+                    print(f"        Status: {existing_bundle['status']}")
+                    print(f"        Merging {len(bundle['items_list'])} items...")
+                    
+                    merge_result = self.db.merge_items_into_bundle(
+                        existing_bundle['bundle_id'],
+                        bundle['items_list'],
+                        bundle_request_ids
+                    )
+                    
+                    if merge_result['success']:
+                        merged_bundles.append({
+                            'bundle_id': existing_bundle['bundle_id'],
+                            'bundle_name': merge_result['new_bundle_name'],
+                            'vendor_name': vendor_name,
+                            'vendor_id': vendor_id,
+                            'items_added': merge_result['items_added'],
+                            'items_updated': merge_result['items_updated'],
+                            'status_changed': merge_result['status_changed'],
+                            'merge_reason': merge_result['merge_reason'],
+                            'items_count': bundle['items_count'],
+                            'total_quantity': bundle['total_quantity']
+                        })
+                        print(f"        ✅ {merge_result['message']}")
+                    else:
+                        print(f"        ❌ Merge failed: {merge_result['error']}")
+                        print(f"        Falling back to creating new bundle...")
+                        # Fallback: Create new bundle if merge fails
+                        bundle_id = self._create_new_bundle(bundle, bundle_request_ids, timestamp, i)
+                        created_bundles.append({
+                            'bundle_id': bundle_id,
+                            'bundle_name': f"BUNDLE-{timestamp}-{i:02d}",
+                            'vendor_name': vendor_name,
+                            'items_count': bundle['items_count'],
+                            'total_quantity': bundle['total_quantity']
+                        })
+                else:
+                    # CREATE: New bundle (no existing bundle for this vendor)
+                    print(f"\n[CREATE] Creating new bundle for {vendor_name}")
+                    bundle_id = self._create_new_bundle(bundle, bundle_request_ids, timestamp, i)
+                    created_bundles.append({
+                        'bundle_id': bundle_id,
+                        'bundle_name': f"BUNDLE-{timestamp}-{i:02d}",
+                        'vendor_name': vendor_name,
+                        'items_count': bundle['items_count'],
+                        'total_quantity': bundle['total_quantity']
+                    })
+                    print(f"        ✅ Created Bundle {i}: {vendor_name} - {bundle['items_count']} items")
             
             return {
                 "success": True,
                 "bundles_created": created_bundles,
-                "total_bundles": len(created_bundles),
+                "bundles_merged": merged_bundles,
+                "total_bundles": len(created_bundles) + len(merged_bundles),
                 "total_requests": len(request_ids),
                 "total_items": sum(item['total_quantity'] for item in aggregated_items.values()),
                 "coverage_percentage": optimization_result['coverage_percentage'],
@@ -104,6 +143,33 @@ class SmartBundlingEngine:
         
         finally:
             self.db.close_connection()
+    
+    def _create_new_bundle(self, bundle, request_ids, timestamp, bundle_number):
+        """
+        Helper method to create new bundle
+        Extracted from existing code for reusability
+        
+        Args:
+            bundle: Bundle data from optimization result
+            request_ids: List of request IDs for this bundle
+            timestamp: Timestamp string for bundle naming
+            bundle_number: Sequential bundle number
+        
+        Returns:
+            int: Created bundle ID
+        """
+        bundle_data = {
+            'timestamp': f"{timestamp}-{bundle_number:02d}",
+            'total_requests': len(request_ids),
+            'total_items': bundle['total_quantity'],
+            'vendor_recommendations': [bundle],
+            'items': bundle['items_list'],
+            'request_ids': request_ids,
+            'bundle_number': bundle_number,
+            'vendor_name': bundle['vendor_name']
+        }
+        
+        return self.db.create_bundle(bundle_data)
     
     def aggregate_items(self, pending_requests):
         """Aggregate items by item_id and calculate total quantities"""

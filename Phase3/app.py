@@ -1803,6 +1803,13 @@ def display_active_bundles_for_operator(db):
         
         # Display bundles in operator-friendly format
         for bundle in bundles:
+            # Build expander title with merge badge
+            merge_badge = ""
+            if bundle.get('merge_count', 0) > 0:
+                merge_badge = f" 🔄 Updated {bundle['merge_count']}x"
+            
+            expander_title = f"📦 {bundle['bundle_name']}{merge_badge} - {get_status_badge(bundle['status'])}"
+            
             # Add checkbox ONLY for Reviewed bundles (for approval)
             if bundle['status'] == 'Reviewed':
                 col_check, col_exp = st.columns([0.5, 11.5])
@@ -1816,11 +1823,31 @@ def display_active_bundles_for_operator(db):
                             st.session_state.selected_bundles.remove(bundle['bundle_id'])
                 
                 with col_exp:
-                    expander_obj = st.expander(f"📦 {bundle['bundle_name']} - {get_status_badge(bundle['status'])}", expanded=False)
+                    expander_obj = st.expander(expander_title, expanded=False)
             else:
-                expander_obj = st.expander(f"📦 {bundle['bundle_name']} - {get_status_badge(bundle['status'])}", expanded=False)
+                expander_obj = st.expander(expander_title, expanded=False)
             
             with expander_obj:
+                # Show merge indicators if bundle was updated
+                merge_count = bundle.get('merge_count', 0)
+                last_merged = bundle.get('last_merged_at')
+                merge_reason = bundle.get('merge_reason')
+                
+                if merge_count and merge_count > 0:
+                    st.info(f"🔄 **This bundle has been updated {merge_count} time(s)**")
+                    
+                    if last_merged:
+                        if hasattr(last_merged, 'strftime'):
+                            last_merged_str = last_merged.strftime('%b %d, %Y at %I:%M %p')
+                        else:
+                            last_merged_str = str(last_merged)
+                        st.caption(f"Last updated: {last_merged_str}")
+                    
+                    if merge_reason:
+                        st.warning(f"ℹ️ {merge_reason}")
+                    
+                    st.markdown("---")
+                
                 # Show rejection warning if bundle was rejected by Operation Team
                 if bundle['status'] == 'Active' and bundle.get('rejection_reason'):
                     st.error("⚠️ **REJECTED BY OPERATION TEAM**")
@@ -3459,6 +3486,9 @@ def get_bundles_with_vendor_info(db):
             b.expected_delivery_date,
             b.actual_delivery_date,
             b.packing_slip_code,
+            b.merge_count,
+            b.last_merged_at,
+            b.merge_reason,
             v.vendor_name,
             v.vendor_email,
             v.vendor_phone,

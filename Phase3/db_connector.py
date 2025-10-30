@@ -420,6 +420,232 @@ class DatabaseConnector:
         results = self.execute_query(query, (vendor_id,))
         return results[0] if results else None
     
+    def merge_items_into_bundle(self, bundle_id, new_items, request_ids):
+        """
+        Merge new items into existing bundle
+        
+        Args:
+            bundle_id (int): Target bundle ID to merge into
+            new_items (list): List of items to add/update
+                [{
+                    'item_id': int,
+                    'item_name': str,
+                    'quantity': int,
+                    'user_breakdown': {user_id: quantity, ...}
+                }, ...]
+            request_ids (list): List of request IDs to link to bundle
+        
+        Returns:
+            dict: {
+                'success': bool,
+                'items_added': int,
+                'items_updated': int,
+                'status_changed': bool,
+                'new_bundle_name': str,
+                'merge_reason': str,
+                'message': str,
+                'error': str (if failed)
+            }
+        """
+        try:
+            # Step 1: Get current bundle status
+            bundle_query = """
+            SELECT status, bundle_name 
+            FROM requirements_bundles 
+            WHERE bundle_id = ?
+            """
+            bundle_result = self.execute_query(bundle_query, (bundle_id,))
+            
+            if not bundle_result:
+                return {
+                    'success': False,
+                    'error': f'Bundle {bundle_id} not found'
+                }
+            
+            bundle = bundle_result[0]
+            original_status = bundle['status']
+            status_changed = False
+            items_added = 0
+            items_updated = 0
+            
+            # Step 2: If Reviewed, revert to Active
+            if original_status == 'Reviewed':
+                revert_query = """
+                UPDATE requirements_bundles 
+                SET status = 'Active',
+                    reviewed_at = NULL
+                WHERE bundle_id = ?
+                """
+                self.execute_insert(revert_query, (bundle_id,))
+                status_changed = True
+                print(f"[MERGE] Bundle {bundle_id} reverted from Reviewed to Active")
+            
+            # Step 3: Process each item
+            for item in new_items:
+                item_id = item['item_id']
+                new_quantity = item['quantity']
+                new_breakdown = item['user_breakdown']
+                
+                # Check if item already exists in bundle
+                check_query = """
+                SELECT total_quantity, user_breakdown 
+                FROM requirements_bundle_items 
+                WHERE bundle_id = ? AND item_id = ?
+                """
+                existing = self.execute_query(check_query, (bundle_id, item_id))
+                
+                if existing and len(existing) > 0:
+                    # UPDATE existing item - merge user breakdowns
+                    old_quantity = existing[0]['total_quantity']
+                    old_breakdown_str = existing[0]['user_breakdown']
+                    
+                    # Parse existing breakdown
+                    try:
+                        old_breakdown = json.loads(old_breakdown_str) if old_breakdown_str else {}
+                    except:
+                        old_breakdown = {}
+                    
+                    # Merge user breakdowns
+                    merged_breakdown = old_breakdown.copy()
+                    for user_id, qty in new_breakdown.items():
+                        user_id_str = str(user_id)  # Ensure string key
+                        merged_breakdown[user_id_str] = merged_breakdown.get(user_id_str, 0) + qty
+                    
+                    # Calculate new total
+                    new_total = sum(merged_breakdown.values())
+                    
+                    # Update the item
+                    update_query = """
+                    UPDATE requirements_bundle_items 
+                    SET total_quantity = ?,
+                        user_breakdown = ?
+                    WHERE bundle_id = ? AND item_id = ?
+                    """
+                    self.execute_insert(update_query, (
+                        new_total,
+                        json.dumps(merged_breakdown),
+                        bundle_id,
+                        item_id
+                    ))
+                    
+                    items_updated += 1
+                    print(f"[MERGE] Updated item {item_id}: {old_quantity} → {new_total} pcs")
+                    
+                else:
+                    # INSERT new item
+                    insert_query = """
+                    INSERT INTO requirements_bundle_items 
+                    (bundle_id, item_id, total_quantity, user_breakdown)
+                    VALUES (?, ?, ?, ?)
+                    """
+                    
+                    # Ensure user_breakdown keys are strings
+                    breakdown_str_keys = {str(k): v for k, v in new_breakdown.items()}
+                    
+                    self.execute_insert(insert_query, (
+                        bundle_id,
+                        item_id,
+                        new_quantity,
+                        json.dumps(breakdown_str_keys)
+                    ))
+                    
+                    items_added += 1
+                    print(f"[MERGE] Added new item {item_id}: {new_quantity} pcs")
+            
+            # Step 4: Recalculate bundle totals
+            totals_query = """
+            SELECT 
+                COUNT(*) as item_count, 
+                SUM(total_quantity) as total_qty
+            FROM requirements_bundle_items
+            WHERE bundle_id = ?
+            """
+            totals = self.execute_query(totals_query, (bundle_id,))[0]
+            
+            total_items = totals['item_count'] or 0
+            total_quantity = totals['total_qty'] or 0
+            
+            # Step 5: Update bundle metadata with merge info
+            timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+            new_bundle_name = f"BUNDLE-{timestamp}"
+            
+            # Build merge reason message
+            merge_reason = f"Bundling cron added {items_added} new items"
+            if items_updated > 0:
+                merge_reason += f" and updated {items_updated} existing items"
+            if status_changed:
+                merge_reason += " (Reverted from Reviewed status)"
+            
+            update_bundle_query = """
+            UPDATE requirements_bundles 
+            SET total_items = ?,
+                total_quantity = ?,
+                bundle_name = ?,
+                merge_count = ISNULL(merge_count, 0) + 1,
+                last_merged_at = GETDATE(),
+                merge_reason = ?
+            WHERE bundle_id = ?
+            """
+            self.execute_insert(update_bundle_query, (
+                total_items,
+                total_quantity,
+                new_bundle_name,
+                merge_reason,
+                bundle_id
+            ))
+            
+            print(f"[MERGE] Updated bundle totals: {total_items} items, {total_quantity} pieces")
+            print(f"[MERGE] Bundle renamed: {bundle['bundle_name']} → {new_bundle_name}")
+            
+            # Step 6: Link new requests to bundle
+            requests_linked = 0
+            for req_id in request_ids:
+                # Check if already linked
+                check_mapping = """
+                SELECT COUNT(*) as count 
+                FROM requirements_bundle_mapping 
+                WHERE bundle_id = ? AND req_id = ?
+                """
+                exists = self.execute_query(check_mapping, (bundle_id, req_id))
+                
+                if exists and exists[0]['count'] == 0:
+                    # Link request to bundle
+                    insert_mapping = """
+                    INSERT INTO requirements_bundle_mapping (bundle_id, req_id)
+                    VALUES (?, ?)
+                    """
+                    self.execute_insert(insert_mapping, (bundle_id, req_id))
+                    requests_linked += 1
+            
+            print(f"[MERGE] Linked {requests_linked} new requests to bundle")
+            
+            # Commit transaction
+            self.conn.commit()
+            
+            # Build success message
+            message = f"Merged {items_added} new items and updated {items_updated} existing items"
+            if status_changed:
+                message += " (Bundle reverted to Active for re-review)"
+            
+            return {
+                'success': True,
+                'items_added': items_added,
+                'items_updated': items_updated,
+                'status_changed': status_changed,
+                'new_bundle_name': new_bundle_name,
+                'merge_reason': merge_reason,
+                'message': message
+            }
+            
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            print(f"[MERGE] ERROR: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
     def get_bundles_for_request(self, req_id):
         """Get all bundles that contain items from this request"""
         query = """

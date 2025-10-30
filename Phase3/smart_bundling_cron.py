@@ -78,6 +78,11 @@ def _build_email_bodies(result: dict, dims_map: dict | None = None) -> tuple[str
     total_bundles = result.get("total_bundles", 0)
     total_requests = result.get("total_requests", 0)
     coverage = result.get("coverage_percentage", 0)
+    
+    # NEW: Get created vs merged bundles
+    created_bundles = result.get("bundles_created", [])
+    merged_bundles = result.get("bundles_merged", [])
+    
     opt = result.get("optimization_result", {}) or {}
     bundles = opt.get("bundles", []) or []
     # Compute distinct items and total pieces across bundles
@@ -94,12 +99,29 @@ def _build_email_bodies(result: dict, dims_map: dict | None = None) -> tuple[str
     lines = []
     lines.append("Smart Bundling Summary")
     lines.append("")
-    lines.append(f"Bundles: {total_bundles}")
+    lines.append(f"New Bundles Created: {len(created_bundles)}")
+    lines.append(f"Existing Bundles Updated: {len(merged_bundles)}")
+    lines.append(f"Total Bundles: {total_bundles}")
     lines.append(f"Requests Processed: {total_requests}")
     lines.append(f"Distinct Items: {distinct_items}")
     lines.append(f"Total Pieces: {pieces_sum}")
     lines.append(f"Coverage: {coverage}%")
     lines.append("")
+    
+    # Show merged bundles section
+    if merged_bundles:
+        lines.append("UPDATED BUNDLES:")
+        for merged in merged_bundles:
+            lines.append(f"- {merged['vendor_name']} (Bundle: {merged['bundle_name']})")
+            lines.append(f"  Added: {merged['items_added']} items, Updated: {merged['items_updated']} items")
+            if merged.get('status_changed'):
+                lines.append(f"  ⚠️ Reverted to Active for re-review")
+        lines.append("")
+    
+    # Show new bundles section
+    if created_bundles:
+        lines.append("NEW BUNDLES:")
+    
     for b in bundles:
         vendor = b.get('vendor_name', 'Unknown Vendor')
         items_count = b.get('items_count', len(b.get('items_list') or []))
@@ -167,15 +189,57 @@ def _build_email_bodies(result: dict, dims_map: dict | None = None) -> tuple[str
         )
         vendor_blocks.append(header + contact + table)
 
+    # Build merged bundles HTML section
+    merged_section_html = ""
+    if merged_bundles:
+        merged_blocks = []
+        for merged in merged_bundles:
+            status_badge = ""
+            if merged.get('status_changed'):
+                status_badge = "<div style='color:#ff6b00;font-weight:600;margin-top:6px;'>⚠️ Reverted to Active for re-review</div>"
+            
+            merged_block = f"""
+            <div style='margin:16px 0;padding:12px;background:#fff3cd;border-left:4px solid #ffc107;'>
+                <div style='font-weight:600;font-size:16px;'>{merged['vendor_name']}</div>
+                <div style='color:#666;margin:4px 0;font-size:13px;'>Bundle: {merged['bundle_name']}</div>
+                <div style='margin:6px 0;'>
+                    <span style='color:#28a745;font-weight:500;'>Added: {merged['items_added']} items</span> | 
+                    <span style='color:#007bff;font-weight:500;'>Updated: {merged['items_updated']} items</span>
+                </div>
+                {status_badge}
+            </div>
+            """
+            merged_blocks.append(merged_block)
+        
+        merged_section_html = f"""
+        <h3 style='margin:20px 0 10px;color:#856404;'>Updated Bundles</h3>
+        {''.join(merged_blocks)}
+        """
+    
+    # Build new bundles HTML section
+    new_bundles_html = ""
+    if created_bundles:
+        new_bundles_html = f"""
+        <h3 style='margin:20px 0 10px;color:#004085;'>New Bundles</h3>
+        {''.join(vendor_blocks) if vendor_blocks else '<div>No new bundles created.</div>'}
+        """
+    elif vendor_blocks:
+        # If no created_bundles list but we have vendor_blocks, show them without header
+        new_bundles_html = ''.join(vendor_blocks)
+    
     html = f"""
     <div style="font-family:Segoe UI, Arial, sans-serif; font-size:14px; color:#222;">
       <h2 style="margin:0 0 8px;">Smart Bundling Summary</h2>
-      <div style="margin:6px 0;">Bundles: {total_bundles}</div>
+      <div style="margin:6px 0;">New Bundles Created: <strong>{len(created_bundles)}</strong></div>
+      <div style="margin:6px 0;">Existing Bundles Updated: <strong>{len(merged_bundles)}</strong></div>
+      <div style="margin:6px 0;">Total Bundles: <strong>{total_bundles}</strong></div>
       <div style="margin:6px 0;">Requests Processed: {total_requests}</div>
       <div style="margin:6px 0;">Distinct Items: {distinct_items}</div>
       <div style="margin:6px 0;">Total Pieces: {pieces_sum}</div>
       <div style="margin:6px 0 16px;">Coverage: {coverage}%</div>
-      {''.join(vendor_blocks) if vendor_blocks else '<div>No bundles created.</div>'}
+      
+      {merged_section_html}
+      {new_bundles_html}
     </div>
     """
     return plain_text, html
