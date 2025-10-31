@@ -3,7 +3,7 @@ import streamlit as st
 import os
 import json
 import time
-from datetime import datetime
+from datetime import datetime, date
 from dotenv import load_dotenv
 from db_connector import DatabaseConnector
 from bundling_engine import SmartBundlingEngine
@@ -304,7 +304,6 @@ def display_boxhero_tab(db):
             project_number, project_name, parent_project_id, sub_project_number = display_project_selector(db, "bh")
             
             # Date needed input (optional)
-            from datetime import datetime, date
             date_needed = st.date_input(
                 "📅 Date Needed (Optional)",
                 value=None,
