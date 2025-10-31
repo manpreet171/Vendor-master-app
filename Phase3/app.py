@@ -303,6 +303,16 @@ def display_boxhero_tab(db):
             # Project selection
             project_number, project_name, parent_project_id, sub_project_number = display_project_selector(db, "bh")
             
+            # Date needed input (optional)
+            from datetime import datetime, date
+            date_needed = st.date_input(
+                "📅 Date Needed (Optional)",
+                value=None,
+                min_value=date.today(),
+                help="When do you need this item delivered? Leave blank if no specific deadline.",
+                key="bh_date_needed"
+            )
+            
             # Quantity input
             col1, col2 = st.columns([2, 1])
             
@@ -318,7 +328,7 @@ def display_boxhero_tab(db):
                 # Only enable Add to Cart if project is selected
                 if project_number:
                     if st.button("🛒 Add to Cart", type="primary", key="bh_add_to_cart"):
-                        result = add_to_cart(st.session_state.bh_selected_item, quantity, "BoxHero", project_number, project_name, parent_project_id, sub_project_number, db)
+                        result = add_to_cart(st.session_state.bh_selected_item, quantity, "BoxHero", project_number, project_name, parent_project_id, sub_project_number, date_needed, db)
                         if result == "added":
                             st.success("✅ Added to cart!")
                             # Reset flow for next selection
@@ -513,6 +523,15 @@ def display_raw_materials_tab(db):
             # Project selection
             project_number, project_name, parent_project_id, sub_project_number = display_project_selector(db, "rm")
             
+            # Date needed input (optional)
+            date_needed = st.date_input(
+                "📅 Date Needed (Optional)",
+                value=None,
+                min_value=date.today(),
+                help="When do you need this item delivered? Leave blank if no specific deadline.",
+                key="rm_date_needed"
+            )
+            
             # Quantity input
             col1, col2 = st.columns([2, 1])
             
@@ -528,7 +547,7 @@ def display_raw_materials_tab(db):
                 # Only enable Add to Cart if project is selected
                 if project_number:
                     if st.button("🛒 Add to Cart", type="primary", key="rm_add_to_cart"):
-                        result = add_to_cart(st.session_state.rm_selected_item, quantity, "Raw Materials", project_number, project_name, parent_project_id, sub_project_number, db)
+                        result = add_to_cart(st.session_state.rm_selected_item, quantity, "Raw Materials", project_number, project_name, parent_project_id, sub_project_number, date_needed, db)
                         if result == "added":
                             st.success("✅ Added to cart!")
                             # Reset flow for next selection
@@ -726,8 +745,8 @@ def format_project_display(project_number, sub_project_number=None):
         return f"{project_number} ({sub_project_number})"
     return project_number
 
-def add_to_cart(item, quantity, category, project_number=None, project_name=None, parent_project_id=None, sub_project_number=None, db=None):
-    """Add item to cart with project info"""
+def add_to_cart(item, quantity, category, project_number=None, project_name=None, parent_project_id=None, sub_project_number=None, date_needed=None, db=None):
+    """Add item to cart with project info and optional date needed"""
     try:
         # Check if user already has this item+project in pending or locked status
         if 'user_id' in st.session_state and db:
@@ -788,7 +807,8 @@ def add_to_cart(item, quantity, category, project_number=None, project_name=None
             'project_number': project_number,
             'project_name': project_name,
             'parent_project_id': parent_project_id,
-            'sub_project_number': sub_project_number
+            'sub_project_number': sub_project_number,
+            'date_needed': date_needed
         }
         
         st.session_state.cart_items.append(cart_item)
@@ -820,6 +840,9 @@ def display_cart_tab(db):
             if cart_item.get('project_number'):
                 formatted_project = format_project_display(cart_item['project_number'], cart_item.get('sub_project_number'))
                 st.caption(f"📋 Project: {formatted_project} - {cart_item.get('project_name', 'N/A')}")
+            # Date needed
+            if cart_item.get('date_needed'):
+                st.caption(f"📅 Needed: {cart_item['date_needed']}")
             # Dimensions if available
             dims = []
             h = fmt_dim(cart_item.get('height'))
@@ -1028,6 +1051,10 @@ def display_my_requests_tab(db):
                                 if item.get('project_number'):
                                     formatted_project = format_project_display(item['project_number'], item.get('sub_project_number'))
                                     item_desc += f" | 📋 Project: {formatted_project}"
+                                
+                                # Add date needed if available
+                                if item.get('date_needed'):
+                                    item_desc += f" | 📅 Needed: {item['date_needed']}"
                         
                                 # Show quantity with edit option for pending requests
                                 if request['status'] == 'Pending':
@@ -1987,9 +2014,10 @@ def display_active_bundles_for_operator(db):
                     <table class="bundle-table">
                         <thead>
                             <tr>
-                                <th style="width: 35%;">Item</th>
-                                <th style="width: 25%;">User</th>
-                                <th style="width: 25%;">Project</th>
+                                <th style="width: 30%;">Item</th>
+                                <th style="width: 20%;">User</th>
+                                <th style="width: 20%;">Project</th>
+                                <th style="width: 15%;">Date Needed</th>
                                 <th style="width: 15%; text-align: right;">Quantity</th>
                             </tr>
                         </thead>
@@ -2021,9 +2049,12 @@ def display_active_bundles_for_operator(db):
                             # Get project breakdown for this item
                             project_breakdown = db.get_bundle_item_project_breakdown(bundle.get('bundle_id'), it['item_id'])
                             project_map = {}
+                            date_map = {}
                             for pb in project_breakdown or []:
                                 key = (pb['user_id'], pb.get('project_number'))
                                 project_map[key] = project_map.get(key, 0) + pb['quantity']
+                                if pb.get('date_needed'):
+                                    date_map[key] = pb['date_needed']
                             
                             # Count total rows for this item (for rowspan)
                             total_rows = sum(len([(k[1], v) for k, v in project_map.items() if k[0] == int(uid) and k[1]]) or 1 
@@ -2068,10 +2099,22 @@ def display_active_bundles_for_operator(db):
                                         if idx == 0:
                                             html_table += f'<td rowspan="{user_rows}"><span class="user-name">{user_icon} {uname}</span></td>'
                                         
-                                        # Project and quantity
+                                        # Project cell
                                         formatted_project = format_project_display(project_num, None)
                                         html_table += f"""
                                         <td><span class="project-icon">📋</span>{formatted_project}</td>
+                                        """
+                                        
+                                        # Date needed cell
+                                        date_key = (int(uid), project_num)
+                                        date_value = date_map.get(date_key, None)
+                                        date_display = str(date_value) if date_value else "—"
+                                        html_table += f"""
+                                        <td style="color:#666;">{date_display}</td>
+                                        """
+                                        
+                                        # Quantity cell
+                                        html_table += f"""
                                         <td class="qty-cell">{project_qty} pcs</td>
                                         """
                                         html_table += "</tr>"
@@ -2089,6 +2132,7 @@ def display_active_bundles_for_operator(db):
                                         first_row = False
                                     html_table += f'<td><span class="user-name">{user_icon} {uname}</span></td>'
                                     html_table += '<td>—</td>'
+                                    html_table += '<td>—</td>'
                                     html_table += f'<td class="qty-cell">{qty} pcs</td>'
                                     html_table += '</tr>'
                         else:
@@ -2100,6 +2144,7 @@ def display_active_bundles_for_operator(db):
                                     <div class="item-dims">{dim_txt}</div>
                                     <div class="item-total">Total: {it['total_quantity']} pcs{cost_txt}</div>
                                 </td>
+                                <td>—</td>
                                 <td>—</td>
                                 <td>—</td>
                                 <td class="qty-cell">{it['total_quantity']} pcs</td>

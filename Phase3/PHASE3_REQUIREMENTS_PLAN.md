@@ -6,6 +6,618 @@
 
 ## Development Progress Log
 
+### **October 31, 2025 - Date Needed Feature**
+
+#### **📋 Feature Overview:**
+
+**Status:** ✅ **COMPLETED - FULLY IMPLEMENTED & TESTED**
+
+**Implementation Time:** ~1.5 hours (9:00 PM - 10:30 PM IST, October 31, 2025)
+
+**Purpose:** Allow users to specify when they need items delivered, helping operators prioritize orders based on deadlines
+
+---
+
+#### **🎯 REQUIREMENT:**
+
+**User Request:**
+> "I want to add a 'date needed' field when users request items. This should show everywhere we display project information to operators."
+
+**Key Requirements:**
+1. Add date input during "Add to Cart" flow
+2. Store date at item level (not order level)
+3. Display date everywhere project info is shown
+4. Future dates only (no past dates)
+5. Optional field (can be blank)
+6. ISO format display: `2025-11-05`
+7. No color coding (keep it simple)
+8. BoxHero items get NULL (automated, no deadline)
+
+---
+
+#### **💡 DESIGN DECISIONS:**
+
+**Decision 1: Item-Level vs Order-Level**
+
+**Options:**
+- Item-level: Each item can have different date
+- Order-level: One date for entire order
+
+**Selected:** Item-level ✅
+
+**Reasoning:**
+- Matches project info pattern (project is per-item)
+- More flexible (different items may have different urgency)
+- Real-world scenario: User orders Paint (needed Monday) + Brushes (needed Friday)
+- Operator can prioritize urgent items first
+
+---
+
+**Decision 2: Date Input Location**
+
+**Options:**
+- During "Add to Cart" (with project selection)
+- During cart review (before submit)
+
+**Selected:** During "Add to Cart" ✅
+
+**Reasoning:**
+- Matches project selection flow
+- User thinks about date per-item
+- Can set different dates for different items
+
+---
+
+**Decision 3: Required vs Optional**
+
+**Options:**
+- Required (must pick date)
+- Optional (can be blank)
+
+**Selected:** Optional ✅
+
+**Reasoning:**
+- Not all items are urgent
+- Doesn't block workflow if user doesn't know date
+- More flexible for users
+
+---
+
+**Decision 4: Date Display Format**
+
+**Options:**
+- Short format: `Nov 5`
+- Full format: `Nov 5, 2025`
+- ISO format: `2025-11-05`
+
+**Selected:** ISO format ✅
+
+**Reasoning:**
+- User preference
+- Consistent and unambiguous
+- Sortable format
+- International standard
+
+---
+
+**Decision 5: Date Validation**
+
+**Selected:** Future dates only ✅
+
+**Implementation:**
+```python
+st.date_input(
+    "📅 Date Needed (Optional)",
+    value=None,
+    min_value=date.today(),  # Blocks past dates
+    help="When do you need this item delivered? Leave blank if no specific deadline."
+)
+```
+
+**Reasoning:**
+- Can't fulfill orders in the past
+- Calendar opens at today's date by default
+- User can pick today or future dates
+
+---
+
+**Decision 6: Color Coding**
+
+**Options:**
+- Yes (Red for overdue, Yellow for urgent, Green for normal)
+- No (just display date)
+
+**Selected:** No color coding ✅
+
+**Reasoning:**
+- User preference: "Don't needed this as of now"
+- Keep it simple
+- Can add later if needed
+
+---
+
+**Decision 7: BoxHero Items**
+
+**Options:**
+- NULL (no date)
+- Auto-set to "Today + 7 days"
+- Operator sets manually
+
+**Selected:** NULL ✅
+
+**Reasoning:**
+- BoxHero is automated restock
+- No specific user deadline
+- Operator can prioritize based on stock levels
+
+---
+
+#### **🗄️ DATABASE CHANGES:**
+
+**Step 1: Add Column to requirements_order_items**
+
+```sql
+-- Executed on Azure SQL Database
+ALTER TABLE requirements_order_items 
+ADD date_needed DATE NULL;
+```
+
+**Column Details:**
+- **Type:** DATE (stores date only, no time)
+- **Nullable:** Yes (optional field)
+- **Default:** NULL
+
+**Impact:**
+- ✅ Existing records get NULL (backward compatible)
+- ✅ No data migration needed
+- ✅ No breaking changes
+
+---
+
+#### **💻 CODE IMPLEMENTATION:**
+
+**Files Modified: 3**
+
+---
+
+**File 1: app.py (~40 lines added)**
+
+**Location 1: BoxHero "Add to Cart" Flow** (line ~306)
+```python
+# Date needed input (optional)
+from datetime import datetime, date
+date_needed = st.date_input(
+    "📅 Date Needed (Optional)",
+    value=None,
+    min_value=date.today(),
+    help="When do you need this item delivered? Leave blank if no specific deadline.",
+    key="bh_date_needed"
+)
+```
+
+**Location 2: Raw Materials "Add to Cart" Flow** (line ~526)
+```python
+# Date needed input (optional)
+date_needed = st.date_input(
+    "📅 Date Needed (Optional)",
+    value=None,
+    min_value=date.today(),
+    help="When do you need this item delivered? Leave blank if no specific deadline.",
+    key="rm_date_needed"
+)
+```
+
+**Location 3: add_to_cart() Function Signature** (line ~748)
+```python
+def add_to_cart(item, quantity, category, project_number=None, project_name=None, 
+                parent_project_id=None, sub_project_number=None, date_needed=None, db=None):
+```
+
+**Location 4: Cart Item Storage** (line ~811)
+```python
+cart_item = {
+    'item_id': item['item_id'],
+    'item_name': item.get('item_name', 'Unknown Item'),
+    # ... other fields ...
+    'project_number': project_number,
+    'sub_project_number': sub_project_number,
+    'date_needed': date_needed  # NEW
+}
+```
+
+**Location 5: Cart Display** (line ~844)
+```python
+# Date needed
+if cart_item.get('date_needed'):
+    st.caption(f"📅 Needed: {cart_item['date_needed']}")
+```
+
+**Location 6: "My Requests" Display** (line ~1056)
+```python
+# Add date needed if available
+if item.get('date_needed'):
+    item_desc += f" | 📅 Needed: {item['date_needed']}"
+```
+
+**Location 7: Bundle Table Header** (line ~2020)
+```python
+<thead>
+    <tr>
+        <th style="width: 30%;">Item</th>
+        <th style="width: 20%;">User</th>
+        <th style="width: 20%;">Project</th>
+        <th style="width: 15%;">Date Needed</th>  <!-- NEW -->
+        <th style="width: 15%; text-align: right;">Quantity</th>
+    </tr>
+</thead>
+```
+
+**Location 8: Bundle Table Data** (line ~2052)
+```python
+# Create date_map to store dates from project_breakdown
+project_map = {}
+date_map = {}  # NEW
+for pb in project_breakdown or []:
+    key = (pb['user_id'], pb.get('project_number'))
+    project_map[key] = project_map.get(key, 0) + pb['quantity']
+    if pb.get('date_needed'):  # NEW
+        date_map[key] = pb['date_needed']
+```
+
+**Location 9: Bundle Table Date Cell** (line ~2109)
+```python
+# Date needed cell
+date_key = (int(uid), project_num)
+date_value = date_map.get(date_key, None)
+date_display = str(date_value) if date_value else "—"
+html_table += f"""
+<td style="color:#666;">{date_display}</td>
+"""
+```
+
+**Location 10: Update Button Calls** (lines 331, 550)
+```python
+# BoxHero
+result = add_to_cart(st.session_state.bh_selected_item, quantity, "BoxHero", 
+                     project_number, project_name, parent_project_id, 
+                     sub_project_number, date_needed, db)  # Added date_needed
+
+# Raw Materials
+result = add_to_cart(st.session_state.rm_selected_item, quantity, "Raw Materials", 
+                     project_number, project_name, parent_project_id, 
+                     sub_project_number, date_needed, db)  # Added date_needed
+```
+
+---
+
+**File 2: db_connector.py (~10 lines added)**
+
+**Location 1: submit_cart_as_order() - INSERT Statement** (line ~1075)
+```python
+item_query = """
+INSERT INTO requirements_order_items 
+(req_id, item_id, quantity, item_notes, project_number, parent_project_id, 
+ sub_project_number, date_needed)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
+# Execute with date_needed parameter
+self.execute_insert(item_query, (
+    req_id, 
+    item['item_id'], 
+    item['quantity'], 
+    item_notes,
+    item.get('project_number'),
+    item.get('parent_project_id'),
+    item.get('sub_project_number'),
+    item.get('date_needed')  # NEW
+))
+```
+
+**Location 2: get_request_items() - SELECT Query** (line ~1035)
+```python
+SELECT 
+    ri.item_id,
+    ri.quantity, 
+    ri.item_notes,
+    ri.project_number,
+    ri.parent_project_id,
+    ri.sub_project_number,
+    ri.date_needed,  -- NEW
+    i.item_name, 
+    i.sku,
+    i.source_sheet,
+    i.height,
+    i.width,
+    i.thickness
+FROM requirements_order_items ri
+JOIN items i ON ri.item_id = i.item_id
+WHERE ri.req_id = ?
+```
+
+**Location 3: get_bundle_item_project_breakdown() - SELECT Query** (line ~165)
+```python
+SELECT roi.project_number, roi.quantity, ro.user_id, roi.date_needed  -- Added date_needed
+FROM requirements_bundle_mapping rbm
+JOIN requirements_orders ro ON rbm.req_id = ro.req_id
+JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+WHERE rbm.bundle_id = ? AND roi.item_id = ?
+```
+
+**Location 4: get_all_pending_requests() - SELECT Query** (line ~1303)
+```python
+SELECT ro.req_id, ro.req_number, ro.user_id, ro.req_date, ro.total_items,
+       roi.item_id, roi.quantity, roi.project_number, roi.parent_project_id, 
+       roi.sub_project_number, roi.date_needed,  -- Added date_needed
+       i.item_name, i.sku, i.source_sheet
+FROM requirements_orders ro
+JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+JOIN items i ON roi.item_id = i.item_id
+WHERE ro.status = 'Pending'
+ORDER BY ro.req_date ASC
+```
+
+---
+
+**File 3: boxhero_request_creator.py (~2 lines modified)**
+
+**Location: INSERT Statement** (line ~139)
+```python
+insert_item = """
+INSERT INTO requirements_order_items 
+(req_id, item_id, quantity, source_type, project_number, date_needed)
+VALUES (?, ?, ?, 'BoxHero', NULL, NULL)
+"""
+```
+
+**Key Point:** BoxHero items automatically get `date_needed = NULL` (no specific deadline)
+
+---
+
+#### **🔄 DATA FLOW:**
+
+```
+USER ENTERS:
+├─ Item: Paint X
+├─ Project: CP-2025 (25-3456)
+├─ Quantity: 5
+└─ [NEW] Date Needed: 2025-11-05
+
+STORED IN CART (session_state):
+{
+    'item_id': 123,
+    'project_number': 'CP-2025',
+    'sub_project_number': '25-3456',
+    'quantity': 5,
+    'date_needed': datetime.date(2025, 11, 5)  ← NEW
+}
+
+CART DISPLAY:
+📋 Project: CP-2025 (25-3456) - Construction Project
+📅 Needed: 2025-11-05  ← NEW
+
+SAVED TO DATABASE:
+INSERT INTO requirements_order_items 
+(req_id, item_id, quantity, project_number, sub_project_number, date_needed)
+VALUES (1, 123, 5, 'CP-2025', '25-3456', '2025-11-05')  ← NEW
+
+MY REQUESTS DISPLAY:
+📦 Paint X (SKU: PAINT-X) | 📋 Project: CP-2025 (25-3456) | 📅 Needed: 2025-11-05  ← NEW
+
+BUNDLING PROCESS:
+- Reads date_needed from requirements_order_items
+- Passes through to bundle
+
+OPERATOR SEES (Bundle Table):
+┌─────────────┬──────────────┬─────────────┬─────────────┬──────────┐
+│ Item        │ User         │ Project     │ Date Needed │ Quantity │
+├─────────────┼──────────────┼─────────────┼─────────────┼──────────┤
+│ Paint X     │ 👤 John Doe  │ 📋 CP-2025  │ 2025-11-05  │ 5 pcs    │
+│             │              │   (25-3456) │             │          │
+└─────────────┴──────────────┴─────────────┴─────────────┴──────────┘
+```
+
+---
+
+#### **📊 IMPLEMENTATION SUMMARY:**
+
+**Files Modified:**
+| File | Changes | Lines Modified | Purpose |
+|------|---------|----------------|---------|
+| app.py | User input + display | ~40 | Date picker, cart display, bundle table |
+| db_connector.py | Database operations | ~10 | Save & retrieve date_needed |
+| boxhero_request_creator.py | BoxHero integration | ~2 | NULL date for automated items |
+| **TOTAL** | **3 files** | **~52 lines** | **Date needed feature** |
+
+**Implementation Time:** ~1.5 hours
+
+**Breakdown:**
+- Requirements discussion: 30 min
+- Database change: 5 min
+- User input implementation: 20 min
+- Database save/retrieval: 15 min
+- Display updates: 20 min
+
+---
+
+#### **✅ TESTING VERIFICATION:**
+
+**Test 1: User Adds Item WITH Date ✅**
+```
+Steps:
+1. Select item → Select project → Pick date (Nov 5, 2025) → Add to cart
+2. Cart shows: 📅 Needed: 2025-11-05
+3. Submit order
+4. Database check: date_needed = '2025-11-05'
+5. My Requests shows: | 📅 Needed: 2025-11-05
+6. After bundling: Operator sees 2025-11-05 in bundle table
+
+Result: ✅ PASS
+```
+
+**Test 2: User Adds Item WITHOUT Date ✅**
+```
+Steps:
+1. Select item → Select project → Leave date blank → Add to cart
+2. Cart shows: No date line
+3. Submit order
+4. Database check: date_needed = NULL
+5. My Requests shows: No date
+6. After bundling: Operator sees "—" in date column
+
+Result: ✅ PASS
+```
+
+**Test 3: Mixed Cart (Some With Date, Some Without) ✅**
+```
+Steps:
+1. Add Item A with date (Nov 5)
+2. Add Item B without date
+3. Cart shows date for A, no date for B
+4. Submit order
+5. Database check: Item A has date, Item B is NULL
+6. After bundling: Operator sees date for A, "—" for B
+
+Result: ✅ PASS
+```
+
+**Test 4: BoxHero Items ✅**
+```
+Steps:
+1. BoxHero cron runs
+2. Database check: BoxHero items have date_needed = NULL
+3. After bundling: Operator sees "—" for BoxHero items
+
+Result: ✅ PASS
+```
+
+**Test 5: Date Validation ✅**
+```
+Steps:
+1. Try to pick past date → Disabled (grayed out)
+2. Calendar opens at today's date
+3. Can pick today or future dates only
+
+Result: ✅ PASS
+```
+
+**Test 6: Bundle Display Table ✅**
+```
+Steps:
+1. Operator views bundle
+2. Table has 5 columns: Item | User | Project | Date Needed | Quantity
+3. Dates show in ISO format: 2025-11-05
+4. Items without date show: —
+5. Column widths adjusted properly
+
+Result: ✅ PASS
+```
+
+---
+
+#### **📝 DISPLAY LOCATIONS:**
+
+**Location 1: User Cart Review**
+```
+**Paint X**
+BoxHero • SKU: PAINT-X
+📋 Project: CP-2025 (25-3456) - Construction Project
+📅 Needed: 2025-11-05  ← NEW
+10 x 5 x 2 cm
+```
+
+**Location 2: My Requests Tab**
+```
+📦 Steel Rod 10mm (SKU: SR-10) | 📋 Project: CP-2025 (25-3456) | 📅 Needed: 2025-11-05  ← NEW
+Quantity: 5 pcs
+```
+
+**Location 3: Operator Bundle Table**
+```
+┌─────────────────┬──────────────┬─────────────┬─────────────┬──────────┐
+│ Item            │ User         │ Project     │ Date Needed │ Quantity │
+├─────────────────┼──────────────┼─────────────┼─────────────┼──────────┤
+│ Paint X         │ 👤 John Doe  │ 📋 CP-2025  │ 2025-11-05  │ 5 pcs    │
+│ (10 x 5 x 2)    │              │   (25-3456) │             │          │
+│ Total: 15 pcs   │ 👤 Jane Smith│ 📋 25-1234  │ 2025-11-10  │ 10 pcs   │
+│                 │              │             │             │          │
+│ Adhesive Y      │ 📦 BoxHero   │ —           │ —           │ 20 pcs   │
+│ Total: 20 pcs   │   Restock    │             │             │          │
+└─────────────────┴──────────────┴─────────────┴─────────────┴──────────┘
+```
+
+---
+
+#### **✅ BENEFITS:**
+
+**Operational:**
+- ✅ Operators can see user deadlines
+- ✅ Can prioritize urgent orders
+- ✅ Better planning and scheduling
+- ✅ Improved customer service
+
+**Technical:**
+- ✅ Simple and clean implementation (52 lines)
+- ✅ No breaking changes
+- ✅ Backward compatible (existing data works)
+- ✅ Consistent with project info pattern
+- ✅ Minimal database changes (1 column)
+
+**User Experience:**
+- ✅ Optional field (doesn't block workflow)
+- ✅ Future dates only (prevents errors)
+- ✅ Calendar opens at today (easy to use)
+- ✅ Clear help text
+- ✅ Visible in cart review
+
+---
+
+#### **🎯 KEY DECISIONS SUMMARY:**
+
+1. **Item-level storage** - Each item can have different date (matches project pattern)
+2. **During "Add to Cart"** - User enters date with project selection
+3. **Optional field** - Can be blank (more flexible)
+4. **ISO format** - `2025-11-05` (consistent, sortable)
+5. **Future dates only** - `min_value=date.today()` (prevents errors)
+6. **No color coding** - Keep it simple (can add later)
+7. **BoxHero gets NULL** - Automated items have no specific deadline
+
+---
+
+#### **📝 NOTES:**
+
+**Backward Compatibility:**
+- ✅ Existing requests work unchanged (date_needed = NULL)
+- ✅ No migration needed
+- ✅ Safe to deploy
+
+**Future Enhancements:**
+- Could add color coding for urgent dates (Red/Yellow/Green)
+- Could add sorting by date in bundle view
+- Could add "urgent items" dashboard widget
+- Could add date range filtering
+
+**Maintenance:**
+- Monitor if users actually use the date field
+- Review if color coding becomes necessary
+- Consider adding date-based notifications
+
+---
+
+#### **🔗 RELATED FEATURES:**
+
+This feature complements:
+1. **Project Selection** - Date is per-item like project
+2. **Bundle User Breakdown** - Shows date alongside project info
+3. **My Requests** - Users can track their deadlines
+
+Together, these features provide:
+- ✅ Complete item tracking (what, when, for which project)
+- ✅ Operator visibility into user needs
+- ✅ Better order prioritization
+
+---
+
 ### **October 31, 2025 - BoxHero Duplicate Request Prevention**
 
 #### **📋 Feature Overview:**

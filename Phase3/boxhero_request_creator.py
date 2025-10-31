@@ -136,8 +136,8 @@ def create_boxhero_requests(db: DatabaseConnector) -> int:
         # Insert each item into requirements_order_items
         insert_item = """
         INSERT INTO requirements_order_items 
-        (req_id, item_id, quantity, source_type, project_number)
-        VALUES (?, ?, ?, 'BoxHero', NULL)
+        (req_id, item_id, quantity, source_type, project_number, date_needed)
+        VALUES (?, ?, ?, 'BoxHero', NULL, NULL)
         """
         
         for item in valid_items:
