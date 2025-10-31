@@ -1805,8 +1805,9 @@ def display_active_bundles_for_operator(db):
         for bundle in bundles:
             # Build expander title with merge badge
             merge_badge = ""
-            if bundle.get('merge_count', 0) > 0:
-                merge_badge = f" 🔄 Updated {bundle['merge_count']}x"
+            merge_count_val = bundle.get('merge_count') or 0  # Handle NULL from database
+            if merge_count_val > 0:
+                merge_badge = f" 🔄 Updated {merge_count_val}x"
             
             expander_title = f"📦 {bundle['bundle_name']}{merge_badge} - {get_status_badge(bundle['status'])}"
             
@@ -1829,11 +1830,11 @@ def display_active_bundles_for_operator(db):
             
             with expander_obj:
                 # Show merge indicators if bundle was updated
-                merge_count = bundle.get('merge_count', 0)
+                merge_count = bundle.get('merge_count') or 0  # Handle NULL from database
                 last_merged = bundle.get('last_merged_at')
                 merge_reason = bundle.get('merge_reason')
                 
-                if merge_count and merge_count > 0:
+                if merge_count > 0:
                     st.info(f"🔄 **This bundle has been updated {merge_count} time(s)**")
                     
                     if last_merged:
