@@ -88,6 +88,27 @@ def create_boxhero_requests(db: DatabaseConnector) -> int:
         
         log(f"Found {len(boxhero_items)} BoxHero items needing restock")
         
+        # Filter out items that already have active requests (In Progress/Reviewed/Approved/Ordered)
+        valid_items = []
+        skipped_items = []
+        
+        for item in boxhero_items:
+            if db.has_active_boxhero_request(item['item_id']):
+                skipped_items.append(item)
+                log(f"  [SKIP] {item['item_name']} - Already has active request (In Progress/Ordered)")
+            else:
+                valid_items.append(item)
+        
+        # Log summary
+        if skipped_items:
+            log(f"Skipped {len(skipped_items)} items (already in progress)")
+        
+        if not valid_items:
+            log("All items skipped - no new requests needed")
+            return 0
+        
+        log(f"Creating request for {len(valid_items)} items")
+        
         # Insert into requirements_orders
         insert_order = """
         INSERT INTO requirements_orders 
@@ -119,7 +140,7 @@ def create_boxhero_requests(db: DatabaseConnector) -> int:
         VALUES (?, ?, ?, 'BoxHero', NULL)
         """
         
-        for item in boxhero_items:
+        for item in valid_items:
             db.execute_insert(insert_item, (
                 req_id,
                 item['item_id'],
@@ -128,8 +149,8 @@ def create_boxhero_requests(db: DatabaseConnector) -> int:
             log(f"  - Added: {item['item_name']} ({item['deficit']} pcs)")
         
         db.conn.commit()
-        log(f"Successfully created BoxHero request with {len(boxhero_items)} items")
-        return len(boxhero_items)
+        log(f"Successfully created BoxHero request with {len(valid_items)} items")
+        return len(valid_items)
         
     except Exception as e:
         log(f"ERROR creating BoxHero requests: {e}")

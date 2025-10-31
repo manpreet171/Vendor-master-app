@@ -1275,6 +1275,25 @@ class DatabaseConnector:
         """
         return self.execute_query(query, (user_id,))
     
+    def has_active_boxhero_request(self, item_id):
+        """
+        Check if BoxHero item already has an active (non-completed) request.
+        Used to prevent duplicate BoxHero restock requests.
+        
+        Returns True if item has request with status: In Progress, Reviewed, Approved, or Ordered
+        Returns False if no active request exists (safe to create new request)
+        """
+        query = """
+        SELECT COUNT(*) as count
+        FROM requirements_orders ro
+        JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+        WHERE roi.item_id = ?
+          AND ro.source_type = 'BoxHero'
+          AND ro.status IN ('In Progress', 'Reviewed', 'Approved', 'Ordered')
+        """
+        result = self.execute_query(query, (item_id,))
+        return result[0]['count'] > 0 if result else False
+    
     def get_all_pending_requests(self):
         """Get all pending requests for bundling"""
         query = """
