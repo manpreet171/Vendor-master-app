@@ -1402,7 +1402,8 @@ def display_user_requests_for_operator(db):
                 'source_sheet': req['source_sheet'],
                 'project_number': req.get('project_number'),
                 'parent_project_id': req.get('parent_project_id'),
-                'sub_project_number': req.get('sub_project_number')
+                'sub_project_number': req.get('sub_project_number'),
+                'date_needed': req.get('date_needed')
             })
             requests_by_user[user_key]['total_pieces'] += req['quantity']
         
@@ -1439,7 +1440,7 @@ def display_user_requests_for_operator(db):
                     
                     # Create a clean table of items
                     for i, item in enumerate(req_data['items'], 1):
-                        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                        col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
                         with col1:
                             st.write(f"{i}. **{item['item_name']}**")
                         with col2:
@@ -1450,6 +1451,11 @@ def display_user_requests_for_operator(db):
                             if item.get('project_number'):
                                 formatted_project = format_project_display(item['project_number'], item.get('sub_project_number'))
                                 st.write(f"📋 {formatted_project}")
+                            else:
+                                st.write("—")
+                        with col5:
+                            if item.get('date_needed'):
+                                st.write(f"📅 {item['date_needed']}")
                             else:
                                 st.write("—")
         
