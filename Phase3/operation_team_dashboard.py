@@ -213,9 +213,10 @@ def display_bundle_items_table(db, bundle_id):
         <table class="bundle-table">
             <thead>
                 <tr>
-                    <th style="width: 35%;">Item</th>
-                    <th style="width: 25%;">User</th>
-                    <th style="width: 25%;">Project</th>
+                    <th style="width: 30%;">Item</th>
+                    <th style="width: 20%;">User</th>
+                    <th style="width: 20%;">Project</th>
+                    <th style="width: 15%;">Date Needed</th>
                     <th style="width: 15%; text-align: right;">Quantity</th>
                 </tr>
             </thead>
@@ -241,9 +242,12 @@ def display_bundle_items_table(db, bundle_id):
                 # Get project breakdown for this item
                 project_breakdown = db.get_bundle_item_project_breakdown(bundle_id, it['item_id'])
                 project_map = {}
+                date_map = {}
                 for pb in project_breakdown or []:
                     key = (pb['user_id'], pb.get('project_number'))
                     project_map[key] = project_map.get(key, 0) + pb['quantity']
+                    if pb.get('date_needed'):
+                        date_map[key] = pb['date_needed']
                 
                 # Count total rows for this item (for rowspan)
                 total_rows = sum(len([(k[1], v) for k, v in project_map.items() if k[0] == int(uid) and k[1]]) or 1 
@@ -277,11 +281,17 @@ def display_bundle_items_table(db, bundle_id):
                             if idx == 0:
                                 html_table += f'<td rowspan="{user_rows}"><span class="user-name">👤 {uname}</span></td>'
                             
-                            # Project and quantity
-                            html_table += f"""
-                            <td><span class="project-icon">📋</span>{project_num}</td>
-                            <td class="qty-cell">{project_qty} pcs</td>
-                            """
+                            # Project cell
+                            html_table += f'<td><span class="project-icon">📋</span>{project_num}</td>'
+                            
+                            # Date needed cell
+                            date_key = (int(uid), project_num)
+                            date_value = date_map.get(date_key, None)
+                            date_display = str(date_value) if date_value else "—"
+                            html_table += f'<td style="color:#666;">{date_display}</td>'
+                            
+                            # Quantity cell
+                            html_table += f'<td class="qty-cell">{project_qty} pcs</td>'
                             html_table += "</tr>"
                     else:
                         # No project info
@@ -295,12 +305,11 @@ def display_bundle_items_table(db, bundle_id):
                             </td>
                             """
                             first_row = False
-                        html_table += f"""
-                        <td><span class="user-name">👤 {uname}</span></td>
-                        <td>—</td>
-                        <td class="qty-cell">{qty} pcs</td>
-                        </tr>
-                        """
+                        html_table += f'<td><span class="user-name">👤 {uname}</span></td>'
+                        html_table += '<td>—</td>'
+                        html_table += '<td>—</td>'
+                        html_table += f'<td class="qty-cell">{qty} pcs</td>'
+                        html_table += '</tr>'
             else:
                 # No breakdown
                 html_table += f"""
@@ -310,6 +319,7 @@ def display_bundle_items_table(db, bundle_id):
                         <div class="item-dims">{dim_txt}</div>
                         <div class="item-total">Total: {it['total_quantity']} pcs</div>
                     </td>
+                    <td>—</td>
                     <td>—</td>
                     <td>—</td>
                     <td class="qty-cell">{it['total_quantity']} pcs</td>

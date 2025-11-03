@@ -2106,22 +2106,16 @@ def display_active_bundles_for_operator(db):
                                         
                                         # Project cell
                                         formatted_project = format_project_display(project_num, None)
-                                        html_table += f"""
-                                        <td><span class="project-icon">📋</span>{formatted_project}</td>
-                                        """
+                                        html_table += f'<td><span class="project-icon">📋</span>{formatted_project}</td>'
                                         
                                         # Date needed cell
                                         date_key = (int(uid), project_num)
                                         date_value = date_map.get(date_key, None)
                                         date_display = str(date_value) if date_value else "—"
-                                        html_table += f"""
-                                        <td style="color:#666;">{date_display}</td>
-                                        """
+                                        html_table += f'<td style="color:#666;">{date_display}</td>'
                                         
                                         # Quantity cell
-                                        html_table += f"""
-                                        <td class="qty-cell">{project_qty} pcs</td>
-                                        """
+                                        html_table += f'<td class="qty-cell">{project_qty} pcs</td>'
                                         html_table += "</tr>"
                                 else:
                                     # No project info (typical for BoxHero items)
