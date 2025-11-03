@@ -977,6 +977,19 @@ class DatabaseConnector:
                     WHERE req_id = ?
                     """
                     self.execute_insert(update_request_query, (req_id,))
+                    
+                    # Send email notification to user
+                    try:
+                        from user_notifications import send_user_notification
+                        bundle_data = {
+                            'po_number': po_number,
+                            'po_date': datetime.now(),
+                            'expected_delivery_date': expected_delivery_date
+                        }
+                        send_user_notification(self, req_id, 'ordered', bundle_data)
+                    except Exception as email_error:
+                        # Don't fail the whole operation if email fails
+                        print(f"[WARNING] Failed to send email notification: {str(email_error)}")
             
             self.conn.commit()
             
@@ -1326,6 +1339,16 @@ class DatabaseConnector:
             
             self.execute_insert(query, req_ids)
             self.conn.commit()
+            
+            # Send email notifications to users
+            try:
+                from user_notifications import send_user_notification
+                for req_id in req_ids:
+                    send_user_notification(self, req_id, 'in_progress')
+            except Exception as email_error:
+                # Don't fail the whole operation if email fails
+                print(f"[WARNING] Failed to send email notification: {str(email_error)}")
+            
             return True
             
         except Exception as e:
