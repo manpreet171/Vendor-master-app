@@ -649,7 +649,9 @@ class DatabaseConnector:
     def get_bundles_for_request(self, req_id):
         """Get all bundles that contain items from this request"""
         query = """
-        SELECT DISTINCT b.bundle_id, b.bundle_name, b.status, b.recommended_vendor_id
+        SELECT DISTINCT b.bundle_id, b.bundle_name, b.status, b.recommended_vendor_id,
+               b.po_number, b.po_date, b.expected_delivery_date,
+               b.packing_slip_code, b.actual_delivery_date
         FROM requirements_bundles b
         JOIN requirements_bundle_mapping rbm ON b.bundle_id = rbm.bundle_id
         WHERE rbm.req_id = ?

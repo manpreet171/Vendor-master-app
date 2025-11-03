@@ -415,7 +415,52 @@ Expected Delivery: Nov 10, 2025
 | **Integration & Testing** | 20 min |
 | **Bug Fix (Multiple Bundles)** | 30 min |
 | **Documentation** | 15 min |
-| **Total** | **~2 hours** |
+| **Bug Fix (Missing PO Data)** | 5 min |
+| **Total** | **~2 hours 5 min** |
+
+---
+
+#### **🐛 POST-DEPLOYMENT BUG FIX: Missing PO Numbers in Email**
+
+**Time:** 10:13 PM IST, November 3, 2025
+
+**Problem Discovered:**
+- User ordered bundle with PO number 7850 and expected delivery date
+- Email showed "PO Number: None" and "Expected Delivery: TBD"
+- Data was in database but not appearing in email
+
+**Root Cause:**
+- `get_bundles_for_request()` function was only selecting 4 columns:
+  - bundle_id, bundle_name, status, recommended_vendor_id
+- Missing columns: po_number, po_date, expected_delivery_date, packing_slip_code, actual_delivery_date
+- Email code tried to access `bundle.get('po_number')` but it didn't exist in result
+
+**Solution:**
+- Updated SQL query in `get_bundles_for_request()` to include all order-related columns
+- Added: po_number, po_date, expected_delivery_date, packing_slip_code, actual_delivery_date
+
+**File Modified:** `db_connector.py` (line 652-654)
+
+**Before:**
+```sql
+SELECT DISTINCT b.bundle_id, b.bundle_name, b.status, b.recommended_vendor_id
+```
+
+**After:**
+```sql
+SELECT DISTINCT b.bundle_id, b.bundle_name, b.status, b.recommended_vendor_id,
+       b.po_number, b.po_date, b.expected_delivery_date,
+       b.packing_slip_code, b.actual_delivery_date
+```
+
+**Impact:**
+- ✅ Ordered emails now show correct PO numbers
+- ✅ Ordered emails now show correct expected delivery dates
+- ✅ Completed emails now show correct packing slip codes
+- ✅ Completed emails now show correct actual delivery dates
+
+**Testing:**
+- Next order placement will show correct data in email
 
 ---
 
