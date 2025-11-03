@@ -6,7 +6,420 @@
 
 ## Development Progress Log
 
-### **November 3, 2025 - Bug Fixes & Operation Team History Feature**
+### **November 3, 2025 (Evening) - User Email Notifications System**
+
+#### **📋 Session Overview:**
+
+**Status:** ✅ **COMPLETED - EMAIL NOTIFICATION SYSTEM**
+
+**Implementation Time:** ~2 hours (6:00 PM - 9:50 PM IST, November 3, 2025)
+
+**Purpose:** Implement automated email notifications to inform users when their material requests change status
+
+**Summary:**
+1. ✅ Created complete email notification system (`user_notifications.py`)
+2. ✅ Added database column for duplicate prevention (`last_notified_status`)
+3. ✅ Integrated with existing Brevo SMTP service
+4. ✅ Added 3 trigger points (In Progress, Ordered, Completed)
+5. ✅ Fixed multiple bundles issue (show all PO numbers)
+6. ✅ Configured Streamlit Cloud secrets for email
+7. ✅ Tested successfully with real user
+
+---
+
+#### **📧 EMAIL NOTIFICATION SYSTEM**
+
+**Problem:**
+- Users had no way to know when their requests were processed, ordered, or completed
+- Had to manually check dashboard for status updates
+- No visibility into PO numbers or delivery dates
+
+**Solution:**
+Implemented automated email notifications at 3 key milestones:
+1. **In Progress** - When cron bundles the request
+2. **Ordered** - When ALL bundles are ordered (with PO numbers)
+3. **Completed** - When ALL bundles are completed (with packing slips)
+
+---
+
+#### **🗄️ DATABASE CHANGES**
+
+**Table:** `requirements_orders`
+
+**New Column:**
+```sql
+ALTER TABLE requirements_orders 
+ADD last_notified_status NVARCHAR(20) NULL;
+```
+
+**Purpose:**
+- Tracks which notification was last sent
+- Prevents duplicate emails
+- Values: 'in_progress', 'ordered', 'completed', or NULL
+
+---
+
+#### **📁 NEW FILE CREATED**
+
+**File:** `user_notifications.py` (~650 lines)
+
+**Main Function:**
+```python
+send_user_notification(db, req_id, notification_type, bundle_data=None)
+```
+
+**Features:**
+- Gets user email from `requirements_users` table (dynamic)
+- Checks `last_notified_status` to prevent duplicates
+- Skips BoxHero requests (no user email)
+- Builds personalized email content (plain text + HTML)
+- Sends via existing Brevo SMTP service
+- Updates `last_notified_status` after sending
+- Handles errors gracefully (doesn't break main process)
+
+**Email Templates:**
+- Simple, user-friendly language
+- No technical jargon (no "bundle", "vendor", etc.)
+- Shows only user's data (items, projects, dates)
+- Professional formatting with color coding
+
+---
+
+#### **🔗 INTEGRATION POINTS**
+
+**3 Trigger Locations:**
+
+**1. In Progress Notification**
+- **File:** `db_connector.py` (line 1330-1337)
+- **Function:** `update_requests_to_in_progress()`
+- **When:** After cron bundles pending requests
+- **Email:** "Your Material Request is Being Processed"
+
+```python
+# Send email notifications to users
+try:
+    from user_notifications import send_user_notification
+    for req_id in req_ids:
+        send_user_notification(self, req_id, 'in_progress')
+except Exception as email_error:
+    print(f"[WARNING] Failed to send email notification: {str(email_error)}")
+```
+
+**2. Ordered Notification**
+- **File:** `db_connector.py` (line 981-999)
+- **Function:** `save_order_placement()`
+- **When:** After operator orders bundle (when ALL bundles ordered)
+- **Email:** "Your Items Have Been Ordered"
+
+```python
+# Send email notification to user with ALL bundles data
+try:
+    from user_notifications import send_user_notification
+    # Get all ordered bundles with their details
+    bundles_data = []
+    for bundle in all_bundles:
+        if bundle['status'] in ('Ordered', 'Completed'):
+            bundles_data.append({
+                'bundle_id': bundle['bundle_id'],
+                'vendor_id': bundle['recommended_vendor_id'],
+                'po_number': bundle.get('po_number'),
+                'po_date': bundle.get('po_date'),
+                'expected_delivery_date': bundle.get('expected_delivery_date')
+            })
+    
+    send_user_notification(self, req_id, 'ordered', {'bundles': bundles_data})
+except Exception as email_error:
+    print(f"[WARNING] Failed to send email notification: {str(email_error)}")
+```
+
+**3. Completed Notification**
+- **File:** `app.py` (line 3708-3726)
+- **Function:** `mark_bundle_completed_with_packing_slip()`
+- **When:** After operator completes bundle (when ALL bundles completed)
+- **Email:** "Your Items Are Ready for Pickup!"
+
+```python
+# Send email notification to user with ALL bundles data
+try:
+    from user_notifications import send_user_notification
+    # Get all completed bundles with their details
+    bundles_data = []
+    for bundle in all_bundles:
+        if bundle['status'] == 'Completed':
+            bundles_data.append({
+                'bundle_id': bundle['bundle_id'],
+                'vendor_id': bundle['recommended_vendor_id'],
+                'packing_slip_code': bundle.get('packing_slip_code'),
+                'actual_delivery_date': bundle.get('actual_delivery_date'),
+                'po_number': bundle.get('po_number')
+            })
+    
+    send_user_notification(db, req_id, 'completed', {'bundles': bundles_data})
+except Exception as email_error:
+    print(f"[WARNING] Failed to send email notification: {str(email_error)}")
+```
+
+---
+
+#### **📧 EMAIL SERVICE CONFIGURATION**
+
+**File Modified:** `email_service.py`
+
+**Update:** Added Streamlit secrets support
+
+**Before:**
+```python
+def _get_env(name: str, default: Optional[str] = None) -> Optional[str]:
+    val = os.environ.get(name, default)
+    return val
+```
+
+**After:**
+```python
+def _get_env(name: str, default: Optional[str] = None) -> Optional[str]:
+    # Try Streamlit secrets first (for Streamlit Cloud deployment)
+    try:
+        import streamlit as st
+        val = st.secrets.get("email", {}).get(name)
+        if val and isinstance(val, str) and val.strip() != "":
+            return val
+    except Exception:
+        pass
+    
+    # Fall back to environment variables (for local/cron)
+    val = os.environ.get(name, default)
+    return val
+```
+
+**Updated Function Signature:**
+```python
+def send_email_via_brevo(subject: str, body_text: str, html_body: Optional[str] = None, recipients: Optional[list] = None) -> bool:
+```
+
+**New Feature:**
+- Accepts optional `recipients` parameter
+- If provided, sends to specific users (dynamic)
+- If not provided, uses `EMAIL_RECIPIENTS` from secrets (operator notifications)
+
+---
+
+#### **⚙️ STREAMLIT CLOUD SECRETS**
+
+**Configuration Added:**
+```toml
+[email]
+BREVO_SMTP_SERVER = "smtp-relay.brevo.com"
+BREVO_SMTP_PORT = "587"
+BREVO_SMTP_LOGIN = "919624001@smtp-brevo.com"
+BREVO_SMTP_PASSWORD = "xxxx"
+EMAIL_SENDER = "manpreet@sdgny.com"
+EMAIL_SENDER_NAME = "Request Tracker Bot"
+EMAIL_RECIPIENTS = "operator@company.com"  # For operator notifications only
+```
+
+**Note:** User emails are pulled from database dynamically, not from secrets!
+
+---
+
+#### **🐛 CRITICAL BUG FIX: Multiple Bundles Email Issue**
+
+**Problem Discovered During Testing:**
+- User created 1 request with 2 items
+- Bundling created 2 bundles (Bundle 1: PO-001, Bundle 2: PO-002)
+- User received "Ordered" email showing only PO-002 (last bundle)
+- Missing PO-001 information
+
+**Root Cause:**
+- Code was passing only the current bundle's data to email notification
+- When Bundle 2 was ordered, email only showed Bundle 2's PO number
+- User had no visibility into Bundle 1's PO number
+
+**Solution:**
+- Modified code to pass ALL bundles data to email notification
+- Email now shows all PO numbers, expected delivery dates, and packing slips
+- Different format for single vs multiple bundles
+
+**Files Modified:**
+1. **db_connector.py** (line 984-994) - Pass all bundles for "Ordered" email
+2. **app.py** (line 3711-3722) - Pass all bundles for "Completed" email
+3. **user_notifications.py** - Updated email templates to handle multiple bundles
+
+**Email Output (Multiple Bundles):**
+```
+Your items have been ordered from 2 vendors:
+
+Order 1:
+  PO Number: PO-2025-001
+  Expected Delivery: Nov 10, 2025
+
+Order 2:
+  PO Number: PO-2025-002
+  Expected Delivery: Nov 12, 2025
+```
+
+**Email Output (Single Bundle):**
+```
+ORDER INFORMATION:
+PO Number: PO-2025-001
+Expected Delivery: Nov 10, 2025
+```
+
+---
+
+#### **📊 IMPLEMENTATION STATISTICS**
+
+| Metric | Count |
+|--------|-------|
+| **New Files Created** | 1 (`user_notifications.py`) |
+| **Files Modified** | 3 (`db_connector.py`, `app.py`, `email_service.py`) |
+| **Lines of Code Added** | ~750 |
+| **Database Columns Added** | 1 (`last_notified_status`) |
+| **Email Templates** | 3 (In Progress, Ordered, Completed) |
+| **Trigger Points** | 3 |
+| **Breaking Changes** | 0 |
+| **Backward Compatible** | ✅ Yes |
+
+---
+
+#### **✅ TESTING RESULTS**
+
+**Test Scenario 1: Single Bundle Request**
+- User: Manpreet (singh.manpreet171900@gmail.com)
+- Request: 1 item
+- Bundle: 1 bundle created
+- Result: ✅ Received "In Progress" email successfully
+
+**Test Scenario 2: Multiple Bundle Request**
+- User: Manpreet
+- Request: 2 items
+- Bundles: 2 bundles created (different vendors)
+- Ordered: Both bundles with different PO numbers
+- Result: ✅ Received "Ordered" email showing BOTH PO numbers
+
+**Test Scenario 3: Email Configuration**
+- Initial test: ❌ Failed (SMTP credentials not configured)
+- Added Streamlit secrets: ✅ Success
+- Verified sender email in Brevo: ✅ Verified
+- Final test: ✅ Email sent successfully
+
+---
+
+#### **🎯 KEY DECISIONS**
+
+**1. Separate Module**
+- Created `user_notifications.py` as standalone module
+- Clean separation from main app logic
+- Easy to maintain and test
+- Reusable across different trigger points
+
+**2. Duplicate Prevention**
+- Added `last_notified_status` column (minimal DB change)
+- Only sends email if status changed
+- Prevents duplicate emails if function called multiple times
+
+**3. Multiple Bundles Handling**
+- Sends email only when ALL bundles reach status
+- Shows all bundles' data in one email
+- User gets complete picture, not partial information
+
+**4. Error Handling**
+- Email failures don't break main process
+- Try-except blocks around all email calls
+- Warnings logged but process continues
+- Database transactions still commit
+
+**5. BoxHero Exclusion**
+- Checks `source_type` column
+- Skips notifications for BoxHero requests
+- No email sent (system-generated, no user)
+
+**6. Email Format**
+- Multipart: Plain text + HTML
+- Simple, user-friendly language
+- No technical terms (bundle, vendor, etc.)
+- Shows only relevant data
+
+**7. Two Email Systems**
+- **Operator Notifications:** Fixed recipients from secrets (`EMAIL_RECIPIENTS`)
+- **User Notifications:** Dynamic recipients from database (`requirements_users.email`)
+- Same SMTP service, different recipient sources
+
+---
+
+#### **📚 DOCUMENTATION CREATED**
+
+**1. USER_NOTIFICATIONS_IMPLEMENTATION.md**
+- Complete implementation guide
+- Code examples and explanations
+- Testing checklist
+- Troubleshooting guide
+
+**2. EMAIL_CONFIGURATION_GUIDE.md**
+- Streamlit Cloud secrets setup
+- Brevo SMTP configuration
+- Two email systems explained
+- Common issues and solutions
+
+**3. MULTIPLE_BUNDLES_EMAIL_FIX.md** (Deleted - merged into main log)
+- Problem description
+- Solution implementation
+- Before/after examples
+
+---
+
+#### **🚀 BENEFITS**
+
+**For Users:**
+- ✅ Stay informed without checking dashboard
+- ✅ Know when items are ordered
+- ✅ Know when items are ready for pickup
+- ✅ Have PO numbers for reference
+- ✅ Know expected delivery dates
+
+**For Operations:**
+- ✅ Reduced "where's my order?" inquiries
+- ✅ Better user experience
+- ✅ Professional communication
+- ✅ Automated process (no manual emails)
+
+**Technical:**
+- ✅ Clean, maintainable code
+- ✅ Separate module (easy to modify)
+- ✅ Error-resistant (doesn't break main process)
+- ✅ Duplicate-proof (tracks notifications)
+- ✅ Reuses existing email service
+- ✅ No breaking changes
+
+---
+
+#### **🔮 FUTURE ENHANCEMENTS (Not Implemented)**
+
+**Possible additions:**
+1. Email preferences (opt-out, choose which emails)
+2. Email history tracking (audit trail)
+3. Rich notifications (images, links, progress bars)
+4. Rejection notifications (when Operation Team rejects)
+5. Reminder emails (pick up completed items)
+6. Digest emails (weekly summary)
+
+---
+
+#### **⏱️ TIME BREAKDOWN**
+
+| Phase | Duration |
+|-------|----------|
+| **Planning & Discussion** | 45 min |
+| **Database Setup** | 5 min |
+| **Core Implementation** | 30 min |
+| **Email Service Update** | 15 min |
+| **Integration & Testing** | 20 min |
+| **Bug Fix (Multiple Bundles)** | 30 min |
+| **Documentation** | 15 min |
+| **Total** | **~2 hours** |
+
+---
+
+### **November 3, 2025 (Afternoon) - Bug Fixes & Operation Team History Feature**
 
 #### **📋 Session Overview:**
 

@@ -3705,14 +3705,22 @@ def mark_bundle_completed_with_packing_slip(db, bundle_id, packing_slip_code, ac
                     """
                     db.execute_insert(update_request_query, (req_id,))
                     
-                    # Send email notification to user
+                    # Send email notification to user with ALL bundles data
                     try:
                         from user_notifications import send_user_notification
-                        bundle_data = {
-                            'packing_slip_code': packing_slip_code,
-                            'actual_delivery_date': actual_delivery_date
-                        }
-                        send_user_notification(db, req_id, 'completed', bundle_data)
+                        # Get all completed bundles with their details
+                        bundles_data = []
+                        for bundle in all_bundles:
+                            if bundle['status'] == 'Completed':
+                                bundles_data.append({
+                                    'bundle_id': bundle['bundle_id'],
+                                    'vendor_id': bundle['recommended_vendor_id'],
+                                    'packing_slip_code': bundle.get('packing_slip_code'),
+                                    'actual_delivery_date': bundle.get('actual_delivery_date'),
+                                    'po_number': bundle.get('po_number')
+                                })
+                        
+                        send_user_notification(db, req_id, 'completed', {'bundles': bundles_data})
                     except Exception as email_error:
                         # Don't fail the whole operation if email fails
                         print(f"[WARNING] Failed to send email notification: {str(email_error)}")

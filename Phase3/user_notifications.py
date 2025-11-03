@@ -279,10 +279,15 @@ def _build_ordered_email(user, request, items, bundle_data):
     
     subject = "📦 Your Items Have Been Ordered"
     
-    # Get bundle info
-    po_number = bundle_data.get('po_number', 'TBD') if bundle_data else 'TBD'
-    po_date = bundle_data.get('po_date') if bundle_data else None
-    expected_delivery = bundle_data.get('expected_delivery_date') if bundle_data else None
+    # Get bundles info (can be multiple bundles)
+    bundles = bundle_data.get('bundles', []) if bundle_data else []
+    
+    # If no bundles data (backward compatibility), use old format
+    if not bundles:
+        po_number = bundle_data.get('po_number', 'TBD') if bundle_data else 'TBD'
+        po_date = bundle_data.get('po_date') if bundle_data else None
+        expected_delivery = bundle_data.get('expected_delivery_date') if bundle_data else None
+        bundles = [{'po_number': po_number, 'po_date': po_date, 'expected_delivery_date': expected_delivery}]
     
     # Build items list (simpler for ordered email)
     items_text = ""
@@ -299,6 +304,22 @@ def _build_ordered_email(user, request, items, bundle_data):
         </tr>
         """
     
+    # Build bundles info text
+    bundles_text = ""
+    if len(bundles) > 1:
+        bundles_text = f"\n\nYour items have been ordered from {len(bundles)} vendors:\n"
+        for idx, bundle in enumerate(bundles, 1):
+            bundles_text += f"\nOrder {idx}:"
+            bundles_text += f"\n  PO Number: {bundle.get('po_number', 'TBD')}"
+            if bundle.get('expected_delivery_date'):
+                bundles_text += f"\n  Expected Delivery: {_format_date(bundle['expected_delivery_date'])}"
+    else:
+        bundle = bundles[0] if bundles else {}
+        bundles_text = f"\n\nORDER INFORMATION:"
+        bundles_text += f"\nPO Number: {bundle.get('po_number', 'TBD')}"
+        if bundle.get('expected_delivery_date'):
+            bundles_text += f"\nExpected Delivery: {_format_date(bundle['expected_delivery_date'])}"
+    
     # Plain text body
     body_text = f"""
 Hi {user['full_name']},
@@ -308,11 +329,7 @@ Great news! Your material request has been ordered.
 REQUEST DETAILS:
 Request Number: {request['req_number']}
 Status: Ordered
-Order Date: {_format_date(po_date) if po_date else 'Today'}
-
-ORDER INFORMATION:
-PO Number: {po_number}
-Expected Delivery: {_format_date(expected_delivery) if expected_delivery else 'TBD'}
+{bundles_text}
 
 ITEMS ORDERED:
 {items_text}
@@ -340,14 +357,15 @@ This is an automated notification from the Requirements Management System.
                 <h3 style="margin-top: 0; color: #4CAF50;">Request Details</h3>
                 <p style="margin: 5px 0;"><strong>Request Number:</strong> {request['req_number']}</p>
                 <p style="margin: 5px 0;"><strong>Status:</strong> <span style="color: #4CAF50; font-weight: bold;">Ordered</span></p>
-                <p style="margin: 5px 0;"><strong>Order Date:</strong> {_format_date(po_date) if po_date else 'Today'}</p>
             </div>
             
+            {''.join([f'''
             <div style="background-color: #e8f5e9; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #4CAF50;">
-                <h3 style="margin-top: 0; color: #2e7d32;">Order Information</h3>
-                <p style="margin: 5px 0;"><strong>PO Number:</strong> {po_number}</p>
-                <p style="margin: 5px 0;"><strong>Expected Delivery:</strong> {_format_date(expected_delivery) if expected_delivery else 'TBD'}</p>
+                <h3 style="margin-top: 0; color: #2e7d32;">Order {idx if len(bundles) > 1 else ""} Information</h3>
+                <p style="margin: 5px 0;"><strong>PO Number:</strong> {bundle.get('po_number', 'TBD')}</p>
+                <p style="margin: 5px 0;"><strong>Expected Delivery:</strong> {_format_date(bundle.get('expected_delivery_date')) if bundle.get('expected_delivery_date') else 'TBD'}</p>
             </div>
+            ''' for idx, bundle in enumerate(bundles, 1)])}
             
             <h3 style="color: #4CAF50;">Items Ordered</h3>
             <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
@@ -382,9 +400,14 @@ def _build_completed_email(user, request, items, bundle_data):
     
     subject = "✅ Your Items Are Ready for Pickup!"
     
-    # Get bundle info
-    actual_delivery = bundle_data.get('actual_delivery_date') if bundle_data else None
-    packing_slip = bundle_data.get('packing_slip_code', 'N/A') if bundle_data else 'N/A'
+    # Get bundles info (can be multiple bundles)
+    bundles = bundle_data.get('bundles', []) if bundle_data else []
+    
+    # If no bundles data (backward compatibility), use old format
+    if not bundles:
+        actual_delivery = bundle_data.get('actual_delivery_date') if bundle_data else None
+        packing_slip = bundle_data.get('packing_slip_code', 'N/A') if bundle_data else 'N/A'
+        bundles = [{'packing_slip_code': packing_slip, 'actual_delivery_date': actual_delivery}]
     
     # Build items list
     items_text = ""
@@ -401,6 +424,24 @@ def _build_completed_email(user, request, items, bundle_data):
         </tr>
         """
     
+    # Build bundles info text
+    bundles_text = ""
+    if len(bundles) > 1:
+        bundles_text = f"\n\nYour items arrived in {len(bundles)} deliveries:\n"
+        for idx, bundle in enumerate(bundles, 1):
+            bundles_text += f"\nDelivery {idx}:"
+            if bundle.get('packing_slip_code'):
+                bundles_text += f"\n  Packing Slip: {bundle['packing_slip_code']}"
+            if bundle.get('actual_delivery_date'):
+                bundles_text += f"\n  Delivery Date: {_format_date(bundle['actual_delivery_date'])}"
+    else:
+        bundle = bundles[0] if bundles else {}
+        bundles_text = f"\n\nDELIVERY INFORMATION:"
+        if bundle.get('packing_slip_code'):
+            bundles_text += f"\nPacking Slip: {bundle['packing_slip_code']}"
+        if bundle.get('actual_delivery_date'):
+            bundles_text += f"\nDelivery Date: {_format_date(bundle['actual_delivery_date'])}"
+    
     # Plain text body
     body_text = f"""
 Hi {user['full_name']},
@@ -410,8 +451,7 @@ Excellent news! Your material request is complete and ready for pickup.
 REQUEST DETAILS:
 Request Number: {request['req_number']}
 Status: Completed
-Delivery Date: {_format_date(actual_delivery) if actual_delivery else 'Today'}
-Packing Slip: {packing_slip}
+{bundles_text}
 
 ITEMS READY:
 {items_text}
@@ -439,9 +479,15 @@ This is an automated notification from the Requirements Management System.
                 <h3 style="margin-top: 0; color: #4CAF50;">Request Details</h3>
                 <p style="margin: 5px 0;"><strong>Request Number:</strong> {request['req_number']}</p>
                 <p style="margin: 5px 0;"><strong>Status:</strong> <span style="color: #4CAF50; font-weight: bold;">Completed</span></p>
-                <p style="margin: 5px 0;"><strong>Delivery Date:</strong> {_format_date(actual_delivery) if actual_delivery else 'Today'}</p>
-                <p style="margin: 5px 0;"><strong>Packing Slip:</strong> {packing_slip}</p>
             </div>
+            
+            {''.join([f'''
+            <div style="background-color: #e8f5e9; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #4CAF50;">
+                <h3 style="margin-top: 0; color: #2e7d32;">Delivery {idx if len(bundles) > 1 else ""} Information</h3>
+                <p style="margin: 5px 0;"><strong>Packing Slip:</strong> {bundle.get('packing_slip_code', 'N/A')}</p>
+                <p style="margin: 5px 0;"><strong>Delivery Date:</strong> {_format_date(bundle.get('actual_delivery_date')) if bundle.get('actual_delivery_date') else 'Today'}</p>
+            </div>
+            ''' for idx, bundle in enumerate(bundles, 1)])}
             
             <h3 style="color: #4CAF50;">Items Ready</h3>
             <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">

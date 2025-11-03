@@ -978,15 +978,22 @@ class DatabaseConnector:
                     """
                     self.execute_insert(update_request_query, (req_id,))
                     
-                    # Send email notification to user
+                    # Send email notification to user with ALL bundles data
                     try:
                         from user_notifications import send_user_notification
-                        bundle_data = {
-                            'po_number': po_number,
-                            'po_date': datetime.now(),
-                            'expected_delivery_date': expected_delivery_date
-                        }
-                        send_user_notification(self, req_id, 'ordered', bundle_data)
+                        # Get all ordered bundles with their details
+                        bundles_data = []
+                        for bundle in all_bundles:
+                            if bundle['status'] in ('Ordered', 'Completed'):
+                                bundles_data.append({
+                                    'bundle_id': bundle['bundle_id'],
+                                    'vendor_id': bundle['recommended_vendor_id'],
+                                    'po_number': bundle.get('po_number'),
+                                    'po_date': bundle.get('po_date'),
+                                    'expected_delivery_date': bundle.get('expected_delivery_date')
+                                })
+                        
+                        send_user_notification(self, req_id, 'ordered', {'bundles': bundles_data})
                     except Exception as email_error:
                         # Don't fail the whole operation if email fails
                         print(f"[WARNING] Failed to send email notification: {str(email_error)}")
