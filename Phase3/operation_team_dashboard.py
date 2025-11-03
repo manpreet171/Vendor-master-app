@@ -27,24 +27,9 @@ def main(db=None):
             del st.session_state[key]
         st.rerun()
     
-    # Main content - Tabs
-    tab1, tab2 = st.tabs(["📋 Reviewed Bundles", "📜 History"])
-    
-    with tab1:
-        try:
-            display_reviewed_bundles(db)
-        except Exception as e:
-            st.error(f"Error loading reviewed bundles: {str(e)}")
-            import traceback
-            st.code(traceback.format_exc())
-    
-    with tab2:
-        try:
-            display_history(db)
-        except Exception as e:
-            st.error(f"Error loading history: {str(e)}")
-            import traceback
-            st.code(traceback.format_exc())
+    # Main content - TEMPORARILY REMOVED TABS TO FIX BLANK SCREEN
+    # TODO: Add tabs back after confirming this works
+    display_reviewed_bundles(db)
     
     # Don't close connection if it was passed from app.py
     # db.close_connection()
