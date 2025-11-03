@@ -27,8 +27,14 @@ def main(db=None):
             del st.session_state[key]
         st.rerun()
     
-    # Main content - Reviewed Bundles
-    display_reviewed_bundles(db)
+    # Main content - Tabs
+    tab1, tab2 = st.tabs(["📋 Reviewed Bundles", "📜 History"])
+    
+    with tab1:
+        display_reviewed_bundles(db)
+    
+    with tab2:
+        display_history(db)
     
     # Don't close connection if it was passed from app.py
     # db.close_connection()
@@ -400,6 +406,138 @@ def handle_reject(db, bundle, rejection_reason):
     
     except Exception as e:
         st.error(f"❌ Error rejecting bundle: {str(e)}")
+
+def display_history(db):
+    """Display history of approved and rejected bundles"""
+    st.header("📜 Activity History")
+    st.caption("View bundles you have approved or rejected")
+    
+    # Filters
+    col1, col2 = st.columns(2)
+    with col1:
+        action_filter = st.selectbox(
+            "Action",
+            ["All Actions", "Approved Only", "Rejected Only"],
+            key="history_action_filter"
+        )
+    with col2:
+        days_filter = st.selectbox(
+            "Time Period",
+            [("Last 7 Days", 7), ("Last 30 Days", 30), ("Last 90 Days", 90)],
+            format_func=lambda x: x[0],
+            key="history_days_filter"
+        )
+    
+    st.markdown("---")
+    
+    try:
+        # Get history
+        history = db.get_operation_team_history(days=days_filter[1])
+        
+        if not history:
+            st.info("No activity found in the selected time period.")
+            return
+        
+        # Filter by action type
+        if action_filter == "Approved Only":
+            history = [h for h in history if h.get('approved_at')]
+        elif action_filter == "Rejected Only":
+            history = [h for h in history if h.get('rejected_at')]
+        
+        if not history:
+            st.info(f"No {action_filter.lower()} found in the selected time period.")
+            return
+        
+        st.success(f"**Found {len(history)} bundle(s)**")
+        st.markdown("---")
+        
+        # Display each bundle
+        for bundle in history:
+            display_history_bundle(db, bundle)
+            st.markdown("---")
+    
+    except Exception as e:
+        st.error(f"Error loading history: {str(e)}")
+
+def display_history_bundle(db, bundle):
+    """Display a single bundle from history with full details"""
+    
+    # Determine action type and timestamp
+    if bundle.get('approved_at'):
+        action = "✅ APPROVED"
+        action_time = bundle['approved_at']
+        action_color = "#4CAF50"
+    elif bundle.get('rejected_at'):
+        action = "❌ REJECTED"
+        action_time = bundle['rejected_at']
+        action_color = "#f44336"
+    else:
+        return  # Skip if neither approved nor rejected
+    
+    # Format timestamp
+    if hasattr(action_time, 'strftime'):
+        action_time_str = action_time.strftime('%Y-%m-%d %H:%M')
+    else:
+        action_time_str = str(action_time)
+    
+    # Header
+    st.markdown(f"""
+    <div style='background-color: {action_color}15; padding: 15px; border-radius: 5px; border-left: 4px solid {action_color};'>
+        <h3 style='margin: 0; color: {action_color};'>{action}</h3>
+        <p style='margin: 5px 0 0 0; color: #666;'>{action_time_str}</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("")
+    
+    # Bundle info
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.write(f"**📦 Bundle:** {bundle['bundle_name']}")
+        st.write(f"**🏢 Vendor:** {bundle.get('vendor_name', 'N/A')}")
+        if bundle.get('vendor_email'):
+            st.caption(f"📧 {bundle['vendor_email']}")
+        if bundle.get('vendor_phone'):
+            st.caption(f"📞 {bundle['vendor_phone']}")
+    
+    with col2:
+        st.metric("Items", f"{bundle.get('total_items', 0)}")
+        st.metric("Pieces", f"{bundle.get('total_quantity', 0)}")
+    
+    # Timeline
+    st.markdown("**⏰ Timeline:**")
+    timeline_items = []
+    if bundle.get('created_at'):
+        created = bundle['created_at'].strftime('%Y-%m-%d %H:%M') if hasattr(bundle['created_at'], 'strftime') else str(bundle['created_at'])
+        timeline_items.append(f"Created: {created}")
+    if bundle.get('reviewed_at'):
+        reviewed = bundle['reviewed_at'].strftime('%Y-%m-%d %H:%M') if hasattr(bundle['reviewed_at'], 'strftime') else str(bundle['reviewed_at'])
+        timeline_items.append(f"Reviewed: {reviewed}")
+    if bundle.get('approved_at'):
+        approved = bundle['approved_at'].strftime('%Y-%m-%d %H:%M') if hasattr(bundle['approved_at'], 'strftime') else str(bundle['approved_at'])
+        timeline_items.append(f"Approved: {approved}")
+    if bundle.get('rejected_at'):
+        rejected = bundle['rejected_at'].strftime('%Y-%m-%d %H:%M') if hasattr(bundle['rejected_at'], 'strftime') else str(bundle['rejected_at'])
+        timeline_items.append(f"Rejected: {rejected}")
+    
+    for item in timeline_items:
+        st.caption(f"• {item}")
+    
+    # Rejection reason if rejected
+    if bundle.get('rejection_reason'):
+        st.markdown("")
+        st.markdown(f"""
+        <div style='background-color: #ffebee; padding: 10px; border-radius: 5px; border-left: 4px solid #f44336;'>
+            <p style='margin: 0; color: #c62828;'><strong>❌ Rejection Reason:</strong></p>
+            <p style='margin: 5px 0 0 0; color: #c62828;'>{bundle['rejection_reason']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Show items in expandable section
+    st.markdown("")
+    with st.expander("📋 View Bundle Items", expanded=False):
+        display_bundle_items_table(db, bundle['bundle_id'])
 
 if __name__ == "__main__":
     main()

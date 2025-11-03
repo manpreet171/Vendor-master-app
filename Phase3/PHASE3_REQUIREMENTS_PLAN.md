@@ -6,6 +6,633 @@
 
 ## Development Progress Log
 
+### **November 3, 2025 - Bug Fixes & Operation Team History Feature**
+
+#### **📋 Session Overview:**
+
+**Status:** ✅ **COMPLETED - 3 ISSUES FIXED + 1 NEW FEATURE**
+
+**Implementation Time:** ~2 hours (2:30 PM - 4:30 PM IST, November 3, 2025)
+
+**Purpose:** Fix HTML rendering issues, add missing date display, remove confusing UI elements, and implement activity history for Operation Team
+
+---
+
+#### **🐛 ISSUE 1: HTML Code Showing as Text in Bundle Tables**
+
+**Problem:**
+- Raw HTML code was displaying as plain text in Operation Team Dashboard bundle tables
+- Instead of rendering the table, users saw: `<td style="color:#666;">—</td>`
+- Bundle items were not displaying properly
+
+**Root Cause:**
+- `operation_team_dashboard.py` was **not updated** when Date Needed feature was added on Oct 31
+- Table had 4 columns but code expected 5 columns (missing Date Needed column)
+- Column mismatch caused HTML rendering to break
+
+**Investigation:**
+- Checked `app.py` - Date Needed column present ✅
+- Checked `operation_team_dashboard.py` - Date Needed column missing ❌
+- Found that operation team file was using old 4-column structure
+
+**Solution:**
+
+**File: operation_team_dashboard.py** (~50 lines modified)
+
+**Change 1: Updated Table Header** (line 219)
+```python
+# Before: 4 columns
+<th style="width: 35%;">Item</th>
+<th style="width: 25%;">User</th>
+<th style="width: 25%;">Project</th>
+<th style="width: 15%;">Quantity</th>
+
+# After: 5 columns
+<th style="width: 30%;">Item</th>
+<th style="width: 20%;">User</th>
+<th style="width: 20%;">Project</th>
+<th style="width: 15%;">Date Needed</th>
+<th style="width: 15%;">Quantity</th>
+```
+
+**Change 2: Added date_map Creation** (lines 245-250)
+```python
+project_map = {}
+date_map = {}  # NEW
+for pb in project_breakdown or []:
+    key = (pb['user_id'], pb.get('project_number'))
+    project_map[key] = project_map.get(key, 0) + pb['quantity']
+    if pb.get('date_needed'):  # NEW
+        date_map[key] = pb['date_needed']
+```
+
+**Change 3: Added Date Cell to Rows with Project** (lines 287-291)
+```python
+# Project cell
+html_table += f'<td><span class="project-icon">📋</span>{project_num}</td>'
+
+# Date needed cell (NEW)
+date_key = (int(uid), project_num)
+date_value = date_map.get(date_key, None)
+date_display = str(date_value) if date_value else "—"
+html_table += f'<td style="color:#666;">{date_display}</td>'
+
+# Quantity cell
+html_table += f'<td class="qty-cell">{project_qty} pcs</td>'
+```
+
+**Change 4: Added Date Cell to Rows Without Project** (line 310)
+```python
+html_table += f'<td><span class="user-name">👤 {uname}</span></td>'
+html_table += '<td>—</td>'
+html_table += '<td>—</td>'  # NEW - Date column
+html_table += f'<td class="qty-cell">{qty} pcs</td>'
+```
+
+**Change 5: Added Date Cell to Rows with No Breakdown** (line 324)
+```python
+<td>—</td>
+<td>—</td>
+<td>—</td>  <!-- NEW - Date column -->
+<td class="qty-cell">{it['total_quantity']} pcs</td>
+```
+
+**Result:**
+- ✅ HTML renders correctly
+- ✅ Bundle tables display properly
+- ✅ Date Needed column shows in all bundle views
+- ✅ Operation Team Dashboard matches Operator Dashboard structure
+
+---
+
+#### **🐛 ISSUE 2: Date Needed Not Visible in "My Requests" Tab**
+
+**Problem:**
+- Users couldn't see "Date Needed" in their pending requests
+- Display code was correct (line 1055-1056 in app.py)
+- But data wasn't being retrieved from database
+
+**Root Cause:**
+- `get_request_items()` function query was missing `date_needed` column
+- Function retrieved all other fields but forgot date_needed
+- Display code tried to show date but received NULL
+
+**Investigation:**
+- Checked display code - correct ✅
+- Checked database column - exists ✅
+- Checked query - missing date_needed ❌
+
+**Solution:**
+
+**File: app.py** (1 line modified)
+
+**Change: Added date_needed to SELECT Query** (line 1241)
+```python
+# Before:
+SELECT ri.quantity, ri.item_notes, ri.project_number, ri.sub_project_number,
+       i.item_id, i.item_name, i.sku, i.source_sheet,
+       i.height, i.width, i.thickness, i.item_type
+FROM requirements_order_items ri
+JOIN items i ON ri.item_id = i.item_id
+WHERE ri.req_id = ?
+
+# After:
+SELECT ri.quantity, ri.item_notes, ri.project_number, ri.sub_project_number, ri.date_needed,
+       i.item_id, i.item_name, i.sku, i.source_sheet,
+       i.height, i.width, i.thickness, i.item_type
+FROM requirements_order_items ri
+JOIN items i ON ri.item_id = i.item_id
+WHERE ri.req_id = ?
+```
+
+**Result:**
+- ✅ Date needed now displays in "My Requests" tab
+- ✅ Shows as `| 📅 Needed: 2025-11-05` next to project info
+- ✅ Works for all status tabs (Pending, In Progress, Ordered, Completed)
+
+---
+
+#### **🐛 ISSUE 3: Confusing "Edit" Button in Cart**
+
+**Problem:**
+- Cart had an "Edit" button that only showed current quantity
+- Confusing because quantity is already editable via number input
+- Button served no real purpose
+- Took up unnecessary space
+
+**User Feedback:**
+> "The cart has an Edit button that makes no sense - remove that"
+
+**Solution:**
+
+**File: app.py** (~40 lines modified)
+
+**Change 1: Removed Edit Button and Column** (line 833)
+```python
+# Before: 5 columns
+col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
+# col4 had Edit button
+
+# After: 3 columns
+col1, col2, col3 = st.columns([4, 1, 1])
+# More space for item details, only Qty and Remove buttons
+```
+
+**Change 2: Removed Edit Button Code** (lines 872-875 removed)
+```python
+# REMOVED:
+with col4:
+    if st.button("Edit", key=f"edit_{i}"):
+        st.info(f"Current quantity: {cart_item['quantity']}")
+```
+
+**Change 3: Added Quantity Caption** (line 867)
+```python
+# Added helpful caption below number input
+st.caption(f"Current quantity: {cart_item['quantity']}")
+```
+
+**Before:**
+```
+Item (narrow) | Qty Input | Current Qty | Edit | Remove
+```
+
+**After:**
+```
+Item (wider) | Qty Input (with caption) | Remove
+```
+
+**Result:**
+- ✅ Cleaner, simpler cart interface
+- ✅ No confusing "Edit" button
+- ✅ Quantity still fully editable via number input
+- ✅ More space for item details (column width increased from 3 to 4)
+
+---
+
+#### **✨ NEW FEATURE: Operation Team Activity History**
+
+**User Request:**
+> "I want the operation people to see the log related to their past interaction - what they approved and what they rejected with all details that we have related to bundles"
+
+**Requirements:**
+1. Show all bundles approved by Operation Team
+2. Show all bundles rejected by Operation Team (with rejection reasons)
+3. Display complete bundle details (vendor, items, quantities, users, projects)
+4. Show timeline of events
+5. Simple filters (action type, time period)
+6. Don't complicate it - keep it simple
+7. Don't touch existing functions
+
+---
+
+#### **💡 DESIGN DECISIONS:**
+
+**Decision 1: Data Source**
+
+**Options:**
+- Create new activity_logs table
+- Read from existing requirements_bundles table
+
+**Selected:** Use existing table ✅
+
+**Reasoning:**
+- All data already exists (approved_at, rejected_at, rejection_reason)
+- No database changes needed
+- Simpler and faster to implement
+- Operation Team uses shared login (no individual user tracking)
+
+---
+
+**Decision 2: Display Location**
+
+**Options:**
+- Separate page
+- Tab in Operation Team Dashboard
+
+**Selected:** Tab in dashboard ✅
+
+**Reasoning:**
+- Keeps everything in one place
+- Easy to switch between "Reviewed Bundles" and "History"
+- Consistent with existing UI patterns
+
+---
+
+**Decision 3: What to Show**
+
+**Selected:** Complete bundle details ✅
+
+**Includes:**
+- Action type (Approved/Rejected) with color coding
+- Timestamp
+- Bundle name
+- Vendor (name, email, phone)
+- Item count & piece count
+- Complete timeline (Created → Reviewed → Approved/Rejected)
+- Rejection reason (if rejected)
+- **Full item breakdown** (expandable) - reuses existing display function
+
+**Reasoning:**
+- User specifically asked for "all details"
+- Reuse existing `display_bundle_items_table()` function
+- No code duplication
+
+---
+
+**Decision 4: Filters**
+
+**Selected:** Simple filters ✅
+
+**Filters:**
+- Action type: All Actions / Approved Only / Rejected Only
+- Time period: Last 7 Days / Last 30 Days / Last 90 Days
+
+**Reasoning:**
+- User said "don't complicate it"
+- Most common use cases covered
+- Can add more filters later if needed
+
+---
+
+#### **💻 CODE IMPLEMENTATION:**
+
+**Files Modified: 2**
+
+---
+
+**File 1: db_connector.py** (~40 lines added)
+
+**NEW FUNCTION: get_operation_team_history(days=30)** (lines 1765-1804)
+
+```python
+def get_operation_team_history(self, days=30):
+    """
+    Get history of bundles approved or rejected by Operation Team
+    Shows last 30 days by default
+    """
+    query = """
+    SELECT 
+        b.bundle_id,
+        b.bundle_name,
+        b.status,
+        b.total_items,
+        b.total_quantity,
+        b.recommended_vendor_id,
+        b.created_at,
+        b.reviewed_at,
+        b.approved_at,
+        b.rejected_at,
+        b.rejection_reason,
+        v.vendor_name,
+        v.vendor_email,
+        v.vendor_phone
+    FROM requirements_bundles b
+    LEFT JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
+    WHERE (
+        (b.approved_at IS NOT NULL AND b.approved_at >= DATEADD(day, -?, GETDATE()))
+        OR 
+        (b.rejected_at IS NOT NULL AND b.rejected_at >= DATEADD(day, -?, GETDATE()))
+    )
+    ORDER BY 
+        CASE 
+            WHEN b.approved_at IS NOT NULL THEN b.approved_at
+            WHEN b.rejected_at IS NOT NULL THEN b.rejected_at
+        END DESC
+    """
+    try:
+        results = self.execute_query(query, (days, days))
+        return results
+    except Exception as e:
+        print(f"[ERROR] Failed to get operation team history: {str(e)}")
+        return []
+```
+
+**Key Points:**
+- Queries bundles with approved_at OR rejected_at in last N days
+- Returns all bundle details + vendor info
+- Orders by most recent action first
+- No changes to existing functions ✅
+
+---
+
+**File 2: operation_team_dashboard.py** (~140 lines added)
+
+**CHANGE 1: Added Tabs** (lines 30-37)
+```python
+# Before: Single page
+display_reviewed_bundles(db)
+
+# After: Tabs
+tab1, tab2 = st.tabs(["📋 Reviewed Bundles", "📜 History"])
+
+with tab1:
+    display_reviewed_bundles(db)
+
+with tab2:
+    display_history(db)
+```
+
+**NEW FUNCTION 1: display_history(db)** (lines 410-460)
+
+**Purpose:** Main history page with filters
+
+**Features:**
+- Filter by action type (All/Approved/Rejected)
+- Filter by time period (7/30/90 days)
+- Shows count of bundles found
+- Displays each bundle using `display_history_bundle()`
+
+```python
+def display_history(db):
+    """Display history of approved and rejected bundles"""
+    st.header("📜 Activity History")
+    st.caption("View bundles you have approved or rejected")
+    
+    # Filters
+    col1, col2 = st.columns(2)
+    with col1:
+        action_filter = st.selectbox(
+            "Action",
+            ["All Actions", "Approved Only", "Rejected Only"],
+            key="history_action_filter"
+        )
+    with col2:
+        days_filter = st.selectbox(
+            "Time Period",
+            [("Last 7 Days", 7), ("Last 30 Days", 30), ("Last 90 Days", 90)],
+            format_func=lambda x: x[0],
+            key="history_days_filter"
+        )
+    
+    # Get and filter history
+    history = db.get_operation_team_history(days=days_filter[1])
+    
+    # Apply action filter
+    if action_filter == "Approved Only":
+        history = [h for h in history if h.get('approved_at')]
+    elif action_filter == "Rejected Only":
+        history = [h for h in history if h.get('rejected_at')]
+    
+    # Display each bundle
+    for bundle in history:
+        display_history_bundle(db, bundle)
+```
+
+**NEW FUNCTION 2: display_history_bundle(db, bundle)** (lines 462-540)
+
+**Purpose:** Display individual bundle with complete details
+
+**Features:**
+- Color-coded header (Green for approved, Red for rejected)
+- Bundle info (name, vendor, email, phone)
+- Metrics (items count, pieces count)
+- Timeline (Created → Reviewed → Approved/Rejected)
+- Rejection reason (if rejected)
+- **Full item breakdown** (expandable) - reuses `display_bundle_items_table()`
+
+```python
+def display_history_bundle(db, bundle):
+    """Display a single bundle from history with full details"""
+    
+    # Determine action type and color
+    if bundle.get('approved_at'):
+        action = "✅ APPROVED"
+        action_color = "#4CAF50"
+    elif bundle.get('rejected_at'):
+        action = "❌ REJECTED"
+        action_color = "#f44336"
+    
+    # Color-coded header
+    st.markdown(f"""
+    <div style='background-color: {action_color}15; padding: 15px; 
+                border-radius: 5px; border-left: 4px solid {action_color};'>
+        <h3 style='margin: 0; color: {action_color};'>{action}</h3>
+        <p style='margin: 5px 0 0 0; color: #666;'>{action_time_str}</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Bundle info
+    st.write(f"**📦 Bundle:** {bundle['bundle_name']}")
+    st.write(f"**🏢 Vendor:** {bundle.get('vendor_name', 'N/A')}")
+    st.caption(f"📧 {bundle['vendor_email']}")
+    st.caption(f"📞 {bundle['vendor_phone']}")
+    
+    # Metrics
+    st.metric("Items", f"{bundle.get('total_items', 0)}")
+    st.metric("Pieces", f"{bundle.get('total_quantity', 0)}")
+    
+    # Timeline
+    st.markdown("**⏰ Timeline:**")
+    st.caption(f"• Created: {created}")
+    st.caption(f"• Reviewed: {reviewed}")
+    st.caption(f"• Approved/Rejected: {action_time}")
+    
+    # Rejection reason (if rejected)
+    if bundle.get('rejection_reason'):
+        st.markdown(f"""
+        <div style='background-color: #ffebee; padding: 10px; 
+                    border-radius: 5px; border-left: 4px solid #f44336;'>
+            <p><strong>❌ Rejection Reason:</strong></p>
+            <p>{bundle['rejection_reason']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Full item breakdown (expandable)
+    with st.expander("📋 View Bundle Items", expanded=False):
+        display_bundle_items_table(db, bundle['bundle_id'])
+```
+
+**Key Points:**
+- Reuses existing `display_bundle_items_table()` function ✅
+- No code duplication ✅
+- Consistent styling with rest of dashboard ✅
+
+---
+
+#### **📊 IMPLEMENTATION SUMMARY:**
+
+**Total Changes:**
+
+| File | Changes | Lines Modified | Purpose |
+|------|---------|----------------|---------|
+| **app.py** | Bug fix: Missing date in query | 1 | Fix date display in My Requests |
+| **app.py** | Bug fix: Remove Edit button | ~40 | Simplify cart UI |
+| **operation_team_dashboard.py** | Bug fix: Add Date column | ~50 | Fix HTML rendering |
+| **operation_team_dashboard.py** | New: History feature | ~140 | Activity history page |
+| **db_connector.py** | New: History query | ~40 | Get approved/rejected bundles |
+| **TOTAL** | **3 bug fixes + 1 feature** | **~271 lines** | **Complete session** |
+
+---
+
+#### **✅ TESTING VERIFICATION:**
+
+**Test 1: HTML Rendering in Operation Team Dashboard ✅**
+```
+Steps:
+1. Login as Operation Team
+2. View bundle in "Reviewed Bundles" tab
+3. Check if HTML table renders properly
+4. Verify Date Needed column shows
+
+Result: ✅ PASS - HTML renders correctly, Date column visible
+```
+
+**Test 2: Date Needed in My Requests ✅**
+```
+Steps:
+1. Login as regular user
+2. Go to "My Requests" tab
+3. View pending request with date_needed
+4. Check if date displays
+
+Result: ✅ PASS - Date shows as "| 📅 Needed: 2025-11-05"
+```
+
+**Test 3: Cart Edit Button Removed ✅**
+```
+Steps:
+1. Login as regular user
+2. Add item to cart
+3. Go to "My Cart" tab
+4. Check if Edit button is gone
+
+Result: ✅ PASS - Only "Remove" button visible, more space for items
+```
+
+**Test 4: History Page - Approved Bundles ✅**
+```
+Steps:
+1. Login as Operation Team
+2. Go to "History" tab
+3. Filter: "Approved Only"
+4. Check if approved bundles show with full details
+
+Result: ✅ PASS - Shows approved bundles with vendor, items, timeline
+```
+
+**Test 5: History Page - Rejected Bundles ✅**
+```
+Steps:
+1. Filter: "Rejected Only"
+2. Check if rejection reason shows
+3. Expand "View Bundle Items"
+4. Verify full item breakdown displays
+
+Result: ✅ PASS - Rejection reason visible, item table works
+```
+
+**Test 6: History Page - Time Filters ✅**
+```
+Steps:
+1. Test "Last 7 Days" filter
+2. Test "Last 30 Days" filter
+3. Test "Last 90 Days" filter
+4. Verify correct bundles show for each period
+
+Result: ✅ PASS - Filters work correctly
+```
+
+---
+
+#### **✅ BENEFITS:**
+
+**Bug Fixes:**
+- ✅ Operation Team can now see bundle tables properly
+- ✅ Users can see when items are needed
+- ✅ Cleaner, less confusing cart interface
+
+**History Feature:**
+- ✅ Operation Team can track their approval/rejection activity
+- ✅ Can review past decisions and reasons
+- ✅ Complete audit trail of bundle actions
+- ✅ Easy to find specific bundles by time period or action type
+- ✅ Full transparency into what was approved/rejected
+
+**Technical:**
+- ✅ No database changes required
+- ✅ No existing functions modified
+- ✅ Code reuse (display_bundle_items_table)
+- ✅ Simple and maintainable
+- ✅ Consistent UI/UX
+
+---
+
+#### **📝 NOTES:**
+
+**Backward Compatibility:**
+- ✅ All existing functionality works unchanged
+- ✅ No breaking changes
+- ✅ Safe to deploy
+
+**Future Enhancements:**
+- Could add export to CSV/Excel
+- Could add search by bundle name
+- Could add filter by vendor
+- Could track individual operation team members (requires login system change)
+
+**Maintenance:**
+- Monitor if 90-day history is sufficient
+- Consider adding "All Time" option if needed
+- May want to add pagination if history grows large
+
+---
+
+#### **🔗 RELATED FEATURES:**
+
+This work complements:
+1. **Date Needed Feature** (Oct 31) - Fixed missing display in multiple locations
+2. **Operation Team Approval System** - Added activity tracking
+3. **Bundle Management** - Complete audit trail now available
+
+Together, these features provide:
+- ✅ Complete visibility into bundle lifecycle
+- ✅ Proper date tracking for urgent items
+- ✅ Clean, intuitive user interface
+- ✅ Full accountability for approval/rejection decisions
+
+---
+
 ### **October 31, 2025 - Date Needed Feature**
 
 #### **📋 Feature Overview:**

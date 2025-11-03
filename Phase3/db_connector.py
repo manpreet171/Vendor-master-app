@@ -1761,3 +1761,44 @@ class DatabaseConnector:
                 self.conn.rollback()
             print(f"Error rejecting bundle by operation: {str(e)}")
             return {'success': False, 'error': str(e)}
+    
+    def get_operation_team_history(self, days=30):
+        """
+        Get history of bundles approved or rejected by Operation Team
+        Shows last 30 days by default
+        """
+        query = """
+        SELECT 
+            b.bundle_id,
+            b.bundle_name,
+            b.status,
+            b.total_items,
+            b.total_quantity,
+            b.recommended_vendor_id,
+            b.created_at,
+            b.reviewed_at,
+            b.approved_at,
+            b.rejected_at,
+            b.rejection_reason,
+            v.vendor_name,
+            v.vendor_email,
+            v.vendor_phone
+        FROM requirements_bundles b
+        LEFT JOIN Vendors v ON b.recommended_vendor_id = v.vendor_id
+        WHERE (
+            (b.approved_at IS NOT NULL AND b.approved_at >= DATEADD(day, -?, GETDATE()))
+            OR 
+            (b.rejected_at IS NOT NULL AND b.rejected_at >= DATEADD(day, -?, GETDATE()))
+        )
+        ORDER BY 
+            CASE 
+                WHEN b.approved_at IS NOT NULL THEN b.approved_at
+                WHEN b.rejected_at IS NOT NULL THEN b.rejected_at
+            END DESC
+        """
+        try:
+            results = self.execute_query(query, (days, days))
+            return results
+        except Exception as e:
+            print(f"[ERROR] Failed to get operation team history: {str(e)}")
+            return []

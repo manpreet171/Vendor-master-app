@@ -830,7 +830,7 @@ def display_cart_tab(db):
     # Display cart items
     total_items = 0
     for i, cart_item in enumerate(st.session_state.cart_items):
-        col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
+        col1, col2, col3 = st.columns([4, 1, 1])
         
         with col1:
             st.write(f"**{cart_item['item_name']}**")
@@ -864,17 +864,10 @@ def display_cart_tab(db):
             if new_qty != cart_item['quantity']:
                 st.session_state.cart_items[i]['quantity'] = new_qty
                 st.rerun()
-        
-        with col3:
-            st.write(f"{cart_item['quantity']} pcs")
+            st.caption(f"Current quantity: {cart_item['quantity']}")
             total_items += cart_item['quantity']
         
-        with col4:
-            if st.button("Edit", key=f"edit_{i}"):
-                # For now, just show current quantity
-                st.info(f"Current quantity: {cart_item['quantity']}")
-        
-        with col5:
+        with col3:
             if st.button("Remove", key=f"remove_{i}"):
                 st.session_state.cart_items.pop(i)
                 st.rerun()
@@ -1238,7 +1231,7 @@ def get_user_requests(db, user_id):
 def get_request_items(db, req_id):
     """Get items for a specific request with dimensions"""
     query = """
-    SELECT ri.quantity, ri.item_notes, ri.project_number, ri.sub_project_number,
+    SELECT ri.quantity, ri.item_notes, ri.project_number, ri.sub_project_number, ri.date_needed,
            i.item_id, i.item_name, i.sku, i.source_sheet,
            i.height, i.width, i.thickness, i.item_type
     FROM requirements_order_items ri
