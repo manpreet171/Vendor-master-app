@@ -11,12 +11,18 @@ def main(db=None):
     # Note: set_page_config() is already called in app.py
     # Do not call it again here to avoid conflict
     
-    st.title("✅ Operation Team Dashboard")
-    st.caption("Bundle Approval Management")
-    
-    # Use passed db connection or create new one
-    if db is None:
-        db = DatabaseConnector()
+    try:
+        st.title("✅ Operation Team Dashboard")
+        st.caption("Bundle Approval Management")
+        
+        # Use passed db connection or create new one
+        if db is None:
+            db = DatabaseConnector()
+    except Exception as e:
+        st.error(f"❌ Critical Error Initializing Dashboard: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
+        return
     
     # Sidebar info
     st.sidebar.title("👤 Operation Team")
@@ -31,10 +37,20 @@ def main(db=None):
     tab1, tab2 = st.tabs(["📋 Reviewed Bundles", "📜 History"])
     
     with tab1:
-        display_reviewed_bundles(db)
+        try:
+            display_reviewed_bundles(db)
+        except Exception as e:
+            st.error(f"Error loading reviewed bundles: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
     
     with tab2:
-        display_history(db)
+        try:
+            display_history(db)
+        except Exception as e:
+            st.error(f"Error loading history: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
     
     # Don't close connection if it was passed from app.py
     # db.close_connection()

@@ -1279,8 +1279,10 @@ def display_operation_team_dashboard(db):
         import operation_team_dashboard
         operation_team_dashboard.main(db)  # Pass the database connection
     except Exception as e:
-        st.error(f"Error loading Operation Team Dashboard: {str(e)}")
+        st.error(f"❌ Error loading Operation Team Dashboard: {str(e)}")
         st.info("Please ensure operation_team_dashboard.py exists in the Phase3 directory.")
+        import traceback
+        st.code(traceback.format_exc())
 
 def display_operator_dashboard(db):
     """Operator Dashboard integrated into main app"""
