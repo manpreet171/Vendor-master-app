@@ -22,14 +22,25 @@ def main(db=None):
     st.sidebar.title("👤 Operation Team")
     st.sidebar.info("You can approve or reject reviewed bundles.")
     
+    # View selector
+    st.sidebar.markdown("---")
+    view_mode = st.sidebar.radio(
+        "📂 View",
+        ["📋 Reviewed Bundles", "📜 History"],
+        index=0
+    )
+    
+    st.sidebar.markdown("---")
     if st.sidebar.button("🚪 Logout"):
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
     
-    # Main content - TEMPORARILY REMOVED TABS TO FIX BLANK SCREEN
-    # TODO: Add tabs back after confirming this works
-    display_reviewed_bundles(db)
+    # Main content - Display based on selected view
+    if view_mode == "📋 Reviewed Bundles":
+        display_reviewed_bundles(db)
+    else:  # History
+        display_history(db)
     
     # Don't close connection if it was passed from app.py
     # db.close_connection()
