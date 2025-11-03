@@ -29,6 +29,16 @@ if not logger.handlers:
 
 
 def _get_env(name: str, default: Optional[str] = None) -> Optional[str]:
+    # Try Streamlit secrets first (for Streamlit Cloud deployment)
+    try:
+        import streamlit as st
+        val = st.secrets.get("email", {}).get(name)
+        if val and isinstance(val, str) and val.strip() != "":
+            return val
+    except Exception:
+        pass
+    
+    # Fall back to environment variables (for local/cron)
     val = os.environ.get(name, default)
     return val if val is None or (isinstance(val, str) and val.strip() != "") else default
 
@@ -50,20 +60,41 @@ def _env_configured() -> bool:
     return True
 
 
-def send_email_via_brevo(subject: str, body_text: str, html_body: Optional[str] = None) -> bool:
-    """Send email via Brevo SMTP using environment variables. Returns True on success."""
+def send_email_via_brevo(subject: str, body_text: str, html_body: Optional[str] = None, recipients: Optional[list] = None) -> bool:
+    """
+    Send email via Brevo SMTP.
+    
+    Args:
+        subject: Email subject
+        body_text: Plain text body
+        html_body: HTML body (optional)
+        recipients: List of recipient emails (optional). If not provided, uses EMAIL_RECIPIENTS from secrets.
+    
+    Returns:
+        True on success, False on failure
+    """
     server = _get_env('BREVO_SMTP_SERVER')
     port_str = _get_env('BREVO_SMTP_PORT', '587')
     login = _get_env('BREVO_SMTP_LOGIN')
     password = _get_env('BREVO_SMTP_PASSWORD')
     sender = _get_env('EMAIL_SENDER')
     sender_name = _get_env('EMAIL_SENDER_NAME', 'Procurement Bot')
-    recipients_str = _get_env('EMAIL_RECIPIENTS')
+    
+    # Use provided recipients or fall back to EMAIL_RECIPIENTS from secrets
+    if recipients:
+        recipients_list = recipients if isinstance(recipients, list) else [recipients]
+    else:
+        recipients_str = _get_env('EMAIL_RECIPIENTS')
+        if not recipients_str:
+            logger.info("No recipients provided and EMAIL_RECIPIENTS not configured; skipping email send.")
+            return False
+        recipients_list = [r.strip() for r in recipients_str.split(',') if r.strip()]
+    
     cc_str = _get_env('EMAIL_CC', '')
     reply_to = _get_env('EMAIL_REPLY_TO')
 
-    if not all([server, port_str, login, password, sender, recipients_str]):
-        logger.info("Email env vars not fully configured; skipping email send.")
+    if not all([server, port_str, login, password, sender]):
+        logger.info("Email SMTP credentials not fully configured; skipping email send.")
         return False
 
     try:
@@ -71,10 +102,9 @@ def send_email_via_brevo(subject: str, body_text: str, html_body: Optional[str] 
     except Exception:
         port = 587
 
-    recipients = [r.strip() for r in (recipients_str or '').split(',') if r.strip()]
     cc_list = [c.strip() for c in (cc_str or '').split(',') if c.strip()]
-    all_rcpts = recipients + cc_list
-    if not recipients:
+    all_rcpts = recipients_list + cc_list
+    if not recipients_list:
         logger.info("No recipients configured; skipping email send.")
         return False
 
@@ -89,7 +119,7 @@ def send_email_via_brevo(subject: str, body_text: str, html_body: Optional[str] 
 
     msg['Subject'] = subject
     msg['From'] = f"{sender_name} <{sender}>"
-    msg['To'] = ", ".join(recipients)
+    msg['To'] = ", ".join(recipients_list)
     if cc_list:
         msg['Cc'] = ", ".join(cc_list)
     if reply_to:
@@ -99,9 +129,9 @@ def send_email_via_brevo(subject: str, body_text: str, html_body: Optional[str] 
         smtp = smtplib.SMTP(server, port)
         smtp.starttls()
         smtp.login(login, password)
-        smtp.sendmail(sender, all_rcpts if all_rcpts else recipients, msg.as_string())
+        smtp.sendmail(sender, all_rcpts if all_rcpts else recipients_list, msg.as_string())
         smtp.quit()
-        logger.info(f"Email sent to: {', '.join(all_rcpts if all_rcpts else recipients)}")
+        logger.info(f"Email sent to: {', '.join(all_rcpts if all_rcpts else recipients_list)}")
         return True
     except Exception as e:
         logger.error(f"Failed to send email via Brevo: {e}")

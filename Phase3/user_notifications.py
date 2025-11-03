@@ -76,8 +76,8 @@ def send_user_notification(db, req_id, notification_type, bundle_data=None):
             logger.error(f"Invalid notification type: {notification_type}")
             return False
         
-        # Send email via Brevo
-        email_sent = send_email_via_brevo(subject, body_text, html_body)
+        # Send email via Brevo to user's email address
+        email_sent = send_email_via_brevo(subject, body_text, html_body, recipients=[user['email']])
         
         if email_sent:
             # Update last_notified_status
