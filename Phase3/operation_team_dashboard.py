@@ -11,18 +11,12 @@ def main(db=None):
     # Note: set_page_config() is already called in app.py
     # Do not call it again here to avoid conflict
     
-    try:
-        st.title("✅ Operation Team Dashboard")
-        st.caption("Bundle Approval Management")
-        
-        # Use passed db connection or create new one
-        if db is None:
-            db = DatabaseConnector()
-    except Exception as e:
-        st.error(f"❌ Critical Error Initializing Dashboard: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc())
-        return
+    st.title("✅ Operation Team Dashboard")
+    st.caption("Bundle Approval Management")
+    
+    # Use passed db connection or create new one
+    if db is None:
+        db = DatabaseConnector()
     
     # Sidebar info
     st.sidebar.title("👤 Operation Team")
