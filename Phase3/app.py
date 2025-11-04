@@ -1864,15 +1864,30 @@ def display_active_bundles_for_operator(db):
             
             st.markdown("---")
         
+        # Sort bundles: rejected ones first, then by created date
+        bundles_sorted = sorted(bundles, key=lambda b: (
+            0 if (b['status'] == 'Active' and b.get('rejection_reason')) else 1,
+            b.get('created_at') or ''
+        ), reverse=False)
+        
+        # Track if we need separator after rejected bundles
+        rejected_count = sum(1 for b in bundles if b['status'] == 'Active' and b.get('rejection_reason'))
+        rejected_shown = 0
+        
         # Display bundles in operator-friendly format
-        for bundle in bundles:
+        for bundle in bundles_sorted:
             # Build expander title with merge badge
             merge_badge = ""
             merge_count_val = bundle.get('merge_count') or 0  # Handle NULL from database
             if merge_count_val > 0:
                 merge_badge = f" 🔄 Updated {merge_count_val}x"
             
-            expander_title = f"📦 {bundle['bundle_name']}{merge_badge} - {get_status_badge(bundle['status'])}"
+            # Add rejection badge if bundle was rejected
+            rejection_badge = ""
+            if bundle['status'] == 'Active' and bundle.get('rejection_reason'):
+                rejection_badge = " ⚠️ REJECTED"
+            
+            expander_title = f"📦 {bundle['bundle_name']}{merge_badge}{rejection_badge} - {get_status_badge(bundle['status'])}"
             
             # Add checkbox ONLY for Reviewed bundles (for approval)
             if bundle['status'] == 'Reviewed':
@@ -1890,6 +1905,17 @@ def display_active_bundles_for_operator(db):
                     expander_obj = st.expander(expander_title, expanded=False)
             else:
                 expander_obj = st.expander(expander_title, expanded=False)
+            
+            # Add separator after rejected bundles
+            if bundle['status'] == 'Active' and bundle.get('rejection_reason'):
+                rejected_shown += 1
+            
+            # Show separator after last rejected bundle (if there are more bundles)
+            if rejected_shown == rejected_count and rejected_count > 0 and rejected_count < len(bundles):
+                # Only show separator once after rejected bundles
+                if rejected_shown == rejected_count:
+                    st.markdown("")
+                    rejected_shown += 1  # Prevent showing separator again
             
             with expander_obj:
                 # Show merge indicators if bundle was updated
