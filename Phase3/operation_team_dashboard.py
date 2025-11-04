@@ -533,34 +533,71 @@ def display_history_bundle(db, bundle):
         st.metric("Items", f"{bundle.get('total_items', 0)}")
         st.metric("Pieces", f"{bundle.get('total_quantity', 0)}")
     
-    # Timeline
-    st.markdown("**⏰ Timeline:**")
-    timeline_items = []
-    if bundle.get('created_at'):
-        created = bundle['created_at'].strftime('%Y-%m-%d %H:%M') if hasattr(bundle['created_at'], 'strftime') else str(bundle['created_at'])
-        timeline_items.append(f"Created: {created}")
-    if bundle.get('reviewed_at'):
-        reviewed = bundle['reviewed_at'].strftime('%Y-%m-%d %H:%M') if hasattr(bundle['reviewed_at'], 'strftime') else str(bundle['reviewed_at'])
-        timeline_items.append(f"Reviewed: {reviewed}")
-    if bundle.get('approved_at'):
-        approved = bundle['approved_at'].strftime('%Y-%m-%d %H:%M') if hasattr(bundle['approved_at'], 'strftime') else str(bundle['approved_at'])
-        timeline_items.append(f"Approved: {approved}")
-    if bundle.get('rejected_at'):
-        rejected = bundle['rejected_at'].strftime('%Y-%m-%d %H:%M') if hasattr(bundle['rejected_at'], 'strftime') else str(bundle['rejected_at'])
-        timeline_items.append(f"Rejected: {rejected}")
+    # Complete Timeline from history table
+    st.markdown("**⏰ Complete Timeline:**")
     
-    for item in timeline_items:
-        st.caption(f"• {item}")
+    # Try to get complete history from history table
+    history = db.get_bundle_history(bundle['bundle_id'])
     
-    # Rejection reason if rejected
-    if bundle.get('rejection_reason'):
-        st.markdown("")
-        st.markdown(f"""
-        <div style='background-color: #ffebee; padding: 10px; border-radius: 5px; border-left: 4px solid #f44336;'>
-            <p style='margin: 0; color: #c62828;'><strong>❌ Rejection Reason:</strong></p>
-            <p style='margin: 5px 0 0 0; color: #c62828;'>{bundle['rejection_reason']}</p>
-        </div>
-        """, unsafe_allow_html=True)
+    if history:
+        # Show complete history from history table
+        # First show creation
+        if bundle.get('created_at'):
+            created = bundle['created_at'].strftime('%Y-%m-%d %H:%M') if hasattr(bundle['created_at'], 'strftime') else str(bundle['created_at'])
+            st.caption(f"• 📦 Created: {created}")
+        
+        # Then show all actions from history
+        for h in history:
+            action_time = h['action_at'].strftime('%Y-%m-%d %H:%M') if hasattr(h['action_at'], 'strftime') else str(h['action_at'])
+            
+            # Icon based on action
+            if h['action'] == 'Reviewed':
+                icon = '👁️'
+            elif h['action'] == 'Approved':
+                icon = '✅'
+            elif h['action'] == 'Rejected':
+                icon = '❌'
+            else:
+                icon = '•'
+            
+            # Display action
+            st.caption(f"{icon} {h['action']} by {h['action_by']}: {action_time}")
+            
+            # Show notes (rejection reason) if exists
+            if h.get('notes') and h['notes'].strip():
+                st.markdown(f"""
+                <div style='background-color: #ffebee; padding: 8px; margin: 5px 0 5px 20px; border-radius: 3px; border-left: 3px solid #f44336;'>
+                    <p style='margin: 0; color: #c62828; font-size: 0.9em;'><strong>Reason:</strong> {h['notes']}</p>
+                </div>
+                """, unsafe_allow_html=True)
+    else:
+        # Fallback to old method if no history available (for old bundles)
+        timeline_items = []
+        if bundle.get('created_at'):
+            created = bundle['created_at'].strftime('%Y-%m-%d %H:%M') if hasattr(bundle['created_at'], 'strftime') else str(bundle['created_at'])
+            timeline_items.append(f"Created: {created}")
+        if bundle.get('reviewed_at'):
+            reviewed = bundle['reviewed_at'].strftime('%Y-%m-%d %H:%M') if hasattr(bundle['reviewed_at'], 'strftime') else str(bundle['reviewed_at'])
+            timeline_items.append(f"Reviewed: {reviewed}")
+        if bundle.get('approved_at'):
+            approved = bundle['approved_at'].strftime('%Y-%m-%d %H:%M') if hasattr(bundle['approved_at'], 'strftime') else str(bundle['approved_at'])
+            timeline_items.append(f"Approved: {approved}")
+        if bundle.get('rejected_at'):
+            rejected = bundle['rejected_at'].strftime('%Y-%m-%d %H:%M') if hasattr(bundle['rejected_at'], 'strftime') else str(bundle['rejected_at'])
+            timeline_items.append(f"Rejected: {rejected}")
+        
+        for item in timeline_items:
+            st.caption(f"• {item}")
+        
+        # Show rejection reason if exists (old method)
+        if bundle.get('rejection_reason'):
+            st.markdown("")
+            st.markdown(f"""
+            <div style='background-color: #ffebee; padding: 10px; border-radius: 5px; border-left: 4px solid #f44336;'>
+                <p style='margin: 0; color: #c62828;'><strong>❌ Rejection Reason:</strong></p>
+                <p style='margin: 5px 0 0 0; color: #c62828;'>{bundle['rejection_reason']}</p>
+            </div>
+            """, unsafe_allow_html=True)
     
     # Show items in expandable section
     st.markdown("")

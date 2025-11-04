@@ -1680,6 +1680,10 @@ class DatabaseConnector:
             WHERE bundle_id = ? AND status = 'Active'
             """
             self.execute_insert(update_q, (bundle_id,))
+            
+            # Log to history
+            self.log_bundle_action(bundle_id, 'Reviewed', 'Operator')
+            
             self.conn.commit()
             return True
         except Exception as e:
@@ -1774,6 +1778,10 @@ class DatabaseConnector:
               AND status = 'Reviewed'
             """
             self.execute_insert(update_q, (bundle_id,))
+            
+            # Log to history
+            self.log_bundle_action(bundle_id, 'Approved', 'Operation Team')
+            
             self.conn.commit()
             return {'success': True}
         except Exception as e:
@@ -1805,6 +1813,10 @@ class DatabaseConnector:
               AND status = 'Reviewed'
             """
             self.execute_insert(update_q, (rejection_reason, bundle_id))
+            
+            # Log to history with rejection reason
+            self.log_bundle_action(bundle_id, 'Rejected', 'Operation Team', rejection_reason)
+            
             self.conn.commit()
             return {'success': True}
         except Exception as e:
@@ -1812,6 +1824,26 @@ class DatabaseConnector:
                 self.conn.rollback()
             print(f"Error rejecting bundle by operation: {str(e)}")
             return {'success': False, 'error': str(e)}
+    
+    def log_bundle_action(self, bundle_id, action, action_by, notes=None):
+        """
+        Log bundle action to history table
+        Args:
+            bundle_id: Bundle ID
+            action: 'Reviewed', 'Approved', 'Rejected'
+            action_by: 'Operator', 'Operation Team'
+            notes: Optional notes (rejection reason, etc.)
+        """
+        try:
+            query = """
+            INSERT INTO requirements_bundle_history 
+            (bundle_id, action, action_by, notes)
+            VALUES (?, ?, ?, ?)
+            """
+            self.execute_insert(query, (bundle_id, action, action_by, notes))
+        except Exception as e:
+            print(f"[WARNING] Failed to log bundle action: {str(e)}")
+            # Don't raise - we don't want to break main workflow if history logging fails
     
     def get_operation_team_history(self, days=30):
         """
@@ -1852,4 +1884,28 @@ class DatabaseConnector:
             return results
         except Exception as e:
             print(f"[ERROR] Failed to get operation team history: {str(e)}")
+            return []
+    
+    def get_bundle_history(self, bundle_id):
+        """
+        Get complete action history for a specific bundle
+        Returns all actions (Reviewed, Approved, Rejected) in chronological order
+        """
+        query = """
+        SELECT 
+            history_id,
+            bundle_id,
+            action,
+            action_by,
+            action_at,
+            notes
+        FROM requirements_bundle_history
+        WHERE bundle_id = ?
+        ORDER BY action_at ASC
+        """
+        try:
+            results = self.execute_query(query, (bundle_id,))
+            return results if results else []
+        except Exception as e:
+            print(f"[ERROR] Failed to get bundle history: {str(e)}")
             return []
