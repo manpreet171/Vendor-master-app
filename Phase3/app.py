@@ -893,10 +893,46 @@ def display_cart_tab(db):
         
         with col_submit:
             if st.button("Submit Request", type="primary"):
-                if submit_cart_as_request(db):
-                    st.success("🎉 Request submitted successfully!")
-                    st.session_state.cart_items = []  # Clear cart after submission
+                # Show notes input dialog
+                st.session_state.show_notes_dialog = True
+        
+        # Notes input dialog
+        if st.session_state.get('show_notes_dialog', False):
+            st.markdown("---")
+            st.subheader("📝 Add Notes for Operator (Optional)")
+            st.caption("You can provide special instructions, suggest vendors, or mention urgency")
+            
+            user_notes = st.text_area(
+                "Your Notes:",
+                value="",
+                max_chars=1000,
+                height=100,
+                placeholder="Example:\n- Please use Master NY vendor\n- Urgent - needed by Friday\n- Contact me if any issues",
+                help="Optional notes for the procurement team (max 1000 characters)"
+            )
+            
+            col_cancel, col_skip, col_submit_notes = st.columns([1, 1, 1])
+            
+            with col_cancel:
+                if st.button("❌ Cancel", use_container_width=True):
+                    st.session_state.show_notes_dialog = False
                     st.rerun()
+            
+            with col_skip:
+                if st.button("⏭️ Submit Without Notes", use_container_width=True):
+                    if submit_cart_as_request(db, user_notes=""):
+                        st.success("🎉 Request submitted successfully!")
+                        st.session_state.cart_items = []
+                        st.session_state.show_notes_dialog = False
+                        st.rerun()
+            
+            with col_submit_notes:
+                if st.button("✅ Submit with Notes", type="primary", use_container_width=True):
+                    if submit_cart_as_request(db, user_notes=user_notes):
+                        st.success("🎉 Request submitted successfully!")
+                        st.session_state.cart_items = []
+                        st.session_state.show_notes_dialog = False
+                        st.rerun()
 
 def display_my_requests_tab(db):
     """Display user's past requests and their status - organized by status"""
@@ -1011,8 +1047,8 @@ def display_my_requests_tab(db):
                         
                         with col2:
                             st.write(f"**Request ID:** {request['req_id']}")
-                            if request.get('notes'):
-                                st.write(f"**Notes:** {request['notes']}")
+                            if request.get('user_notes'):
+                                st.write(f"**Notes:** {request['user_notes']}")
                         
                         # Show items in this request
                         request_items = get_request_items(db, request['req_id'])
@@ -1221,7 +1257,7 @@ def get_status_badge(status):
 def get_user_requests(db, user_id):
     """Get all requests for a user"""
     query = """
-    SELECT req_id, req_number, req_date, status, total_items, notes
+    SELECT req_id, req_number, req_date, status, total_items, user_notes
     FROM requirements_orders 
     WHERE user_id = ?
     ORDER BY req_date DESC
@@ -1240,7 +1276,7 @@ def get_request_items(db, req_id):
     """
     return db.execute_query(query, (req_id,))
 
-def submit_cart_as_request(db):
+def submit_cart_as_request(db, user_notes=""):
     """Submit cart items as a requirement request to database"""
     try:
         # Get cart items and user info
@@ -1255,8 +1291,8 @@ def submit_cart_as_request(db):
             st.error("User not logged in!")
             return False
         
-        # Submit to database
-        result = db.submit_cart_as_order(user_id, cart_items)
+        # Submit to database with notes
+        result = db.submit_cart_as_order(user_id, cart_items, user_notes=user_notes)
         
         if result['success']:
             # Show success message with request details
@@ -1944,6 +1980,28 @@ def display_active_bundles_for_operator(db):
                             st.write(f"**Marked Complete:** {completed_date}")
                             st.caption(f"by {completed_by}")
 
+                st.markdown("---")
+                
+                # User Requests & Notes section
+                st.write("**📋 User Requests in this Bundle:**")
+                requests_in_bundle = db.get_bundle_requests_with_notes(bundle.get('bundle_id'))
+                
+                if requests_in_bundle:
+                    for req in requests_in_bundle:
+                        with st.container():
+                            # Request header
+                            st.markdown(f"**👤 {req['req_number']}** ({req['full_name']}) - {req['item_count']} item(s)")
+                            
+                            # Show notes if exist
+                            if req.get('user_notes') and req['user_notes'].strip():
+                                st.info(f"📝 {req['user_notes']}")
+                            else:
+                                st.caption("(No notes)")
+                            
+                            st.markdown("")  # Small spacing
+                else:
+                    st.caption("No request information available")
+                
                 st.markdown("---")
                 st.write("**Items in this bundle:**")
                 # Use batched items

@@ -103,6 +103,28 @@ def display_bundle_card(db, bundle):
         """, unsafe_allow_html=True)
         st.markdown("---")
     
+    # User Requests & Notes section
+    st.markdown("**📋 User Requests in this Bundle:**")
+    requests_in_bundle = db.get_bundle_requests_with_notes(bundle['bundle_id'])
+    
+    if requests_in_bundle:
+        for req in requests_in_bundle:
+            with st.container():
+                # Request header
+                st.markdown(f"**👤 {req['req_number']}** ({req['full_name']}) - {req['item_count']} item(s)")
+                
+                # Show notes if exist
+                if req.get('user_notes') and req['user_notes'].strip():
+                    st.info(f"📝 {req['user_notes']}")
+                else:
+                    st.caption("(No notes)")
+                
+                st.markdown("")  # Small spacing
+    else:
+        st.caption("No request information available")
+    
+    st.markdown("---")
+    
     # Expandable section for detailed items (same as operator dashboard)
     with st.expander("📋 View Bundle Items", expanded=False):
         display_bundle_items_table(db, bundle['bundle_id'])

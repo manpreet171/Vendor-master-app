@@ -99,7 +99,7 @@ def _get_request_details(db, req_id):
     """Get request details from database"""
     query = """
     SELECT req_id, user_id, req_number, req_date, status, 
-           source_type, last_notified_status
+           source_type, last_notified_status, user_notes
     FROM requirements_orders
     WHERE req_id = ?
     """
@@ -202,6 +202,11 @@ def _build_in_progress_email(user, request, items):
         </tr>
         """
     
+    # Build notes section if exists
+    notes_text = ""
+    if request.get('user_notes') and request['user_notes'].strip():
+        notes_text = f"\n\nYOUR NOTES:\n{request['user_notes']}\n"
+    
     # Plain text body
     body_text = f"""
 Hi {user['full_name']},
@@ -213,7 +218,7 @@ Request Number: {request['req_number']}
 Submitted: {_format_date(request['req_date'])}
 Status: In Progress
 Total Items: {len(items)}
-
+{notes_text}
 ITEMS REQUESTED:
 {items_text}
 
@@ -243,6 +248,13 @@ This is an automated notification from the Requirements Management System.
                 <p style="margin: 5px 0;"><strong>Status:</strong> <span style="color: #ff9800; font-weight: bold;">In Progress</span></p>
                 <p style="margin: 5px 0;"><strong>Total Items:</strong> {len(items)}</p>
             </div>
+            
+            {f'''
+            <div style="background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #2c5aa0;">
+                <h3 style="margin-top: 0; color: #2c5aa0;">📝 Your Notes</h3>
+                <p style="margin: 5px 0; white-space: pre-wrap;">{request['user_notes']}</p>
+            </div>
+            ''' if request.get('user_notes') and request['user_notes'].strip() else ''}
             
             <h3 style="color: #2c5aa0;">Items Requested</h3>
             <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">

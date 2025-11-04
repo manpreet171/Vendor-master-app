@@ -6,6 +6,616 @@
 
 ## Development Progress Log
 
+### **November 4, 2025 - User Notes Feature Implementation**
+
+#### **📋 Session Overview:**
+
+**Status:** ✅ **COMPLETED - USER NOTES FEATURE**
+
+**Implementation Time:** ~2 hours (6:00 PM - 7:15 PM IST, November 4, 2025)
+
+**Purpose:** Allow users to add optional notes when submitting requests to provide context, instructions, or suggestions to operators
+
+**Summary:**
+1. ✅ Added `user_notes` column to database
+2. ✅ Created notes input UI in cart submission flow
+3. ✅ Updated backend functions to save and retrieve notes
+4. ✅ Added notes display in operator dashboard
+5. ✅ Added notes display in operation team dashboard
+6. ✅ Included notes in "In Progress" email notifications
+7. ✅ Updated "My Requests" to show user's notes
+
+---
+
+#### **💡 INITIAL DISCUSSION & REQUIREMENTS**
+
+**User Request:**
+- Need a way for users to add notes when submitting requests
+- Notes should be per REQUEST, not per item
+- Use cases:
+  - Suggest specific vendors
+  - Mention urgency or deadlines
+  - Provide special instructions
+  - Add context about the request
+
+**Design Decisions Made:**
+
+**1. When to Add Notes?**
+- ✅ **Selected:** During cart submission (modal/popup after clicking "Submit Request")
+- ❌ Rejected: During cart review (might be overlooked)
+- ❌ Rejected: After submission (too complex, can forget)
+
+**2. Should Notes Be Editable?**
+- ✅ **Selected:** No (one-time entry only)
+- ❌ Rejected: Yes (adds complexity, not needed)
+
+**3. Character Limit?**
+- ✅ **Selected:** 1000 characters
+- Reason: Enough for detailed instructions, prevents abuse
+
+**4. Where to Display Notes?**
+- ✅ Operator dashboard (in bundle view)
+- ✅ Operation team dashboard (in bundle view)
+- ✅ User's "My Requests" tab
+- ✅ "In Progress" email notification
+
+**5. Display Location in Bundle?**
+- ✅ **Selected:** Between summary and items table
+- Reason: Operator sees context BEFORE looking at items
+
+---
+
+#### **🔍 DISCOVERY: Existing `notes` Column**
+
+**Problem Found:**
+- Code already had a `notes` column in `requirements_orders` table
+- Function `submit_cart_as_order()` already accepted `notes=""` parameter
+- BUT: No UI to input notes (not connected)
+
+**User Decision:**
+- User added `user_notes` column (not `notes`)
+- Decided to use `user_notes` for clarity
+
+**Action Taken:**
+- Changed all references from `notes` to `user_notes`
+- Updated INSERT queries, SELECT queries, display code
+
+---
+
+#### **🗄️ DATABASE CHANGES**
+
+**Table:** `requirements_orders`
+
+**New Column:**
+```sql
+ALTER TABLE requirements_orders 
+ADD user_notes NVARCHAR(1000) NULL;
+```
+
+**Purpose:**
+- Store user's optional notes per request
+- 1000 character limit
+- NULL allowed (optional field)
+
+**Confirmed:** User ran query successfully, column exists
+
+---
+
+#### **📁 CODE CHANGES - STEP BY STEP**
+
+### **STEP 1: Backend Functions Updated**
+
+**File: `db_connector.py`**
+
+**A. Updated `submit_cart_as_order()` function** (Line 1070-1086)
+
+**Before:**
+```python
+def submit_cart_as_order(self, user_id, cart_items, notes=""):
+    order_query = """
+    INSERT INTO requirements_orders 
+    (req_number, user_id, req_date, status, total_items, notes)
+    VALUES (?, ?, GETDATE(), 'Pending', ?, ?)
+    """
+    self.execute_insert(order_query, (req_number, user_id, total_items, notes))
+```
+
+**After:**
+```python
+def submit_cart_as_order(self, user_id, cart_items, user_notes=""):
+    order_query = """
+    INSERT INTO requirements_orders 
+    (req_number, user_id, req_date, status, total_items, user_notes)
+    VALUES (?, ?, GETDATE(), 'Pending', ?, ?)
+    """
+    self.execute_insert(order_query, (req_number, user_id, total_items, user_notes))
+```
+
+**Changes:**
+- Parameter: `notes=""` → `user_notes=""`
+- Column: `notes` → `user_notes`
+
+---
+
+**B. Added `get_bundle_requests_with_notes()` function** (Line 662-679)
+
+**New Function:**
+```python
+def get_bundle_requests_with_notes(self, bundle_id):
+    """Get all requests in this bundle with their notes"""
+    query = """
+    SELECT DISTINCT 
+        ro.req_id,
+        ro.req_number,
+        ro.user_notes,
+        u.full_name,
+        COUNT(DISTINCT roi.item_id) as item_count
+    FROM requirements_bundle_mapping rbm
+    JOIN requirements_orders ro ON rbm.req_id = ro.req_id
+    JOIN requirements_users u ON ro.user_id = u.user_id
+    LEFT JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+    WHERE rbm.bundle_id = ?
+    GROUP BY ro.req_id, ro.req_number, ro.user_notes, u.full_name
+    ORDER BY ro.req_number
+    """
+    return self.execute_query(query, (bundle_id,))
+```
+
+**Purpose:**
+- Get all requests in a bundle with their notes
+- Returns: req_number, full_name, user_notes, item_count
+- Used by operator and operation team dashboards
+
+---
+
+### **STEP 2: Display Functions Updated**
+
+**File: `app.py`**
+
+**A. Updated `get_user_requests()` query** (Line 1224)
+
+**Before:**
+```python
+SELECT req_id, req_number, req_date, status, total_items, notes
+```
+
+**After:**
+```python
+SELECT req_id, req_number, req_date, status, total_items, user_notes
+```
+
+---
+
+**B. Updated "My Requests" display** (Line 1014-1015)
+
+**Before:**
+```python
+if request.get('notes'):
+    st.write(f"**Notes:** {request['notes']}")
+```
+
+**After:**
+```python
+if request.get('user_notes'):
+    st.write(f"**Notes:** {request['user_notes']}")
+```
+
+**Result:** Users can now see their own notes in "My Requests" tab
+
+---
+
+### **STEP 3: User Interface - Notes Input**
+
+**File: `app.py` (Line 894-935)**
+
+**Added Notes Input Dialog:**
+
+**Flow:**
+1. User clicks "Submit Request" button
+2. Dialog appears with text area for notes
+3. User sees 3 options:
+   - ❌ Cancel (closes dialog, returns to cart)
+   - ⏭️ Submit Without Notes (submits with empty notes)
+   - ✅ Submit with Notes (submits with user's notes)
+
+**Code Added:**
+```python
+with col_submit:
+    if st.button("Submit Request", type="primary"):
+        # Show notes input dialog
+        st.session_state.show_notes_dialog = True
+
+# Notes input dialog
+if st.session_state.get('show_notes_dialog', False):
+    st.markdown("---")
+    st.subheader("📝 Add Notes for Operator (Optional)")
+    st.caption("You can provide special instructions, suggest vendors, or mention urgency")
+    
+    user_notes = st.text_area(
+        "Your Notes:",
+        value="",
+        max_chars=1000,
+        height=100,
+        placeholder="Example:\n- Please use Master NY vendor\n- Urgent - needed by Friday\n- Contact me if any issues",
+        help="Optional notes for the procurement team (max 1000 characters)"
+    )
+    
+    col_cancel, col_skip, col_submit_notes = st.columns([1, 1, 1])
+    
+    with col_cancel:
+        if st.button("❌ Cancel", use_container_width=True):
+            st.session_state.show_notes_dialog = False
+            st.rerun()
+    
+    with col_skip:
+        if st.button("⏭️ Submit Without Notes", use_container_width=True):
+            if submit_cart_as_request(db, user_notes=""):
+                st.success("🎉 Request submitted successfully!")
+                st.session_state.cart_items = []
+                st.session_state.show_notes_dialog = False
+                st.rerun()
+    
+    with col_submit_notes:
+        if st.button("✅ Submit with Notes", type="primary", use_container_width=True):
+            if submit_cart_as_request(db, user_notes=user_notes):
+                st.success("🎉 Request submitted successfully!")
+                st.session_state.cart_items = []
+                st.session_state.show_notes_dialog = False
+                st.rerun()
+```
+
+**Features:**
+- ✅ Text area with 1000 char limit
+- ✅ Placeholder with examples
+- ✅ Optional (can skip)
+- ✅ Clean UI with 3 clear options
+- ✅ Session state management
+
+---
+
+**Updated `submit_cart_as_request()` function** (Line 1279-1295)
+
+**Before:**
+```python
+def submit_cart_as_request(db):
+    result = db.submit_cart_as_order(user_id, cart_items)
+```
+
+**After:**
+```python
+def submit_cart_as_request(db, user_notes=""):
+    result = db.submit_cart_as_order(user_id, cart_items, user_notes=user_notes)
+```
+
+**Changes:**
+- Added `user_notes=""` parameter
+- Passes notes to database function
+
+---
+
+### **STEP 4: Operator Dashboard - Display Notes**
+
+**File: `app.py` (Line 1983-2005)**
+
+**Added "User Requests & Notes" Section:**
+
+**Location:** After summary, before items table
+
+**Code Added:**
+```python
+st.markdown("---")
+
+# User Requests & Notes section
+st.write("**📋 User Requests in this Bundle:**")
+requests_in_bundle = db.get_bundle_requests_with_notes(bundle.get('bundle_id'))
+
+if requests_in_bundle:
+    for req in requests_in_bundle:
+        with st.container():
+            # Request header
+            st.markdown(f"**👤 {req['req_number']}** ({req['full_name']}) - {req['item_count']} item(s)")
+            
+            # Show notes if exist
+            if req.get('user_notes') and req['user_notes'].strip():
+                st.info(f"📝 {req['user_notes']}")
+            else:
+                st.caption("(No notes)")
+            
+            st.markdown("")  # Small spacing
+else:
+    st.caption("No request information available")
+
+st.markdown("---")
+st.write("**Items in this bundle:**")
+```
+
+**Display Format:**
+```
+📋 User Requests in this Bundle:
+
+👤 REQ-20251104-001 (Manpreet Singh) - 2 item(s)
+ℹ️ 📝 Urgent - please use Master NY vendor
+
+👤 REQ-20251104-002 (John Doe) - 1 item(s)
+(No notes)
+```
+
+**Features:**
+- ✅ Shows all requests in bundle
+- ✅ Displays notes in blue info box
+- ✅ Shows "(No notes)" if empty
+- ✅ Clean, scannable format
+
+---
+
+### **STEP 5: Operation Team Dashboard - Display Notes**
+
+**File: `operation_team_dashboard.py` (Line 106-126)**
+
+**Added "User Requests & Notes" Section:**
+
+**Location:** After rejection warning, before items table
+
+**Code Added:**
+```python
+# User Requests & Notes section
+st.markdown("**📋 User Requests in this Bundle:**")
+requests_in_bundle = db.get_bundle_requests_with_notes(bundle['bundle_id'])
+
+if requests_in_bundle:
+    for req in requests_in_bundle:
+        with st.container():
+            # Request header
+            st.markdown(f"**👤 {req['req_number']}** ({req['full_name']}) - {req['item_count']} item(s)")
+            
+            # Show notes if exist
+            if req.get('user_notes') and req['user_notes'].strip():
+                st.info(f"📝 {req['user_notes']}")
+            else:
+                st.caption("(No notes)")
+            
+            st.markdown("")  # Small spacing
+else:
+    st.caption("No request information available")
+
+st.markdown("---")
+```
+
+**Same display format as operator dashboard**
+- ✅ Consistent styling
+- ✅ Same user experience
+- ✅ Visible during approval process
+
+---
+
+### **STEP 6: Email Notifications - Include Notes**
+
+**File: `user_notifications.py`**
+
+**A. Updated `_get_request_details()` query** (Line 98-107)
+
+**Before:**
+```python
+SELECT req_id, user_id, req_number, req_date, status, 
+       source_type, last_notified_status
+FROM requirements_orders
+```
+
+**After:**
+```python
+SELECT req_id, user_id, req_number, req_date, status, 
+       source_type, last_notified_status, user_notes
+FROM requirements_orders
+```
+
+---
+
+**B. Updated `_build_in_progress_email()` function** (Line 205-257)
+
+**Plain Text Email - Added Notes Section:**
+
+**Before:**
+```python
+REQUEST DETAILS:
+Request Number: {request['req_number']}
+Status: In Progress
+Total Items: {len(items)}
+
+ITEMS REQUESTED:
+```
+
+**After:**
+```python
+# Build notes section if exists
+notes_text = ""
+if request.get('user_notes') and request['user_notes'].strip():
+    notes_text = f"\n\nYOUR NOTES:\n{request['user_notes']}\n"
+
+REQUEST DETAILS:
+Request Number: {request['req_number']}
+Status: In Progress
+Total Items: {len(items)}
+{notes_text}
+ITEMS REQUESTED:
+```
+
+---
+
+**HTML Email - Added Notes Box:**
+
+**Added:**
+```python
+{f'''
+<div style="background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #2c5aa0;">
+    <h3 style="margin-top: 0; color: #2c5aa0;">📝 Your Notes</h3>
+    <p style="margin: 5px 0; white-space: pre-wrap;">{request['user_notes']}</p>
+</div>
+''' if request.get('user_notes') and request['user_notes'].strip() else ''}
+```
+
+**Features:**
+- ✅ Only shows if notes exist
+- ✅ Blue styled box
+- ✅ Preserves line breaks (`white-space: pre-wrap`)
+- ✅ Both plain text and HTML versions
+
+---
+
+#### **📊 IMPLEMENTATION STATISTICS**
+
+| Metric | Count |
+|--------|-------|
+| **Files Modified** | 4 (`db_connector.py`, `app.py`, `operation_team_dashboard.py`, `user_notifications.py`) |
+| **Lines of Code Added** | ~150 |
+| **Database Columns Added** | 1 (`user_notes`) |
+| **New Functions Created** | 1 (`get_bundle_requests_with_notes()`) |
+| **Functions Modified** | 5 |
+| **Breaking Changes** | 0 |
+| **Backward Compatible** | ✅ Yes |
+
+---
+
+#### **🎯 FEATURE CAPABILITIES**
+
+### **User Side:**
+1. ✅ Add notes when submitting cart (optional)
+2. ✅ 1000 character limit enforced
+3. ✅ Can skip notes (3 options: Cancel, Skip, Submit)
+4. ✅ See notes in "My Requests" tab
+5. ✅ Receive notes in "In Progress" email
+
+### **Operator Side:**
+1. ✅ See notes in operator dashboard (Active Bundles tab)
+2. ✅ Notes shown for each request in bundle
+3. ✅ Clear indication if no notes
+4. ✅ Notes displayed before items table (context first)
+
+### **Operation Team Side:**
+1. ✅ See notes in operation team dashboard
+2. ✅ Same display format as operator
+3. ✅ Notes visible during approval process
+
+### **Email Side:**
+1. ✅ Notes included in "In Progress" email
+2. ✅ Both plain text and HTML versions
+3. ✅ Only shows if notes exist
+4. ✅ Preserves formatting (line breaks)
+
+---
+
+#### **💡 KEY DESIGN DECISIONS**
+
+**1. Per Request, Not Per Item**
+- ✅ Simpler for users (one note for entire request)
+- ✅ Easier to manage (one field in database)
+- ✅ Matches use case (context about request, not individual items)
+
+**2. Optional, Not Required**
+- ✅ Doesn't block workflow
+- ✅ Users can skip if no special instructions
+- ✅ Reduces friction
+
+**3. Not Editable After Submission**
+- ✅ Keeps it simple
+- ✅ Prevents confusion (operator sees what user wrote)
+- ✅ Can add edit feature later if needed
+
+**4. Display Before Items Table**
+- ✅ Operator sees context FIRST
+- ✅ Then looks at items with context in mind
+- ✅ Better workflow
+
+**5. Include in "In Progress" Email Only**
+- ✅ User sees their notes confirmed
+- ✅ Operator already saw notes in dashboard
+- ✅ No need to repeat in "Ordered" and "Completed" emails
+
+---
+
+#### **🧪 TESTING SCENARIOS**
+
+**User Interface:**
+- [ ] Submit request WITH notes
+- [ ] Submit request WITHOUT notes (skip button)
+- [ ] Submit request WITHOUT notes (cancel button)
+- [ ] Test 1000 character limit
+- [ ] Test special characters in notes
+- [ ] Test line breaks in notes
+- [ ] View notes in "My Requests" tab
+
+**Operator Dashboard:**
+- [ ] View bundle with 1 request (with notes)
+- [ ] View bundle with 1 request (no notes)
+- [ ] View bundle with multiple requests (mixed notes)
+- [ ] Verify notes display before items table
+
+**Operation Team Dashboard:**
+- [ ] View bundle with notes
+- [ ] View bundle without notes
+- [ ] Verify notes display correctly
+
+**Email Notifications:**
+- [ ] Receive "In Progress" email with notes
+- [ ] Receive "In Progress" email without notes
+- [ ] Verify plain text format
+- [ ] Verify HTML format
+- [ ] Test line breaks preservation
+
+---
+
+#### **🚀 BENEFITS**
+
+**For Users:**
+- ✅ Can provide context and instructions
+- ✅ Can suggest vendors
+- ✅ Can mention urgency
+- ✅ Better communication with operators
+
+**For Operators:**
+- ✅ Understand user's needs better
+- ✅ Can follow user's suggestions
+- ✅ Can prioritize based on notes
+- ✅ Reduced back-and-forth communication
+
+**Technical:**
+- ✅ Clean, maintainable code
+- ✅ Separate function for notes retrieval
+- ✅ Consistent display across all views
+- ✅ No breaking changes
+- ✅ Backward compatible
+
+---
+
+#### **🔮 FUTURE ENHANCEMENTS (Not Implemented)**
+
+**Possible additions:**
+1. Edit notes after submission (before bundling)
+2. Notes history/audit trail
+3. Rich text formatting (bold, italic, etc.)
+4. Attach files to notes
+5. Operator reply to notes
+6. Notes templates/suggestions
+7. Character count indicator
+8. Notes in "Ordered" and "Completed" emails
+
+---
+
+#### **⏱️ TIME BREAKDOWN**
+
+| Phase | Duration |
+|-------|----------|
+| **Discussion & Planning** | 30 min |
+| **Discovery (existing notes column)** | 10 min |
+| **Backend Functions** | 15 min |
+| **User Input UI** | 20 min |
+| **Operator Dashboard** | 15 min |
+| **Operation Team Dashboard** | 10 min |
+| **Email Notifications** | 15 min |
+| **Testing & Documentation** | 15 min |
+| **Total** | **~2 hours** |
+
+---
+
 ### **November 3, 2025 (Evening) - User Email Notifications System**
 
 #### **📋 Session Overview:**

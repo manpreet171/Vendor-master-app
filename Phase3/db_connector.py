@@ -659,6 +659,25 @@ class DatabaseConnector:
         """
         return self.execute_query(query, (req_id,))
     
+    def get_bundle_requests_with_notes(self, bundle_id):
+        """Get all requests in this bundle with their notes"""
+        query = """
+        SELECT DISTINCT 
+            ro.req_id,
+            ro.req_number,
+            ro.user_notes,
+            u.full_name,
+            COUNT(DISTINCT roi.item_id) as item_count
+        FROM requirements_bundle_mapping rbm
+        JOIN requirements_orders ro ON rbm.req_id = ro.req_id
+        JOIN requirements_users u ON ro.user_id = u.user_id
+        LEFT JOIN requirements_order_items roi ON ro.req_id = roi.req_id
+        WHERE rbm.bundle_id = ?
+        GROUP BY ro.req_id, ro.req_number, ro.user_notes, u.full_name
+        ORDER BY ro.req_number
+        """
+        return self.execute_query(query, (bundle_id,))
+    
     def move_item_to_vendor(self, current_bundle_id, item_id, new_vendor_id):
         """
         Move item from current bundle to vendor's bundle.
@@ -1067,7 +1086,7 @@ class DatabaseConnector:
         """
         return self.execute_query(query, (req_id,))
     
-    def submit_cart_as_order(self, user_id, cart_items, notes=""):
+    def submit_cart_as_order(self, user_id, cart_items, user_notes=""):
         """Submit cart items as a new requirements order"""
         try:
             # Generate request number
@@ -1079,11 +1098,11 @@ class DatabaseConnector:
             # Insert main order
             order_query = """
             INSERT INTO requirements_orders 
-            (req_number, user_id, req_date, status, total_items, notes)
+            (req_number, user_id, req_date, status, total_items, user_notes)
             VALUES (?, ?, GETDATE(), 'Pending', ?, ?)
             """
             
-            self.execute_insert(order_query, (req_number, user_id, total_items, notes))
+            self.execute_insert(order_query, (req_number, user_id, total_items, user_notes))
             
             # Get the inserted order ID
             req_id = self.get_last_insert_id()
