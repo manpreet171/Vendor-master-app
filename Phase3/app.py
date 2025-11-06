@@ -303,12 +303,12 @@ def display_boxhero_tab(db):
             # Project selection
             project_number, project_name, parent_project_id, sub_project_number = display_project_selector(db, "bh")
             
-            # Date needed input (optional)
+            # Date needed input (mandatory)
             date_needed = st.date_input(
-                "📅 Date Needed (Optional)",
-                value=None,
+                "📅 Date Needed *",
+                value=date.today(),
                 min_value=date.today(),
-                help="When do you need this item delivered? Leave blank if no specific deadline.",
+                help="When do you need this item delivered? (Required)",
                 key="bh_date_needed"
             )
             
@@ -324,8 +324,8 @@ def display_boxhero_tab(db):
                 )
             
             with col2:
-                # Only enable Add to Cart if project is selected
-                if project_number:
+                # Only enable Add to Cart if project and date are selected
+                if project_number and date_needed:
                     if st.button("🛒 Add to Cart", type="primary", key="bh_add_to_cart"):
                         result = add_to_cart(st.session_state.bh_selected_item, quantity, "BoxHero", project_number, project_name, parent_project_id, sub_project_number, date_needed, db)
                         if result == "added":
@@ -522,12 +522,12 @@ def display_raw_materials_tab(db):
             # Project selection
             project_number, project_name, parent_project_id, sub_project_number = display_project_selector(db, "rm")
             
-            # Date needed input (optional)
+            # Date needed input (mandatory)
             date_needed = st.date_input(
-                "📅 Date Needed (Optional)",
-                value=None,
+                "📅 Date Needed *",
+                value=date.today(),
                 min_value=date.today(),
-                help="When do you need this item delivered? Leave blank if no specific deadline.",
+                help="When do you need this item delivered? (Required)",
                 key="rm_date_needed"
             )
             
@@ -543,8 +543,8 @@ def display_raw_materials_tab(db):
                 )
             
             with col2:
-                # Only enable Add to Cart if project is selected
-                if project_number:
+                # Only enable Add to Cart if project and date are selected
+                if project_number and date_needed:
                     if st.button("🛒 Add to Cart", type="primary", key="rm_add_to_cart"):
                         result = add_to_cart(st.session_state.rm_selected_item, quantity, "Raw Materials", project_number, project_name, parent_project_id, sub_project_number, date_needed, db)
                         if result == "added":
@@ -745,7 +745,7 @@ def format_project_display(project_number, sub_project_number=None):
     return project_number
 
 def add_to_cart(item, quantity, category, project_number=None, project_name=None, parent_project_id=None, sub_project_number=None, date_needed=None, db=None):
-    """Add item to cart with project info and optional date needed"""
+    """Add item to cart with project info and required date needed"""
     try:
         # Check if user already has this item+project in pending or locked status
         if 'user_id' in st.session_state and db:
