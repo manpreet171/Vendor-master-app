@@ -6,6 +6,169 @@
 
 ## Development Progress Log
 
+### **November 7, 2025 (Session 7) - System Reset Bugfix** ✅
+
+#### **📋 Session Overview:**
+
+**Status:** ✅ **COMPLETED**
+
+**Time:** 9:25 PM - 9:40 PM IST (15 minutes)
+
+**Problem:** System reset function failing with foreign key constraint error
+
+**Solution:** Added missing table to reset sequence
+
+---
+
+#### **🐛 THE PROBLEM:**
+
+**User Report:**
+> "When I try to reset the system through master account it shows this error: ❌ System reset failed. Check database connection."
+
+**Actual Error (from Streamlit Cloud logs):**
+```
+pyodbc.IntegrityError: ('23000', '[23000] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]
+The DELETE statement conflicted with the REFERENCE constraint "FK__requireme__bundl__220B0B18". 
+The conflict occurred in database "dw-sqldb", table "dbo.requirements_bundle_history", column 'bundle_id'. (547)')
+```
+
+**Root Cause:**
+- The `requirements_bundle_history` table was added for audit logging (tracks review/approve/reject actions)
+- This table has a foreign key constraint to `requirements_bundles.bundle_id`
+- The `reset_system_for_testing()` function was trying to DELETE from `requirements_bundles` first
+- SQL Server blocked the DELETE because `requirements_bundle_history` still had references to those bundle IDs
+- The table was missing from the reset sequence
+
+---
+
+#### **🔍 DIAGNOSIS PROCESS:**
+
+**Step 1: Initial Investigation**
+- Error message was generic: "Check database connection"
+- Database connection was working fine
+- Added verbose logging to identify exact failure point
+
+**Step 2: Enhanced Error Reporting**
+- Modified `reset_system_for_testing()` to raise exceptions instead of returning False
+- Added detailed error messages to UI
+- Checked Streamlit Cloud logs
+
+**Step 3: Found the Constraint Error**
+- Error revealed: `requirements_bundle_history` table blocking DELETE
+- This table was added in a previous session for audit trail functionality
+- Foreign key constraint: `requirements_bundle_history.bundle_id` → `requirements_bundles.bundle_id`
+
+**Step 4: Verified Table Structure**
+- Searched codebase for all `ALTER TABLE` statements
+- Found `requirements_bundle_history` was created but never added to reset function
+- Confirmed foreign key dependency chain
+
+---
+
+#### **✅ THE FIX:**
+
+**Code Changes:**
+
+**File: `db_connector.py` - Updated `reset_system_for_testing()` function**
+
+**Before (Missing table):**
+```python
+tables_to_clear = [
+    'requirements_bundle_mapping',  # Links bundles to requests
+    'requirements_bundle_items',    # Items in bundles
+    'requirements_bundles',         # Bundles themselves
+    'requirements_order_items',     # Items in orders
+    'requirements_orders'           # Orders/requests
+]
+```
+
+**After (Fixed order):**
+```python
+tables_to_clear = [
+    'requirements_bundle_history',  # Bundle audit history (FK to bundles) ← ADDED
+    'requirements_bundle_mapping',  # Links bundles to requests
+    'requirements_bundle_items',    # Items in bundles
+    'requirements_bundles',         # Bundles themselves
+    'requirements_order_items',     # Items in orders
+    'requirements_orders'           # Orders/requests
+]
+```
+
+**Key Points:**
+1. ✅ Added `requirements_bundle_history` as FIRST table to delete
+2. ✅ Must delete child tables before parent tables (foreign key order)
+3. ✅ Cleaned up verbose logging (production-ready)
+4. ✅ Simplified error handling in `app.py`
+
+---
+
+#### **📊 COMPLETE TABLE DELETION ORDER:**
+
+**Correct Foreign Key Dependency Chain:**
+```
+1. requirements_bundle_history    (FK → bundles)
+2. requirements_bundle_mapping    (FK → bundles, orders)
+3. requirements_bundle_items      (FK → bundles, items)
+4. requirements_bundles           (parent table)
+5. requirements_order_items       (FK → orders, items)
+6. requirements_orders            (parent table)
+```
+
+---
+
+#### **🧪 TESTING:**
+
+**Test 1: Reset with Data**
+- Created test requests and bundles
+- Clicked "Reset System for Testing"
+- ✅ Result: All tables cleared successfully
+- ✅ No foreign key errors
+- ✅ Identity columns reset
+
+**Test 2: Reset Empty System**
+- Reset again with no data
+- ✅ Result: Completed successfully (0 rows deleted)
+
+---
+
+#### **📝 LESSONS LEARNED:**
+
+**1. Keep Reset Function Updated:**
+- Whenever a new table with foreign keys is added, update `reset_system_for_testing()`
+- Document foreign key dependencies
+
+**2. Error Reporting Matters:**
+- Generic error messages hide root cause
+- Detailed logging helped identify the exact constraint violation
+- Streamlit Cloud logs are essential for debugging production issues
+
+**3. Foreign Key Order is Critical:**
+- Always delete child tables before parent tables
+- SQL Server enforces referential integrity strictly
+
+---
+
+#### **📦 FILES MODIFIED:**
+
+| File | Changes | Lines |
+|------|---------|-------|
+| `db_connector.py` | Added `requirements_bundle_history` to reset sequence | ~30 |
+| `app.py` | Simplified error handling | ~5 |
+
+**Total:** 2 files, ~35 lines modified
+
+---
+
+#### **✅ VERIFICATION:**
+
+- ✅ System reset works on Streamlit Cloud
+- ✅ All 6 tables cleared in correct order
+- ✅ No foreign key constraint errors
+- ✅ Clean error messages if reset fails
+- ✅ Code simplified and production-ready
+
+---
+
 ### **November 7, 2025 (Session 6) - Slack Integration Discussion (Future Implementation)**
 
 #### **📋 Session Overview:**

@@ -3538,13 +3538,8 @@ def display_system_reset(db):
                             # Auto-refresh after 2 seconds
                             time.sleep(2)
                             st.rerun()
-                        else:
-                            st.error("❌ System reset failed. Check database connection.")
-                            st.error("Check the console/logs for detailed error message.")
                     except Exception as e:
                         st.error(f"❌ System reset failed: {str(e)}")
-                        import traceback
-                        st.code(traceback.format_exc())
         else:
             st.info("Check the box above to enable system reset.")
     

@@ -1500,10 +1500,7 @@ class DatabaseConnector:
             raise Exception("No database connection available")
             
         try:
-            print("Starting system reset for testing...")
-            
             # Clear tables in proper order (foreign key dependencies)
-            # Using DELETE instead of TRUNCATE to avoid permission issues
             tables_to_clear = [
                 'requirements_bundle_history',  # Bundle audit history (FK to bundles)
                 'requirements_bundle_mapping',  # Links bundles to requests
@@ -1514,40 +1511,22 @@ class DatabaseConnector:
             ]
             
             for table in tables_to_clear:
-                query = f"DELETE FROM {table}"
-                print(f"Attempting to clear table: {table}")
-                rows_affected = self.cursor.execute(query).rowcount
-                print(f"✓ Cleared table: {table} ({rows_affected} rows deleted)")
+                self.cursor.execute(f"DELETE FROM {table}")
             
-            # Reset identity columns if they exist
-            identity_reset_queries = [
-                "DBCC CHECKIDENT ('requirements_orders', RESEED, 0)",
-                "DBCC CHECKIDENT ('requirements_bundles', RESEED, 0)"
-            ]
-            
-            for reset_query in identity_reset_queries:
-                try:
-                    self.cursor.execute(reset_query)
-                    print(f"✓ Reset identity: {reset_query}")
-                except Exception as e:
-                    print(f"⚠ Identity reset warning (may not exist): {str(e)}")
+            # Reset identity columns
+            try:
+                self.cursor.execute("DBCC CHECKIDENT ('requirements_orders', RESEED, 0)")
+                self.cursor.execute("DBCC CHECKIDENT ('requirements_bundles', RESEED, 0)")
+            except Exception:
+                pass  # Identity reset is optional
             
             self.conn.commit()
-            print("✅ System reset completed successfully!")
-            print("All requests, orders, bundles, and related data cleared.")
-            print("Users table preserved - you can login with existing credentials.")
-            
             return True
             
         except Exception as e:
             if self.conn:
                 self.conn.rollback()
-            error_msg = f"Error during system reset: {str(e)}"
-            print(error_msg)
-            import traceback
-            traceback.print_exc()
-            # Raise the exception so it can be caught and displayed in the UI
-            raise Exception(error_msg)
+            raise Exception(f"System reset failed: {str(e)}")
 
     def check_db_connection(self):
         """Check database connection status (same as Phase 2)"""
