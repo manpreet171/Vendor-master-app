@@ -18,8 +18,9 @@ def main(db=None):
     if db is None:
         db = DatabaseConnector()
     
-    # Sidebar info
-    st.sidebar.title("👤 Operation Team")
+    # Sidebar info - Show actual username if available
+    username = st.session_state.get('username', 'Operation Team')
+    st.sidebar.title(f"👤 {username}")
     st.sidebar.info("You can approve or reject reviewed bundles.")
     
     # View selector
@@ -406,7 +407,9 @@ def show_rejection_dialog(db, bundle):
 def handle_approve(db, bundle):
     """Handle bundle approval"""
     try:
-        result = db.approve_bundle_by_operation(bundle['bundle_id'])
+        # Get username from session state (defaults to 'Operation Team' if not found)
+        username = st.session_state.get('username', 'Operation Team')
+        result = db.approve_bundle_by_operation(bundle['bundle_id'], username)
         
         if result.get('success'):
             st.success(f"✅ Bundle {bundle['bundle_name']} approved successfully!")
@@ -421,7 +424,9 @@ def handle_approve(db, bundle):
 def handle_reject(db, bundle, rejection_reason):
     """Handle bundle rejection"""
     try:
-        result = db.reject_bundle_by_operation(bundle['bundle_id'], rejection_reason)
+        # Get username from session state (defaults to 'Operation Team' if not found)
+        username = st.session_state.get('username', 'Operation Team')
+        result = db.reject_bundle_by_operation(bundle['bundle_id'], rejection_reason, username)
         
         if result.get('success'):
             st.success(f"✅ Bundle {bundle['bundle_name']} rejected successfully!")

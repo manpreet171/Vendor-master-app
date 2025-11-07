@@ -1650,8 +1650,10 @@ def display_user_management_admin(db):
                                 edit_email = st.text_input("Email", value=u.get('email') or "")
                                 edit_dept = st.text_input("Department", value=u.get('department') or "")
                             with ec2:
-                                edit_role = st.selectbox("Role", ["User", "Operator"], 
-                                                       index=0 if (u.get('user_role') or "User") == "User" else 1)
+                                role_options = ["User", "Operator", "Operation"]
+                                current_role = u.get('user_role') or "User"
+                                role_index = role_options.index(current_role) if current_role in role_options else 0
+                                edit_role = st.selectbox("Role", role_options, index=role_index)
                                 edit_active = st.checkbox("Active", value=bool(u.get('is_active')))
                                 edit_pw = st.text_input("New Password (optional)", type="password")
                             
@@ -1713,7 +1715,7 @@ def display_user_management_admin(db):
             c_department = st.text_input("Department")
         with cu2:
             c_email = st.text_input("Email")
-            c_role = st.selectbox("Role", ["User", "Operator"])
+            c_role = st.selectbox("Role", ["User", "Operator", "Operation"])
             c_active = st.checkbox("Active", value=True)
         c_pw = st.text_input("Initial password", type="password")
         submit_new = st.form_submit_button("Create User", type="primary")

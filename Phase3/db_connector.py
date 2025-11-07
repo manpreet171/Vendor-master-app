@@ -1762,10 +1762,13 @@ class DatabaseConnector:
             print(f"[ERROR] Failed to get reviewed bundles: {str(e)}")
             return []
     
-    def approve_bundle_by_operation(self, bundle_id):
+    def approve_bundle_by_operation(self, bundle_id, username='Operation Team'):
         """
         Operation Team approves bundle (Reviewed → Approved)
         Clears rejection data when approved
+        Args:
+            bundle_id: Bundle ID to approve
+            username: Name of user approving (defaults to 'Operation Team')
         """
         try:
             update_q = """
@@ -1779,8 +1782,8 @@ class DatabaseConnector:
             """
             self.execute_insert(update_q, (bundle_id,))
             
-            # Log to history
-            self.log_bundle_action(bundle_id, 'Approved', 'Operation Team')
+            # Log to history with actual username
+            self.log_bundle_action(bundle_id, 'Approved', username)
             
             self.conn.commit()
             return {'success': True}
@@ -1790,10 +1793,14 @@ class DatabaseConnector:
             print(f"Error approving bundle by operation: {str(e)}")
             return {'success': False, 'error': str(e)}
     
-    def reject_bundle_by_operation(self, bundle_id, rejection_reason):
+    def reject_bundle_by_operation(self, bundle_id, rejection_reason, username='Operation Team'):
         """
         Operation Team rejects bundle (Reviewed → Active)
         Stores rejection reason and timestamp
+        Args:
+            bundle_id: Bundle ID to reject
+            rejection_reason: Reason for rejection
+            username: Name of user rejecting (defaults to 'Operation Team')
         """
         try:
             if not rejection_reason or not rejection_reason.strip():
@@ -1814,8 +1821,8 @@ class DatabaseConnector:
             """
             self.execute_insert(update_q, (rejection_reason, bundle_id))
             
-            # Log to history with rejection reason
-            self.log_bundle_action(bundle_id, 'Rejected', 'Operation Team', rejection_reason)
+            # Log to history with rejection reason and actual username
+            self.log_bundle_action(bundle_id, 'Rejected', username, rejection_reason)
             
             self.conn.commit()
             return {'success': True}
