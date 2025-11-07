@@ -875,64 +875,48 @@ def display_cart_tab(db):
         st.markdown("---")
     
     # Cart summary
-    st.subheader("Cart Summary")
-    col1, col2 = st.columns(2)
+    st.subheader("📊 Cart Summary")
     
-    with col1:
+    # Summary metrics in clean layout
+    metric_col1, metric_col2 = st.columns(2)
+    with metric_col1:
         st.metric("Total Items", f"{len(st.session_state.cart_items)} types")
+    with metric_col2:
         st.metric("Total Quantity", f"{total_items} pieces")
     
-    with col2:
-        # Action buttons
-        col_clear, col_submit = st.columns(2)
-        
-        with col_clear:
-            if st.button("Clear Cart", type="secondary"):
+    st.markdown("---")
+    
+    # Notes section - always visible
+    st.markdown("### 📝 Notes for Operator")
+    st.caption("💡 Optional - Add special instructions, vendor preferences, or urgency details")
+    
+    user_notes = st.text_area(
+        "Your Notes:",
+        value="",
+        max_chars=1000,
+        height=90,
+        placeholder="Example:\n• Please use Master NY vendor\n• Urgent - needed by Friday\n• Contact me if any issues",
+        help="Optional notes for the procurement team (max 1000 characters)",
+        label_visibility="collapsed"
+    )
+    
+    st.markdown("---")
+    
+    # Action buttons
+    col_clear, col_submit = st.columns([1, 2])
+    
+    with col_clear:
+        if st.button("🗑️ Clear Cart", type="secondary", use_container_width=True):
+            st.session_state.cart_items = []
+            st.rerun()
+    
+    with col_submit:
+        if st.button("✅ Submit Request", type="primary", use_container_width=True):
+            if submit_cart_as_request(db, user_notes=user_notes):
+                st.success("🎉 Request submitted successfully!")
+                st.balloons()
                 st.session_state.cart_items = []
                 st.rerun()
-        
-        with col_submit:
-            if st.button("Submit Request", type="primary"):
-                # Show notes input dialog
-                st.session_state.show_notes_dialog = True
-        
-        # Notes input dialog
-        if st.session_state.get('show_notes_dialog', False):
-            st.markdown("---")
-            st.subheader("📝 Add Notes for Operator (Optional)")
-            st.caption("You can provide special instructions, suggest vendors, or mention urgency")
-            
-            user_notes = st.text_area(
-                "Your Notes:",
-                value="",
-                max_chars=1000,
-                height=100,
-                placeholder="Example:\n- Please use Master NY vendor\n- Urgent - needed by Friday\n- Contact me if any issues",
-                help="Optional notes for the procurement team (max 1000 characters)"
-            )
-            
-            col_cancel, col_skip, col_submit_notes = st.columns([1, 1, 1])
-            
-            with col_cancel:
-                if st.button("❌ Cancel", use_container_width=True):
-                    st.session_state.show_notes_dialog = False
-                    st.rerun()
-            
-            with col_skip:
-                if st.button("⏭️ Submit Without Notes", use_container_width=True):
-                    if submit_cart_as_request(db, user_notes=""):
-                        st.success("🎉 Request submitted successfully!")
-                        st.session_state.cart_items = []
-                        st.session_state.show_notes_dialog = False
-                        st.rerun()
-            
-            with col_submit_notes:
-                if st.button("✅ Submit with Notes", type="primary", use_container_width=True):
-                    if submit_cart_as_request(db, user_notes=user_notes):
-                        st.success("🎉 Request submitted successfully!")
-                        st.session_state.cart_items = []
-                        st.session_state.show_notes_dialog = False
-                        st.rerun()
 
 def display_my_requests_tab(db):
     """Display user's past requests and their status - organized by status"""
