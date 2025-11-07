@@ -1510,8 +1510,12 @@ class DatabaseConnector:
             
             for table in tables_to_clear:
                 query = f"DELETE FROM {table}"
-                self.execute_insert(query, ())
-                print(f"Cleared table: {table}")
+                try:
+                    self.cursor.execute(query)
+                    print(f"Cleared table: {table}")
+                except Exception as e:
+                    print(f"Error clearing {table}: {str(e)}")
+                    raise
             
             # Reset identity columns if they exist
             identity_reset_queries = [
