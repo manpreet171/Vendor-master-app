@@ -3527,18 +3527,24 @@ def display_system_reset(db):
         if st.checkbox("I understand this will delete all test data"):
             if st.button("🧹 RESET SYSTEM FOR TESTING", type="primary"):
                 with st.spinner("Resetting system..."):
-                    success = db.reset_system_for_testing()
-                    
-                    if success:
-                        st.success("✅ System reset completed successfully!")
-                        st.info("You can now create new test requests and run bundling again.")
-                        st.balloons()
+                    try:
+                        success = db.reset_system_for_testing()
                         
-                        # Auto-refresh after 2 seconds
-                        time.sleep(2)
-                        st.rerun()
-                    else:
-                        st.error("❌ System reset failed. Check database connection.")
+                        if success:
+                            st.success("✅ System reset completed successfully!")
+                            st.info("You can now create new test requests and run bundling again.")
+                            st.balloons()
+                            
+                            # Auto-refresh after 2 seconds
+                            time.sleep(2)
+                            st.rerun()
+                        else:
+                            st.error("❌ System reset failed. Check database connection.")
+                            st.error("Check the console/logs for detailed error message.")
+                    except Exception as e:
+                        st.error(f"❌ System reset failed: {str(e)}")
+                        import traceback
+                        st.code(traceback.format_exc())
         else:
             st.info("Check the box above to enable system reset.")
     
