@@ -1505,6 +1505,7 @@ class DatabaseConnector:
             # Clear tables in proper order (foreign key dependencies)
             # Using DELETE instead of TRUNCATE to avoid permission issues
             tables_to_clear = [
+                'requirements_bundle_history',  # Bundle audit history (FK to bundles)
                 'requirements_bundle_mapping',  # Links bundles to requests
                 'requirements_bundle_items',    # Items in bundles
                 'requirements_bundles',         # Bundles themselves
