@@ -1,6 +1,6 @@
 # Phase 3 Operator Dashboard – Complete User Manual (For Operators)
 
-**Version:** 2.0 | **Last Updated:** October 14, 2025
+**Version:** 3.0 | **Last Updated:** November 7, 2025
 
 This comprehensive guide explains how to use the Operator Dashboard to review requests, manage vendor orders, handle all possible scenarios, and close out completed bundles.
 
@@ -40,16 +40,17 @@ At the top of the Operator Dashboard you'll see these tabs:
 ### End-to-End Process Overview
 
 ```
-USER → SYSTEM (Cron) → YOU (Operator) → VENDOR → COMPLETION
-│       │               │                │         │
-│       │               │                │         └─ Items delivered
-│       │               │                └─ Order placed & shipped
-│       │               └─ Review, approve, order
+USER → SYSTEM (Cron) → YOU (Operator) → OPERATION → VENDOR → COMPLETION
+│       │               │                │           │         │
+│       │               │                │           │         └─ Items delivered
+│       │               │                │           └─ Order placed & shipped
+│       │               │                └─ Final approval
+│       │               └─ Review bundles
 │       └─ Auto-bundle (2x/week)
-└─ Submit request
+└─ Submit request (with notes & dates)
 ```
 
-**Your Role:** You are the bridge between user requests and vendor fulfillment.
+**Your Role:** You are the bridge between user requests and vendor fulfillment. You review bundles and send them to Operation Team for final approval.
 
 ---
 
@@ -90,29 +91,45 @@ USER → SYSTEM (Cron) → YOU (Operator) → VENDOR → COMPLETION
 
 **Your Actions:**
 1. **Check vendor contact info** (email, phone)
-2. **Review all items and quantities** (use HTML table)
-3. **Check for duplicate warnings** (same item, same project)
-4. **Verify correct vendor** (check alternative vendors if needed)
-5. **Click "✅ Mark as Reviewed"**
-6. **Confirm checklist** (4 items)
-7. Bundle status → 🟢 Reviewed
+2. **Review all items and quantities** (use HTML table with Date Needed column)
+3. **Read user notes** (if provided)
+4. **Check for duplicate warnings** (same item, same project)
+5. **Check merge badge** (🔄 if bundle was updated)
+6. **Verify correct vendor** (check alternative vendors if needed)
+7. **Click "✅ Mark as Reviewed"**
+8. **Confirm checklist** (4 items)
+9. Bundle status → 🟢 Reviewed
+10. **Bundle sent to Operation Team**
 
-**Important:** Must review ALL bundles before you can approve ANY bundle
+**Important:** Must review ALL bundles before Operation Team can approve them
 
 ---
 
-#### Stage 4: YOU Approve Bundles
+#### Stage 4: OPERATION TEAM Approves
 **What Happens:**
-- All bundles are Reviewed
-- Approval unlocked
-- You select bundles to approve
+- Operation Team reviews all Reviewed bundles
+- They can approve or reject
+- If rejected, bundle returns to Active status with rejection reason
 
 **Your Actions:**
-1. **See message:** "✅ All bundles reviewed! Select bundles below to approve."
-2. **Checkboxes appear** next to Reviewed bundles
-3. **Select bundles** (or click "Select All")
-4. **Click "🎯 Approve Selected (N)"**
-5. Bundles status → 🔵 Approved
+- None (Operation Team handles this)
+- If rejected, you'll see rejection warning in bundle
+- Fix issues and mark as Reviewed again
+
+---
+
+#### Stage 5: YOU Place Orders
+**What Happens:**
+- Bundles are Approved by Operation Team
+- You can now place orders with vendors
+
+**Your Actions:**
+1. **Contact vendor** (email/phone from bundle)
+2. **Place purchase order**
+3. **Record PO number** in system
+4. **Click "📦 Mark as Ordered"**
+5. Bundle status → 📦 Ordered
+6. ✉️ **Users receive email notification**
 
 **Note:** Approved bundles are LOCKED (no changes allowed)
 

@@ -6,6 +6,628 @@
 
 ## Development Progress Log
 
+### **November 7, 2025 (Session 6) - Slack Integration Discussion (Future Implementation)**
+
+#### **📋 Session Overview:**
+
+**Status:** 📝 **PLANNED - NOT IMPLEMENTED YET**
+
+**Discussion Time:** ~50 minutes (1:06 PM - 2:23 PM IST, November 7, 2025)
+
+**Purpose:** Explore adding Slack notifications alongside existing email system for real-time team visibility
+
+**Decision:** Discussed solution, documented plan, will implement later when needed
+
+---
+
+#### **🔍 CURRENT SITUATION:**
+
+**Email Notifications Working:**
+1. **Operator Notifications:** Bundling cron results (Tue/Thu)
+2. **User Notifications:** Status changes (Pending → In Progress → Ordered → Completed)
+
+**User Request:**
+> "Can we also send them on Slack? We can use Zapier also in between. Let's discuss if that is possible or not, how complex is this."
+
+**Requirement:**
+- Add Slack notifications WITHOUT touching email system
+- Keep email working as-is
+- Slack should be separate, independent addition
+- Should not interfere with current workflow
+
+---
+
+#### **💡 SOLUTION DECIDED: Zapier Webhook (Option 1)**
+
+### **Architecture:**
+```
+Phase 3 App
+    ↓
+Send Email (Brevo) ← UNCHANGED, keeps working
+    ↓
+ALSO Send to Slack (Zapier Webhook) ← NEW, separate call
+    ↓
+Zapier receives webhook
+    ↓
+Zapier posts to Slack channel
+```
+
+### **Why This Approach:**
+- ✅ **Zero risk** - Email system untouched
+- ✅ **Minimal code** - Only ~34 lines total
+- ✅ **No cost** - Zapier free tier (100 tasks/month, need ~40)
+- ✅ **Easy setup** - 10 minutes Zapier config
+- ✅ **Independent** - If Slack fails, email still works
+- ✅ **Easy to disable** - Just remove webhook URL
+
+---
+
+#### **📁 IMPLEMENTATION PLAN (For Future)**
+
+### **Phase 1: Zapier Setup (Non-Technical)**
+
+**Step 1: Create Zapier Account**
+- Go to zapier.com
+- Sign up (free tier)
+
+**Step 2: Create Webhook Zap**
+- Trigger: "Webhooks by Zapier" → "Catch Hook"
+- Zapier provides URL: `https://hooks.zapier.com/hooks/catch/xxxxx/yyyyy/`
+- Action: "Slack" → "Send Channel Message"
+- Connect Slack workspace
+- Choose channel (e.g., `#procurement`)
+- Message format: `{{title}}\n\n{{message}}`
+
+**Step 3: Add Webhook URL to Secrets**
+
+**Local (.env):**
+```bash
+ZAPIER_WEBHOOK_URL=https://hooks.zapier.com/hooks/catch/xxxxx/yyyyy/
+```
+
+**GitHub Actions (Repository Secrets):**
+```
+Name: ZAPIER_WEBHOOK_URL
+Value: https://hooks.zapier.com/hooks/catch/xxxxx/yyyyy/
+```
+
+**Streamlit Cloud (Secrets):**
+```toml
+[slack]
+ZAPIER_WEBHOOK_URL = "https://hooks.zapier.com/hooks/catch/xxxxx/yyyyy/"
+```
+
+---
+
+### **Phase 2: Create Slack Service (Code)**
+
+**New File: `Phase3/slack_service.py`** (~30 lines)
+
+```python
+"""
+Slack notification service via Zapier webhook
+Sends notifications to Slack alongside email (non-blocking)
+"""
+import os
+import requests
+import logging
+
+logger = logging.getLogger("slack_service")
+
+def _get_webhook_url():
+    """Get webhook URL from secrets/env"""
+    try:
+        import streamlit as st
+        return st.secrets.get("slack", {}).get("ZAPIER_WEBHOOK_URL")
+    except:
+        return os.getenv('ZAPIER_WEBHOOK_URL')
+
+def send_to_slack(title, message):
+    """
+    Send notification to Slack via Zapier webhook
+    
+    Args:
+        title: Notification title
+        message: Notification message body
+    
+    Returns:
+        bool: True if sent, False if skipped/failed
+    """
+    webhook_url = _get_webhook_url()
+    
+    if not webhook_url:
+        logger.info("Zapier webhook URL not configured, skipping Slack notification")
+        return False
+    
+    try:
+        payload = {
+            'title': title,
+            'message': message
+        }
+        response = requests.post(webhook_url, json=payload, timeout=5)
+        
+        if response.status_code == 200:
+            logger.info(f"✅ Slack notification sent: {title}")
+            return True
+        else:
+            logger.warning(f"⚠️ Slack webhook returned {response.status_code}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Failed to send Slack notification: {str(e)}")
+        return False
+```
+
+**Key Features:**
+- ✅ Reads webhook URL from secrets (Streamlit) or env (GitHub Actions)
+- ✅ If URL not configured → silently skips (no error)
+- ✅ If webhook fails → logs error but continues
+- ✅ Non-blocking with 5-second timeout
+- ✅ Simple JSON payload
+
+---
+
+### **Phase 3: Integrate Calls (Code)**
+
+**File 1: `smart_bundling_cron.py`** (Add 2 lines after line 289)
+
+**Before:**
+```python
+# Send operator summary email
+sent = send_email_via_brevo(subject, body_text, html_body=html_body)
+if sent:
+    log("Operator summary email sent via Brevo SMTP")
+```
+
+**After:**
+```python
+# Send operator summary email (unchanged)
+sent = send_email_via_brevo(subject, body_text, html_body=html_body)
+if sent:
+    log("Operator summary email sent via Brevo SMTP")
+
+# ALSO send to Slack (new - separate)
+from slack_service import send_to_slack
+send_to_slack(subject, body_text)
+```
+
+---
+
+**File 2: `user_notifications.py`** (Add 2 lines after line 80)
+
+**Before:**
+```python
+# Send email via Brevo to user's email address
+email_sent = send_email_via_brevo(subject, body_text, html_body, recipients=[user['email']])
+
+if email_sent:
+    # Update last_notified_status
+    _update_notification_status(db, req_id, notification_type)
+```
+
+**After:**
+```python
+# Send email via Brevo to user's email address (unchanged)
+email_sent = send_email_via_brevo(subject, body_text, html_body, recipients=[user['email']])
+
+# ALSO send to Slack (new - separate)
+from slack_service import send_to_slack
+send_to_slack(subject, body_text)
+
+if email_sent:
+    # Update last_notified_status
+    _update_notification_status(db, req_id, notification_type)
+```
+
+---
+
+#### **📊 CODE CHANGES SUMMARY (For Future)**
+
+| File | Action | Lines | Risk |
+|------|--------|-------|------|
+| `slack_service.py` | **NEW FILE** | +30 | ✅ Zero (new file) |
+| `smart_bundling_cron.py` | Add import + call | +2 | ✅ Zero (separate) |
+| `user_notifications.py` | Add import + call | +2 | ✅ Zero (separate) |
+| **Total** | 1 new + 2 modified | **+34 lines** | **✅ ZERO RISK** |
+
+---
+
+#### **🔒 SAFETY GUARANTEES:**
+
+### **1. Email System Completely Untouched:**
+- ❌ No changes to `email_service.py`
+- ❌ No changes to email sending logic
+- ❌ No changes to email configuration
+- ✅ Email continues to work exactly as before
+- ✅ If Slack fails, email still works
+
+### **2. Graceful Fallback:**
+```python
+# If webhook URL not configured
+if not webhook_url:
+    return False  # Silently skip, no error
+
+# If webhook request fails
+try:
+    requests.post(webhook_url, json=payload, timeout=5)
+except Exception as e:
+    logger.error(f"Slack failed: {e}")
+    return False  # Log error, continue execution
+```
+
+### **3. Non-Blocking:**
+- Slack call happens AFTER email
+- 5-second timeout prevents hanging
+- If Slack is slow, doesn't affect email
+- If Slack fails, doesn't break anything
+
+### **4. Easy to Enable/Disable:**
+- **Enable:** Add webhook URL to secrets
+- **Disable:** Remove webhook URL from secrets
+- No code changes needed to toggle on/off
+
+---
+
+#### **🎯 EXECUTION FLOW (For Future)**
+
+### **Current Flow (Unchanged):**
+```
+Bundling Cron Runs
+    ↓
+Send Email via Brevo
+    ↓
+Email arrives in operator inbox
+    ↓
+Done
+```
+
+### **Future Flow (With Slack):**
+```
+Bundling Cron Runs
+    ↓
+Send Email via Brevo  ← UNCHANGED
+    ↓
+Email arrives in operator inbox
+    ↓
+ALSO Send to Slack (new)  ← NEW, SEPARATE
+    ↓
+Zapier receives webhook
+    ↓
+Slack message posted to #procurement
+    ↓
+Done
+```
+
+---
+
+#### **📊 OPTIONS CONSIDERED:**
+
+| Option | Description | Code Changes | Cost | Complexity | Selected |
+|--------|-------------|--------------|------|------------|----------|
+| **Option 1: Zapier Webhook** | App → Zapier → Slack | ~34 lines | Free | ⭐⭐ Low | ✅ **YES** |
+| **Option 2: Direct Slack Webhook** | App → Slack (no Zapier) | ~30 lines | Free | ⭐⭐ Low | ❌ No |
+| **Option 3: Email → Zapier → Slack** | Keep email, Zapier watches inbox | 0 lines | Free | ⭐ Very Low | ❌ No (delay) |
+
+**Why Option 1:**
+- ✅ No email dependency
+- ✅ Instant notifications
+- ✅ Zapier handles formatting
+- ✅ Easy to configure
+- ✅ Minimal code
+
+---
+
+#### **💰 COST ANALYSIS:**
+
+**Zapier Free Tier:**
+- 100 tasks/month included
+- 5 Zaps allowed
+- 15-minute update time
+
+**Current Usage Estimate:**
+- Bundling cron: 2x/week = 8 notifications/month
+- User notifications: ~30-40/month (estimated)
+- **Total: ~40-50 tasks/month**
+- ✅ **Well within free tier!**
+
+**Other Costs:**
+- ✅ Slack: Free (standard workspace)
+- ✅ Code: No hosting fees
+- ✅ Webhook: No API fees
+
+---
+
+#### **⏱️ TIME ESTIMATE (For Future Implementation):**
+
+| Phase | Who | Time |
+|-------|-----|------|
+| **Phase 1: Zapier Setup** | Admin | 10 minutes |
+| **Phase 2: Code Slack Service** | Developer | 5 minutes |
+| **Phase 3: Integrate Calls** | Developer | 5 minutes |
+| **Testing** | Both | 5 minutes |
+| **Documentation** | Developer | 5 minutes |
+| **Total** | | **~30 minutes** |
+
+---
+
+#### **🧪 TESTING PLAN (For Future):**
+
+**Test 1: Email Still Works (Critical)**
+- [ ] Run bundling cron
+- [ ] Verify email arrives in inbox
+- [ ] Verify email content unchanged
+- [ ] ✅ Email system unaffected
+
+**Test 2: Slack Works**
+- [ ] Run bundling cron
+- [ ] Check Slack channel for message
+- [ ] Verify message content correct
+- [ ] ✅ Slack notification appears
+
+**Test 3: Slack Fails Gracefully**
+- [ ] Remove webhook URL from secrets
+- [ ] Run bundling cron
+- [ ] Verify email still arrives
+- [ ] Verify no errors in logs
+- [ ] ✅ Graceful fallback works
+
+**Test 4: User Notifications**
+- [ ] Trigger user status change
+- [ ] Check email to user
+- [ ] Check Slack message
+- [ ] ✅ Both notifications sent
+
+**Test 5: Webhook Timeout**
+- [ ] Use invalid webhook URL
+- [ ] Run bundling cron
+- [ ] Verify 5-second timeout
+- [ ] Verify email still works
+- [ ] ✅ Timeout prevents hanging
+
+---
+
+#### **📝 NOTIFICATION TYPES (For Future):**
+
+### **1. Operator Notifications (Bundling Cron):**
+
+**Trigger:** Smart bundling runs (Tue/Thu 6:30 PM UTC)
+
+**Current:** Email to `EMAIL_RECIPIENTS`
+
+**Future:** Email + Slack to `#procurement`
+
+**Example Message:**
+```
+📦 Smart Bundling: 3 bundles | 95% coverage
+
+NEW BUNDLES CREATED: 2
+- RM-001: Master NY (5 items, 25 pieces)
+- RM-002: Vendor ABC (3 items, 10 pieces)
+
+UPDATED BUNDLES: 1
+- RM-003: Vendor XYZ (2 items added)
+
+Total: 10 items, 35 pieces
+Coverage: 95%
+```
+
+---
+
+### **2. User Notifications (Status Changes):**
+
+**Triggers:**
+- Pending → In Progress (bundled)
+- In Progress → Ordered (all bundles ordered)
+- Ordered → Completed (all bundles completed)
+
+**Current:** Email to user's email address
+
+**Future:** Email + Slack to `#procurement` (or separate channel)
+
+**Example Message:**
+```
+✅ Request REQ-001 Status Update
+
+User: John Smith
+Status: In Progress → Ordered
+
+Items:
+- Paint White (5 gallons)
+- Brush Set (2 sets)
+
+Your order has been placed with vendors!
+```
+
+---
+
+#### **🎨 SLACK MESSAGE FORMAT (For Future):**
+
+### **Simple Format (Zapier Default):**
+```
+Title: Smart Bundling: 3 bundles | 95% coverage
+
+Message:
+NEW BUNDLES CREATED: 2
+- RM-001: Master NY (5 items, 25 pieces)
+- RM-002: Vendor ABC (3 items, 10 pieces)
+
+UPDATED BUNDLES: 1
+- RM-003: Vendor XYZ (2 items added)
+
+Total: 10 items, 35 pieces
+Coverage: 95%
+```
+
+### **Advanced Format (Optional - Slack Blocks):**
+```json
+{
+  "blocks": [
+    {
+      "type": "header",
+      "text": {"type": "plain_text", "text": "📦 Smart Bundling Results"}
+    },
+    {
+      "type": "section",
+      "fields": [
+        {"type": "mrkdwn", "text": "*Bundles:* 3"},
+        {"type": "mrkdwn", "text": "*Coverage:* 95%"}
+      ]
+    },
+    {
+      "type": "divider"
+    },
+    {
+      "type": "section",
+      "text": {"type": "mrkdwn", "text": "*NEW BUNDLES:* 2\n• RM-001: Master NY\n• RM-002: Vendor ABC"}
+    }
+  ]
+}
+```
+
+---
+
+#### **🔄 DEPLOYMENT STRATEGY (For Future):**
+
+### **Step 1: Local Testing**
+1. Add webhook URL to `.env`
+2. Run bundling cron locally
+3. Check Slack message appears
+4. Verify email still works
+
+### **Step 2: GitHub Actions**
+1. Add webhook URL to GitHub Secrets
+2. Commit code changes
+3. Cron runs automatically (Tue/Thu)
+4. Monitor logs for errors
+
+### **Step 3: Streamlit Cloud**
+1. Add webhook URL to Streamlit Secrets
+2. Deploy updated code
+3. User notifications go to Slack
+4. Monitor for issues
+
+---
+
+#### **❓ QUESTIONS TO DECIDE (Before Implementation):**
+
+**Q1: Slack Channel(s)**
+- [ ] Single channel for all notifications? (e.g., `#procurement`)
+- [ ] Separate channels? (e.g., `#bundling-alerts`, `#user-requests`)
+- [ ] Private channel or public?
+
+**Q2: Message Format**
+- [ ] Simple text (like email)?
+- [ ] Fancy Slack formatting (blocks, colors, buttons)?
+- [ ] Include links to dashboard?
+
+**Q3: Notification Scope**
+- [ ] Both operator + user notifications?
+- [ ] Only operator notifications?
+- [ ] Only critical notifications?
+
+**Q4: Mentions**
+- [ ] Mention specific users? (e.g., `@operator`)
+- [ ] Mention channel? (e.g., `@channel`)
+- [ ] No mentions (just post)?
+
+**Q5: Testing**
+- [ ] Test on staging first?
+- [ ] Test with separate test channel?
+- [ ] Deploy directly to production?
+
+---
+
+#### **📚 REFERENCE DOCUMENTATION (For Future):**
+
+**Zapier Webhooks:**
+- https://zapier.com/apps/webhook/integrations
+
+**Slack Incoming Webhooks:**
+- https://api.slack.com/messaging/webhooks
+
+**Slack Block Kit Builder:**
+- https://app.slack.com/block-kit-builder
+
+**Python Requests Library:**
+- https://requests.readthedocs.io/
+
+---
+
+#### **✅ BENEFITS (When Implemented):**
+
+### **For Team:**
+- ✅ **Real-time visibility** - Instant Slack notifications
+- ✅ **Better collaboration** - Team sees updates together
+- ✅ **Reduced email overload** - Important updates in Slack
+- ✅ **Mobile notifications** - Slack mobile app alerts
+- ✅ **Searchable history** - Slack search for past notifications
+
+### **For Operators:**
+- ✅ **Immediate alerts** - Know when bundles created
+- ✅ **Quick review** - Click Slack link to dashboard
+- ✅ **Team coordination** - Discuss in thread
+- ✅ **No email checking** - Notifications come to them
+
+### **For Users:**
+- ✅ **Status updates** - Know when order progresses
+- ✅ **Transparency** - See what's happening
+- ✅ **Quick questions** - Reply in Slack thread
+
+### **For System:**
+- ✅ **Zero risk** - Email backup if Slack fails
+- ✅ **Easy maintenance** - Zapier handles reliability
+- ✅ **Scalable** - Can add more channels/formats
+- ✅ **Flexible** - Easy to enable/disable
+
+---
+
+#### **⚠️ CONSIDERATIONS (Before Implementation):**
+
+**1. Slack Workspace Required:**
+- Need active Slack workspace
+- Need permission to add integrations
+- Need permission to create channels
+
+**2. Zapier Account:**
+- Free tier sufficient for now
+- May need paid plan if usage grows (>100 tasks/month)
+- Need someone to manage Zapier account
+
+**3. Message Noise:**
+- Too many notifications can be annoying
+- Consider notification frequency
+- May want to batch notifications
+
+**4. Sensitive Information:**
+- User emails in notifications?
+- Order details visible to all?
+- Consider private channels for sensitive data
+
+**5. Maintenance:**
+- Who monitors Zapier?
+- Who updates webhook if it changes?
+- Who troubleshoots if Slack fails?
+
+---
+
+#### **🎯 DECISION:**
+
+**Status:** 📝 **Planned for Future Implementation**
+
+**Reason:** Solution is clear, simple, and low-risk. Will implement when team is ready to use Slack notifications.
+
+**Next Steps (When Ready):**
+1. Decide on Slack channel(s)
+2. Create Zapier account
+3. Set up webhook Zap
+4. Implement code changes (~30 minutes)
+5. Test thoroughly
+6. Deploy
+
+**Estimated Effort:** ~1 hour total (setup + code + testing)
+
+---
+
 ### **November 7, 2025 (Session 5) - Simplified Cart Submission**
 
 #### **📋 Session Overview:**

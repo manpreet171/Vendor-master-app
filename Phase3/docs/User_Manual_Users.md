@@ -1,6 +1,6 @@
 # Phase 3 Requirements App – Complete User Manual (For Regular Users)
 
-**Version:** 2.0 | **Last Updated:** October 14, 2025
+**Version:** 3.0 | **Last Updated:** November 7, 2025
 
 Welcome to the Requirements Management System. This comprehensive guide explains how to submit your material needs, track them end‑to‑end, and understand all possible scenarios.
 
@@ -133,7 +133,7 @@ The Raw Materials tab uses a guided 4-step flow to help you select the exact ite
 
 ---
 
-#### **Step 4: Enter Quantity and Project**
+#### **Step 4: Enter Quantity, Project, and Date**
 
 **What You See:**
 ```
@@ -162,6 +162,12 @@ The Raw Materials tab uses a guided 4-step flow to help you select the exact ite
 │ │ [Office Renovation]                           │ │
 │ └───────────────────────────────────────────────┘ │
 │                                                   │
+│ 📅 Date Needed (Optional):                        │
+│ ┌───────────────────────────────────────────────┐ │
+│ │ [Select date...]                              │ │
+│ └───────────────────────────────────────────────┘ │
+│ When do you need this item delivered?             │
+│                                                   │
 │                      [🛒 Add to Cart] ────────────→│
 └───────────────────────────────────────────────────┘
 ```
@@ -172,17 +178,49 @@ The Raw Materials tab uses a guided 4-step flow to help you select the exact ite
    - Select from recent projects dropdown, OR
    - Type new project number (required)
 3. **Project Name:** Add descriptive name (optional)
-4. Click **"🛒 Add to Cart"**
+4. **📅 Date Needed:** Select when you need items (optional)
+5. Click **"🛒 Add to Cart"**
 
 **Important Rules:**
 - ✅ **Project Number is REQUIRED**
 - ✅ Quantity must be at least 1
+- ✅ **Date Needed is optional but helps operators prioritize urgent orders**
 - ✅ For letter-based projects (CP-2025, BCHS 2025), you can add sub-project numbers
 
 **Tips:**
 - Recent projects show your last 10 projects
 - Project numbers are validated against database
 - If project doesn't exist, system will ask for confirmation
+- **Date Needed helps operators prioritize urgent orders - use it when you have deadlines!**
+
+---
+
+#### **📅 Date Needed Feature**
+
+**What It Does:**
+- Lets you specify when you need items delivered
+- Helps operators prioritize urgent orders
+- Completely optional (leave blank if no specific deadline)
+
+**How to Use:**
+1. Click the date picker
+2. Select date from calendar
+3. Only future dates allowed (calendar opens at today)
+4. Leave blank if no specific deadline
+
+**Benefits:**
+- ✅ Operators see your deadline in the bundle
+- ✅ Urgent items get priority
+- ✅ Better planning and scheduling
+- ✅ Reduces follow-up questions about urgency
+
+**Example:**
+```
+Date Needed: November 15, 2025
+→ Operator knows this is urgent
+→ Will prioritize this order
+→ You get items faster!
+```
 
 ---
 
@@ -254,24 +292,40 @@ If your project starts with letters (e.g., CP-2025, BCHS 2025), the system detec
 │ ┌─────────────────────────────────────────────────┐ │
 │ │ Item 1: ACRYLITE Non-glare P99 (48 x 96 x 0.125)│ │
 │ │ Project: 📋 23-1672 (Office Renovation)         │ │
+│ │ 📅 Needed: 2025-11-15                           │ │
 │ │ Quantity: [5] pieces    [Update] [Remove]       │ │
 │ └─────────────────────────────────────────────────┘ │
 │                                                     │
 │ ┌─────────────────────────────────────────────────┐ │
 │ │ Item 2: DURA-CAST IM-7328 3/16" 4x8 WHITE PM*   │ │
 │ │ Project: 📋 23-1672 (Office Renovation)         │ │
+│ │ 📅 Needed: —                                    │ │
 │ │ Quantity: [2] pieces    [Update] [Remove]       │ │
 │ └─────────────────────────────────────────────────┘ │
 │                                                     │
 │ ┌─────────────────────────────────────────────────┐ │
 │ │ Item 3: Painted Dibond (Red) (48 x 96 x 0.125)  │ │
 │ │ Project: 📋 24-1702 (Signage Project)           │ │
+│ │ 📅 Needed: 2025-11-20                           │ │
 │ │ Quantity: [3] pieces    [Update] [Remove]       │ │
 │ └─────────────────────────────────────────────────┘ │
 │                                                     │
-│ Total Items: 3 | Total Pieces: 10                   │
+│ ─────────────────────────────────────────────────── │
+│ 📊 Cart Summary                                     │
+│ Total Items: 3 types | Total Quantity: 10 pieces    │
+│ ─────────────────────────────────────────────────── │
 │                                                     │
-│ [Clear Cart]                  [Submit Request] ────→│
+│ 📝 Notes for Operator                               │
+│ 💡 Optional - Add special instructions              │
+│ ┌─────────────────────────────────────────────────┐ │
+│ │ Example:                                        │ │
+│ │ • Please use Master NY vendor                   │ │
+│ │ • Urgent - needed by Friday                     │ │
+│ │ • Contact me if any issues                      │ │
+│ └─────────────────────────────────────────────────┘ │
+│                                                     │
+│ ─────────────────────────────────────────────────── │
+│ [🗑️ Clear Cart]           [✅ Submit Request] ─────→│
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -288,17 +342,27 @@ If your project starts with letters (e.g., CP-2025, BCHS 2025), the system detec
 - Item removed from cart instantly
 - No confirmation needed (can re-add if mistake)
 
-**3. Clear Cart**
-- Click **[Clear Cart]** at bottom
-- Confirmation dialog appears: "Are you sure you want to clear your cart?"
-- Click "Yes" to remove ALL items
-- Click "No" to cancel
+**3. Add Notes for Operator**
+- Notes field always visible (no hidden dialog!)
+- Add special instructions, vendor preferences, urgency
+- Optional - can leave blank
+- Max 1000 characters
+- Examples:
+  - "Please use Master NY vendor"
+  - "Urgent - needed by Friday"
+  - "Contact me if any issues"
+  - "Call me before ordering"
 
-**4. Submit Request**
-- Click **[Submit Request]**
+**4. Clear Cart**
+- Click **[🗑️ Clear Cart]** at bottom
+- Removes ALL items
+- Notes field cleared on page refresh
+
+**5. Submit Request**
+- Click **[✅ Submit Request]**
 - System validates all items
 - Creates request number
-- Shows success message
+- Shows success message with balloons 🎈
 
 ---
 
@@ -307,9 +371,11 @@ If your project starts with letters (e.g., CP-2025, BCHS 2025), the system detec
 **Before Submit:**
 ```
 Cart Items (in memory):
-├─ Item 1: ACRYLITE (5 pcs, Project 23-1672)
-├─ Item 2: DURA-CAST (2 pcs, Project 23-1672)
-└─ Item 3: Dibond (3 pcs, Project 24-1702)
+├─ Item 1: ACRYLITE (5 pcs, Project 23-1672, Date: Nov 15)
+├─ Item 2: DURA-CAST (2 pcs, Project 23-1672, No date)
+└─ Item 3: Dibond (3 pcs, Project 24-1702, Date: Nov 20)
+
+Notes: "Please use Master NY vendor. Urgent!"
 ```
 
 **Click "Submit Request"**
@@ -319,19 +385,25 @@ Cart Items (in memory):
 - ✅ All items have projects
 - ✅ No duplicate items
 - ✅ User is authenticated
+- ✅ Notes saved (if provided)
+- ✅ Dates saved (if provided)
 
 **Success Message:**
 ```
 ┌─────────────────────────────────────────┐
-│ ✅ Request Submitted Successfully!      │
+│ 🎉 Request submitted successfully!     │
+│ 🎈 (Balloons animation)                 │
 │                                         │
-│ Request Number: REQ-20251014-001        │
+│ Request Number: REQ-20251107-001        │
 │ Total Items: 3                          │
 │ Total Pieces: 10                        │
 │ Status: Pending                         │
 │                                         │
 │ Your request will be bundled and        │
 │ processed by the procurement team.      │
+│                                         │
+│ ✉️ You'll receive email updates when    │
+│ status changes.                         │
 └─────────────────────────────────────────┘
 ```
 
@@ -339,6 +411,7 @@ Cart Items (in memory):
 - ✅ Cart is cleared
 - ✅ Request appears in "My Requests" tab
 - ✅ Status: 🟡 Pending
+- ✅ You'll receive email when status changes
 
 ---
 
@@ -356,18 +429,19 @@ Cart Items (in memory):
 │ You have 5 requests                                 │
 │                                                     │
 │ ┌─────────────────────────────────────────────────┐ │
-│ │ ▼ REQ-20251014-001 | 🟡 Pending | Oct 14, 2025  │ │
+│ │ ▼ REQ-20251107-001 | 🟡 Pending | Nov 7, 2025   │ │
 │ │   3 items | 10 pieces                           │ │
+│ │   📝 Notes: "Please use Master NY vendor"       │ │
 │ └─────────────────────────────────────────────────┘ │
 │                                                     │
 │ ┌─────────────────────────────────────────────────┐ │
-│ │ ▼ REQ-20251012-003 | 🔵 In Progress | Oct 12    │ │
+│ │ ▼ REQ-20251105-003 | 🔵 In Progress | Nov 5     │ │
 │ │   2 items | 5 pieces                            │ │
 │ └─────────────────────────────────────────────────┘ │
 │                                                     │
 │ ┌─────────────────────────────────────────────────┐ │
-│ │ ▼ REQ-20251010-002 | ✅ Completed | Oct 10      │ │
-│ │   4 items | 12 pieces | Completed: Oct 13       │ │
+│ │ ▼ REQ-20251103-002 | ✅ Completed | Nov 3       │ │
+│ │   4 items | 12 pieces | Completed: Nov 6        │ │
 │ └─────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────┘
 ```
@@ -376,21 +450,64 @@ Cart Items (in memory):
 
 **🟡 Pending**
 - Your request is waiting to be bundled
-- Cron job runs twice a week
+- Cron job runs twice a week (Tuesday, Thursday)
 - You CAN still edit quantities
 - No action needed from you
+- ✉️ No email notification yet
 
 **🔵 In Progress**
 - Your request is part of a bundle
 - Operator is processing the order
 - Quantities are LOCKED (cannot edit)
 - Bundle ID shown for reference
+- ✉️ **You received email notification**
+
+**📦 Ordered**
+- Order has been placed with vendor
+- Waiting for delivery
+- Quantities locked
+- ✉️ **You received email notification**
 
 **✅ Completed**
 - Items have been received
 - Ready for pickup/use
 - Completion date shown
 - Packing slip code shown
+- ✉️ **You received email notification**
+
+---
+
+#### **📧 Email Notifications**
+
+**You'll receive emails when:**
+1. **Pending → In Progress** (Your items were bundled)
+2. **In Progress → Ordered** (Order placed with vendor)
+3. **Ordered → Completed** (Items ready for pickup)
+
+**Email Contains:**
+- Request number
+- Status change
+- Item list
+- Next steps
+
+**Example Email:**
+```
+Subject: Your Request REQ-20251107-001 is In Progress
+
+Hi John,
+
+Your request REQ-20251107-001 has been bundled and is now 
+being processed by the procurement team.
+
+Items:
+• ACRYLITE Non-glare P99 (5 pieces)
+• DURA-CAST IM-7328 (2 pieces)
+
+You'll receive another email when the order is placed.
+
+Thanks,
+Procurement Team
+```
 
 ---
 
@@ -399,22 +516,26 @@ Cart Items (in memory):
 **Click ▼ to expand:**
 ```
 ┌─────────────────────────────────────────────────────┐
-│ ▼ REQ-20251014-001 | 🟡 Pending | Oct 14, 2025      │
+│ ▼ REQ-20251107-001 | 🟡 Pending | Nov 7, 2025       │
 │   3 items | 10 pieces                               │
+│   📝 Notes: "Please use Master NY vendor. Urgent!"  │
 │                                                     │
 │ ┌─────────────────────────────────────────────────┐ │
 │ │ Your Items:                                     │ │
 │ │                                                 │ │
 │ │ • ACRYLITE Non-glare P99 (48 x 96 x 0.125)     │ │
 │ │   Project: 📋 23-1672 (Office Renovation)       │ │
+│ │   📅 Needed: 2025-11-15                         │ │
 │ │   Quantity: [5] pieces          [Update]        │ │
 │ │                                                 │ │
 │ │ • DURA-CAST IM-7328 3/16" 4x8 WHITE PM*        │ │
 │ │   Project: 📋 23-1672 (Office Renovation)       │ │
+│ │   📅 Needed: —                                  │ │
 │ │   Quantity: [2] pieces          [Update]        │ │
 │ │                                                 │ │
 │ │ • Painted Dibond (Red) (48 x 96 x 0.125)       │ │
 │ │   Project: 📋 24-1702 (Signage Project)         │ │
+│ │   📅 Needed: 2025-11-20                         │ │
 │ │   Quantity: [3] pieces          [Update]        │ │
 │ │                                                 │ │
 │ │ ℹ️ You can update quantities until bundled      │ │
@@ -426,6 +547,8 @@ Cart Items (in memory):
 - ✅ Update quantities (change number and click Update)
 - ✅ View all item details
 - ✅ See project information
+- ✅ See date needed (if specified)
+- ✅ See your notes
 - ❌ Cannot remove items (submit new request instead)
 
 ---
@@ -522,13 +645,14 @@ Cart Items (in memory):
 ### End-to-End Process Overview
 
 ```
-YOU → SYSTEM → OPERATOR → VENDOR → COMPLETED
-│       │        │           │         │
-│       │        │           │         └─ Items delivered
-│       │        │           └─ Order placed
-│       │        └─ Bundle reviewed & approved
+YOU → SYSTEM → OPERATOR → OPERATION → VENDOR → COMPLETED
+│       │        │           │           │         │
+│       │        │           │           │         └─ Items delivered
+│       │        │           │           └─ Order placed
+│       │        │           └─ Final approval
+│       │        └─ Bundle reviewed
 │       └─ Smart bundling (2x/week)
-└─ Submit request
+└─ Submit request (with notes & dates)
 ```
 
 **Timeline:** 3-7 days from submission to completion
@@ -541,6 +665,8 @@ YOU → SYSTEM → OPERATOR → VENDOR → COMPLETED
 - Browse Raw Materials tab
 - Select material, size, quantity
 - Enter project number
+- **Add date needed (optional)**
+- **Add notes for operator (optional)**
 - Add to cart
 - Submit request
 - Status: 🟡 Pending
@@ -549,34 +675,45 @@ YOU → SYSTEM → OPERATOR → VENDOR → COMPLETED
 - Cron job runs twice a week (Tuesday, Thursday)
 - Groups your items with other users
 - Optimizes by vendor
+- **Merges into existing bundles if possible**
 - Creates bundle
 - Your status changes: 🔵 In Progress
+- ✉️ **You receive email notification**
 
 **Stage 3: OPERATOR Reviews**
 - Reviews all items
+- **Sees your notes and date needed**
 - Checks for duplicates
 - Marks as Reviewed
-- Approves bundle
+- Sends to Operation Team
 
-**Stage 4: OPERATOR Places Order**
+**Stage 4: OPERATION TEAM Approves**
+- Final approval check
+- Can reject if issues found
+- Approves bundle
+- Status: Approved
+
+**Stage 5: OPERATOR Places Order**
 - Contacts vendor
 - Places purchase order
 - Records PO number
 - Status: 📦 Ordered
+- ✉️ **You receive email notification**
 
-**Stage 5: VENDOR Ships**
+**Stage 6: VENDOR Ships**
 - Processes order
 - Ships to warehouse
 - Items arrive
 
-**Stage 6: OPERATOR Marks Complete**
+**Stage 7: OPERATOR Marks Complete**
 - Receives items
 - Verifies packing slip
 - Marks bundle complete
 - Your status: ✅ Completed
+- ✉️ **You receive email notification**
 
-**Stage 7: YOU Pick Up**
-- See completion notification
+**Stage 8: YOU Pick Up**
+- See completion notification (email + app)
 - Contact warehouse
 - Pick up items
 
