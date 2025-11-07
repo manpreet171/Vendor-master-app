@@ -3,10 +3,16 @@ import streamlit as st
 import os
 import json
 import time
+import logging
 from datetime import datetime, date
 from dotenv import load_dotenv
 from db_connector import DatabaseConnector
 from bundling_engine import SmartBundlingEngine
+
+# Setup logger
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 # Page configuration
 st.set_page_config(
     page_title="Requirements Management System",
@@ -2491,6 +2497,26 @@ def display_review_checklist(db, bundle, bundle_items, duplicates, duplicates_re
         if all_checked:
             if st.button("✅ Confirm & Mark as Reviewed", key=f"confirm_review_{bundle_id}", type="primary"):
                 if db.mark_bundle_reviewed(bundle_id):
+                    # Send Slack notification to Operation Team
+                    try:
+                        from slack_service import send_slack_notification
+                        
+                        # Build notification message
+                        title = f"📦 New Bundle Ready for Approval!"
+                        message = f"""
+*Vendor:* {vendor_name}
+*Items:* {len(bundle_items)} types
+*Total Quantity:* {sum(item['total_quantity'] for item in bundle_items)} pieces
+*Status:* 🟢 Reviewed - Ready for Operation Team approval
+
+👉 *Action Required:* Review and approve this bundle in the Operation Team Dashboard
+
+_Bundle marked as reviewed by operator_
+"""
+                        send_slack_notification(title, message.strip())
+                    except Exception as e:
+                        logger.warning(f"Slack notification failed: {e}")
+                    
                     del st.session_state[f'reviewing_bundle_{bundle_id}']
                     st.success(f"✅ Bundle marked as Reviewed!")
                     st.rerun()
