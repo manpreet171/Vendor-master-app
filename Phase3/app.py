@@ -1404,8 +1404,11 @@ def display_user_requests_for_operator(db):
         for req in user_requests:
             user_key = f"{req['user_id']} - {req['req_number']}"
             if user_key not in requests_by_user:
+                # Get user display name (prefer full_name, fallback to username)
+                user_display = req.get('full_name') or req.get('username') or f"User {req['user_id']}"
                 requests_by_user[user_key] = {
                     'user_id': req['user_id'],
+                    'user_name': user_display,
                     'req_number': req['req_number'],
                     'req_date': req['req_date'],
                     'items': [],
@@ -1449,7 +1452,7 @@ def display_user_requests_for_operator(db):
         if requests_by_user:
             st.subheader("👤 User Requests")
             for user_key, req_data in requests_by_user.items():
-                with st.expander(f"👤 User {req_data['user_id']} - {req_data['req_number']} ({req_data['total_pieces']} pieces total)", expanded=True):
+                with st.expander(f"👤 {req_data['user_name']} - {req_data['req_number']} ({req_data['total_pieces']} pieces total)", expanded=True):
                     st.write(f"**Request Date:** {req_data['req_date']}")
                     st.write(f"**Items Requested:**")
                     

@@ -1342,10 +1342,12 @@ class DatabaseConnector:
         query = """
         SELECT ro.req_id, ro.req_number, ro.user_id, ro.req_date, ro.total_items,
                roi.item_id, roi.quantity, roi.project_number, roi.parent_project_id, roi.sub_project_number, roi.date_needed,
-               i.item_name, i.sku, i.source_sheet
+               i.item_name, i.sku, i.source_sheet,
+               u.full_name, u.username
         FROM requirements_orders ro
         JOIN requirements_order_items roi ON ro.req_id = roi.req_id
         JOIN items i ON roi.item_id = i.item_id
+        LEFT JOIN requirements_users u ON ro.user_id = u.user_id
         WHERE ro.status = 'Pending'
         ORDER BY ro.req_date ASC
         """
