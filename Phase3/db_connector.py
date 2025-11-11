@@ -1674,6 +1674,15 @@ class DatabaseConnector:
             self.log_bundle_action(bundle_id, 'Reviewed', 'Operator')
             
             self.conn.commit()
+            
+            # Send notification to Operation Team
+            try:
+                from operation_team_notifications import send_bundle_reviewed_notification
+                send_bundle_reviewed_notification(self, bundle_id)
+            except Exception as notify_error:
+                # Don't fail the whole operation if notification fails
+                print(f"Warning: Failed to send Operation Team notification: {str(notify_error)}")
+            
             return True
         except Exception as e:
             if self.conn:
@@ -1905,3 +1914,4 @@ class DatabaseConnector:
         except Exception as e:
             print(f"[ERROR] Failed to get bundle history: {str(e)}")
             return []
+    

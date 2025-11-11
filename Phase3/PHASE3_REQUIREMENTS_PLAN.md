@@ -6,6 +6,293 @@
 
 ## Development Progress Log
 
+### **November 11, 2025 (Session 8) - Operation Team Email Notifications** ✅
+
+#### **📋 Session Overview:**
+
+**Status:** ✅ **COMPLETED**
+
+**Time:** 2:06 PM - 2:20 PM IST (14 minutes)
+
+**Feature:** Immediate email notification to Operation Team when bundles are reviewed
+
+**Approach:** Simple and clean - no reminders, no complexity
+
+---
+
+#### **🎯 THE REQUIREMENT:**
+
+**User Request:**
+> "I want whenever there is bundles reviewed by operator, we need to notify the operation team that there is bundle to review with bundle details"
+
+**Key Decisions:**
+1. ✅ **Immediate notification** - Send email when operator marks bundle as Reviewed
+2. ✅ **Include bundle history** - Show rejection info, merge info for context
+3. ✅ **Link to dashboard** - No quick approve links (security)
+4. ❌ **No 24-hour reminders** - User decided to keep it simple
+
+---
+
+#### **📊 DATABASE CHANGES:**
+
+**Added 1 Column to `requirements_bundles` table:**
+
+```sql
+ALTER TABLE requirements_bundles
+ADD operation_notified_at DATETIME2 NULL;
+```
+
+**Purpose:**
+- Tracks when Operation Team was first notified about bundle being reviewed
+- Prevents duplicate email notifications
+- Set automatically when bundle moves from Active → Reviewed
+
+**Note:** Initially planned to add `operation_reminder_sent_at` for 24-hour reminders, but user decided against it to keep things simple.
+
+---
+
+#### **💻 CODE IMPLEMENTATION:**
+
+**1. NEW FILE: `operation_team_notifications.py` (411 lines)**
+
+**Purpose:** Handle all Operation Team email notifications
+
+**Key Functions:**
+
+```python
+def get_operation_team_emails(db):
+    """Get all active Operation Team members with emails"""
+    # Queries requirements_users table
+    # WHERE user_role = 'Operation' AND is_active = 1 AND email IS NOT NULL
+    
+def send_bundle_reviewed_notification(db, bundle_id):
+    """Send immediate notification when bundle marked as Reviewed"""
+    # 1. Check if already notified (operation_notified_at)
+    # 2. Get Operation Team emails
+    # 3. Get bundle details, items, user requests
+    # 4. Build email (plain text + HTML)
+    # 5. Send via Brevo SMTP
+    # 6. Update operation_notified_at timestamp
+    
+def _build_bundle_reviewed_email(bundle_data, items, requests):
+    """Build email content with all bundle details"""
+    # Returns: (subject, body_text, html_body)
+```
+
+**Helper Functions:**
+- `_get_bundle_details()` - Get bundle with vendor info
+- `_get_bundle_items()` - Get all items in bundle
+- `_get_bundle_requests()` - Get user requests with notes and urgency
+- `_format_date()` - Format dates for display
+- `_format_datetime()` - Format datetimes for display
+- `_calculate_urgency()` - Calculate days until date needed
+
+---
+
+**2. MODIFIED FILE: `db_connector.py`**
+
+**Updated Function: `mark_bundle_reviewed()`**
+
+**Before:**
+```python
+def mark_bundle_reviewed(self, bundle_id):
+    # Update status to Reviewed
+    # Log to history
+    # Commit
+    return True
+```
+
+**After:**
+```python
+def mark_bundle_reviewed(self, bundle_id):
+    # Update status to Reviewed
+    # Log to history
+    # Commit
+    
+    # NEW: Send notification to Operation Team
+    try:
+        from operation_team_notifications import send_bundle_reviewed_notification
+        send_bundle_reviewed_notification(self, bundle_id)
+    except Exception as notify_error:
+        # Don't fail the whole operation if notification fails
+        print(f"Warning: Failed to send Operation Team notification: {str(notify_error)}")
+    
+    return True
+```
+
+**Key Points:**
+- ✅ Graceful error handling - email failure doesn't block workflow
+- ✅ Bundle still marked as Reviewed even if email fails
+- ✅ Errors logged but don't crash the system
+
+---
+
+#### **📧 EMAIL CONTENT:**
+
+**Subject:**
+```
+🟢 Bundle Reviewed - Awaiting Approval: RM-2025-11-11-001
+```
+
+**What's Included:**
+
+1. **Bundle Details**
+   - Bundle ID
+   - Vendor name, email, phone
+   - Reviewed timestamp
+
+2. **Items List**
+   - All items with quantities
+   - Size details
+   - Total count
+
+3. **User Requests**
+   - Request numbers
+   - User names
+   - User notes (if any)
+   - Date needed with urgency indicators (⚠️ if ≤5 days)
+
+4. **Bundle History** (if applicable)
+   - Creation date
+   - Merge information (if bundle was updated)
+   - Previous rejection info (if bundle was rejected before)
+
+5. **Urgency Indicators**
+   - Highlights items needed within 5 days
+   - Shows days remaining
+
+6. **Action Link**
+   - Link to dashboard for approval/rejection
+
+**Email Formats:**
+- Plain text version (for email clients that don't support HTML)
+- HTML version (styled with colors, tables, urgency highlights)
+
+---
+
+#### **🔄 WORKFLOW:**
+
+**Before:**
+```
+Operator marks as Reviewed
+    ↓
+Bundle status: Active → Reviewed
+    ↓
+Operation Team sees in dashboard
+```
+
+**After:**
+```
+Operator marks as Reviewed
+    ↓
+Bundle status: Active → Reviewed
+    ↓
+Set operation_notified_at = NOW
+    ↓
+Send email to ALL Operation Team members ✉️
+    ↓
+Operation Team receives email
+    ↓
+Operation Team logs in to approve/reject
+```
+
+---
+
+#### **✅ SAFETY GUARANTEES:**
+
+1. **No Duplicate Emails:**
+   - Checks `operation_notified_at` before sending
+   - Only sends once per bundle review cycle
+   - If bundle reverted to Active and re-reviewed, sends new email
+
+2. **No Breaking Changes:**
+   - New column is NULL (backward compatible)
+   - Existing flow unchanged
+   - Only adds notification on top
+
+3. **Graceful Failures:**
+   - If email fails, bundle still marked as Reviewed
+   - Email errors logged but don't block workflow
+   - System continues to work even if no Operation Team members
+
+4. **Simple Implementation:**
+   - 411 lines of new code
+   - 1 database column
+   - 1 new file
+   - Minimal changes to existing files
+
+---
+
+#### **🧪 TESTING CHECKLIST:**
+
+- [ ] **Test 1:** Create bundle, mark as Reviewed, verify email sent to all Operation Team members
+- [ ] **Test 2:** Mark bundle as Reviewed, revert to Active, re-review - verify only ONE email per cycle
+- [ ] **Test 3:** Create 3 Operation Team users, verify ALL 3 receive email
+- [ ] **Test 4:** Delete all Operation Team users, verify no error (graceful skip)
+- [ ] **Test 5:** Bundle with rejection history - verify email shows rejection info
+- [ ] **Test 6:** Bundle with merge info - verify email shows merge details
+- [ ] **Test 7:** Request with date needed in 3 days - verify email highlights urgency
+
+---
+
+#### **📝 HOW TO GET OPERATION TEAM EMAILS:**
+
+The system automatically queries the database:
+
+```sql
+SELECT email, full_name
+FROM requirements_users
+WHERE user_role = 'Operation' 
+  AND is_active = 1 
+  AND email IS NOT NULL
+```
+
+**To add Operation Team members:**
+1. Go to User Management (Master role only)
+2. Create new user
+3. Set Role = "Operation"
+4. Enter email address
+5. Set Active = Yes
+
+---
+
+#### **🎯 IMPLEMENTATION SUMMARY:**
+
+**Files Created:**
+- ✅ `operation_team_notifications.py` (411 lines)
+
+**Files Modified:**
+- ✅ `db_connector.py` (added notification call in `mark_bundle_reviewed()`)
+
+**Database Changes:**
+- ✅ Added `operation_notified_at DATETIME2 NULL` column to `requirements_bundles`
+
+**Total Code:**
+- ~420 lines of new code
+- 1 database column
+- 1 new file
+- Zero breaking changes
+
+**What Was NOT Implemented:**
+- ❌ 24-hour reminder functionality (user decided against it)
+- ❌ Reminder cron job
+- ❌ `operation_reminder_sent_at` column (removed from database)
+
+**Implementation Time:** ~14 minutes (including cleanup and documentation)
+
+---
+
+#### **✨ BENEFITS:**
+
+1. **Immediate Visibility:** Operation Team gets instant notification when bundles need approval
+2. **Rich Context:** Email includes all details needed to make approval decision
+3. **Urgency Awareness:** Highlights items with tight deadlines
+4. **History Tracking:** Shows rejection and merge information for context
+5. **Simple & Clean:** No complexity, no reminders, just immediate notifications
+6. **Reliable:** Graceful error handling ensures workflow continues even if email fails
+
+---
+
 ### **November 7, 2025 (Session 7) - System Reset Bugfix** ✅
 
 #### **📋 Session Overview:**
