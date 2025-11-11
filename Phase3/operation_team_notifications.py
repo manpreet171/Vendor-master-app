@@ -10,12 +10,21 @@ Uses existing Brevo SMTP service from email_service.py
 
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, date
 from email_service import send_email_via_brevo
 
 logger = logging.getLogger("operation_team_notifications")
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+def format_project_display(project_number, sub_project_number=None):
+    """Format project number for display (same as app.py)"""
+    if project_number == "SHOP STOCK":
+        return "Shop Stock"
+    if sub_project_number:
+        return f"{project_number} ({sub_project_number})"
+    return project_number
 
 
 def get_operation_team_emails(db):
@@ -172,7 +181,7 @@ def _get_bundle_items(db, bundle_id):
 
 
 def _get_bundle_requests(db, bundle_id):
-    """Get user requests in bundle with notes and urgency"""
+    """Get user requests in bundle with notes, urgency, and project info"""
     query = """
     SELECT DISTINCT
         ro.req_number,
@@ -180,7 +189,9 @@ def _get_bundle_requests(db, bundle_id):
         u.full_name,
         u.username,
         (SELECT COUNT(*) FROM requirements_order_items WHERE req_id = ro.req_id) as item_count,
-        (SELECT MIN(date_needed) FROM requirements_order_items WHERE req_id = ro.req_id) as earliest_date_needed
+        (SELECT MIN(date_needed) FROM requirements_order_items WHERE req_id = ro.req_id) as earliest_date_needed,
+        (SELECT TOP 1 project_number FROM requirements_order_items WHERE req_id = ro.req_id) as project_number,
+        (SELECT TOP 1 sub_project_number FROM requirements_order_items WHERE req_id = ro.req_id) as sub_project_number
     FROM requirements_bundle_mapping bm
     JOIN requirements_orders ro ON bm.req_id = ro.req_id
     LEFT JOIN requirements_users u ON ro.user_id = u.user_id
@@ -287,6 +298,10 @@ ITEMS:
         user_name = req.get('full_name') or req.get('username', 'Unknown User')
         body_text += f"• {req['req_number']} ({user_name}) - {req['item_count']} item(s)\n"
         
+        if req.get('project_number'):
+            formatted_project = format_project_display(req['project_number'], req.get('sub_project_number'))
+            body_text += f"  📋 Project: {formatted_project}\n"
+        
         if req.get('user_notes'):
             body_text += f"  📝 Notes: \"{req['user_notes']}\"\n"
         
@@ -361,6 +376,10 @@ This is an automated notification from the Procurement System.
         user_name = req.get('full_name') or req.get('username', 'Unknown User')
         html_body += f"<div style='margin-bottom: 15px; padding: 10px; background-color: #f9f9f9; border-left: 3px solid #2196F3;'>"
         html_body += f"<strong>{req['req_number']}</strong> ({user_name}) - {req['item_count']} item(s)<br>"
+        
+        if req.get('project_number'):
+            formatted_project = format_project_display(req['project_number'], req.get('sub_project_number'))
+            html_body += f"📋 Project: {formatted_project}<br>"
         
         if req.get('user_notes'):
             html_body += f"<em>📝 {req['user_notes']}</em><br>"

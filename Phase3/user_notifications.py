@@ -16,6 +16,15 @@ from datetime import datetime
 from email_service import send_email_via_brevo
 
 logger = logging.getLogger("user_notifications")
+
+
+def format_project_display(project_number, sub_project_number=None):
+    """Format project number for display (same as app.py)"""
+    if project_number == "SHOP STOCK":
+        return "Shop Stock"
+    if sub_project_number:
+        return f"{project_number} ({sub_project_number})"
+    return project_number
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -174,9 +183,8 @@ def _build_in_progress_email(user, request, items):
         items_text += f"\n   Quantity: {item['quantity']} pieces"
         
         if item.get('project_number'):
-            items_text += f"\n   Project: {item['project_number']}"
-            if item.get('sub_project_number'):
-                items_text += f" - {item['sub_project_number']}"
+            formatted_project = format_project_display(item['project_number'], item.get('sub_project_number'))
+            items_text += f"\n   Project: {formatted_project}"
         
         if item.get('date_needed'):
             items_text += f"\n   Needed by: {_format_date(item['date_needed'])}"
@@ -193,8 +201,7 @@ def _build_in_progress_email(user, request, items):
             </td>
             <td style="padding: 8px; border-bottom: 1px solid #eee;">{item['quantity']} pcs</td>
             <td style="padding: 8px; border-bottom: 1px solid #eee;">
-                {item.get('project_number', '—')}
-                {f"<br><small>{item.get('sub_project_number', '')}</small>" if item.get('sub_project_number') else ""}
+                {format_project_display(item.get('project_number', '—'), item.get('sub_project_number'))}
             </td>
             <td style="padding: 8px; border-bottom: 1px solid #eee;">
                 {_format_date(item.get('date_needed'))}

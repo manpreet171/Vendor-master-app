@@ -6,6 +6,359 @@
 
 ## Development Progress Log
 
+### **November 11, 2025 (Session 9) - Shop Stock Option for Project Selection** ✅
+
+#### **📋 Session Overview:**
+
+**Status:** ✅ **COMPLETED**
+
+**Time:** 8:28 PM - 9:23 PM IST (55 minutes)
+
+**Feature:** Add "Shop Stock" option as alternative to project ID selection for items intended for internal shop use
+
+**Approach:** Simple checkbox solution - no database changes, minimal code impact
+
+---
+
+#### **🎯 THE REQUIREMENT:**
+
+**User Request:**
+> "What happen sometime they order that for Shop, so for that they don't have project ID. What if we add a button if item is for shop they can click that rather than putting project id, means one or another they need to put something."
+
+**Key Decisions:**
+1. ✅ **Use "SHOP STOCK" as keyword** - Stored in existing `project_number` field
+2. ✅ **Display as "Shop Stock"** - Clean, professional (no emoji)
+3. ✅ **Simple checkbox** - Before project selector, clear UX
+4. ✅ **Date needed still required** - No change to existing validation
+5. ✅ **No database changes** - Uses existing schema
+6. ✅ **Format everywhere** - Consistent display across all UI and emails
+
+---
+
+#### **📊 DATABASE CHANGES:**
+
+**NONE!** ✅
+
+- Uses existing `project_number` field in `requirements_order_items` table
+- Stores "SHOP STOCK" as a special value (just like any other project number)
+- Backward compatible - no migration needed
+
+---
+
+#### **💻 CODE IMPLEMENTATION:**
+
+**1. MODIFIED FILE: `app.py` (~50 lines changed)**
+
+**Location 1: BoxHero Tab (Lines 304-320)**
+
+Added checkbox before project selector:
+```python
+# Shop Stock checkbox
+is_for_shop = st.checkbox(
+    "This is for Shop Stock (no project needed)",
+    key="bh_shop_checkbox",
+    help="Check this if ordering for shop inventory, not a specific project"
+)
+
+# Project selection - conditional based on shop checkbox
+if is_for_shop:
+    # Shop selected - use special values
+    project_number = "SHOP STOCK"
+    project_name = "Shop Stock"
+    parent_project_id = None
+    sub_project_number = None
+    st.success("✓ Destination: Shop Stock")
+else:
+    # Normal project selection (existing code)
+    project_number, project_name, parent_project_id, sub_project_number = display_project_selector(db, "bh")
+```
+
+**Updated validation:**
+```python
+# Enable button if (shop OR project) AND date are selected
+if project_number and date_needed:
+    if st.button("🛒 Add to Cart", ...):
+        # Add to cart
+else:
+    st.button("🛒 Add to Cart", disabled=True, ...)
+    if not is_for_shop:
+        st.caption("⬆️ Please select a project or check 'For Shop Stock'")
+    else:
+        st.caption("⬆️ Please select a date")
+```
+
+**Location 2: Raw Materials Tab (Lines 542-558)**
+
+Same checkbox logic as BoxHero - consistent UX across both tabs.
+
+**Location 3: Display Function (Lines 782-784)**
+
+Updated `format_project_display()` to handle Shop Stock:
+```python
+def format_project_display(project_number, sub_project_number=None):
+    """
+    Format project number for display.
+    Special handling for "SHOP STOCK" to display cleanly.
+    """
+    # Special handling for Shop Stock
+    if project_number == "SHOP STOCK":
+        return "Shop Stock"
+    
+    # Regular projects
+    if sub_project_number:
+        return f"{project_number} ({sub_project_number})"
+    return project_number
+```
+
+**Impact:** This function is used in 6 locations in `app.py`:
+- Cart review display
+- My Requests tab
+- Duplicate detection warnings
+- Operator user requests overview
+- Operator bundle table
+- Duplicate items review
+
+**Result:** "Shop Stock" displays consistently everywhere automatically! ✅
+
+---
+
+**2. MODIFIED FILE: `user_notifications.py` (~15 lines changed)**
+
+Added `format_project_display()` function and updated email templates:
+
+```python
+def format_project_display(project_number, sub_project_number=None):
+    """Format project number for display (same as app.py)"""
+    if project_number == "SHOP STOCK":
+        return "Shop Stock"
+    if sub_project_number:
+        return f"{project_number} ({sub_project_number})"
+    return project_number
+```
+
+**Updated plain text email:**
+```python
+if item.get('project_number'):
+    formatted_project = format_project_display(item['project_number'], item.get('sub_project_number'))
+    items_text += f"\n   Project: {formatted_project}"
+```
+
+**Updated HTML email:**
+```python
+<td>
+    {format_project_display(item.get('project_number', '—'), item.get('sub_project_number'))}
+</td>
+```
+
+**Before:** Showed raw "SHOP STOCK"  
+**After:** Shows formatted "Shop Stock" ✅
+
+---
+
+**3. MODIFIED FILE: `operation_team_notifications.py` (~25 lines changed)**
+
+Added `format_project_display()` function and updated query + email templates:
+
+**Updated Query:** Added project info to `_get_bundle_requests()`:
+```python
+SELECT DISTINCT
+    ro.req_number,
+    ro.user_notes,
+    u.full_name,
+    u.username,
+    (SELECT COUNT(*) FROM requirements_order_items WHERE req_id = ro.req_id) as item_count,
+    (SELECT MIN(date_needed) FROM requirements_order_items WHERE req_id = ro.req_id) as earliest_date_needed,
+    (SELECT TOP 1 project_number FROM requirements_order_items WHERE req_id = ro.req_id) as project_number,
+    (SELECT TOP 1 sub_project_number FROM requirements_order_items WHERE req_id = ro.req_id) as sub_project_number
+FROM requirements_bundle_mapping bm
+...
+```
+
+**Updated plain text email:**
+```python
+if req.get('project_number'):
+    formatted_project = format_project_display(req['project_number'], req.get('sub_project_number'))
+    body_text += f"  📋 Project: {formatted_project}\n"
+```
+
+**Updated HTML email:**
+```python
+if req.get('project_number'):
+    formatted_project = format_project_display(req['project_number'], req.get('sub_project_number'))
+    html_body += f"📋 Project: {formatted_project}<br>"
+```
+
+**Before:** Project info NOT shown in Operation Team emails  
+**After:** Project info included with proper formatting ✅
+
+---
+
+#### **📍 WHERE "SHOP STOCK" APPEARS:**
+
+**Complete Display Map:**
+
+| Location | File | Shows As | Status |
+|----------|------|----------|--------|
+| **User Cart Review** | app.py | Shop Stock | ✅ Perfect |
+| **User My Requests** | app.py | Shop Stock | ✅ Perfect |
+| **User Duplicate Warning** | app.py | Shop Stock | ✅ Perfect |
+| **User Email (Plain Text)** | user_notifications.py | Shop Stock | ✅ Fixed |
+| **User Email (HTML)** | user_notifications.py | Shop Stock | ✅ Fixed |
+| **Operator User Requests** | app.py | Shop Stock | ✅ Perfect |
+| **Operator Bundle Table** | app.py | Shop Stock | ✅ Perfect |
+| **Operator Duplicate Review** | app.py | Shop Stock | ✅ Perfect |
+| **Operation Team Dashboard** | operation_team_dashboard.py | Shop Stock | ✅ Perfect |
+| **Operation Team Email (Plain)** | operation_team_notifications.py | Shop Stock | ✅ Fixed + Added |
+| **Operation Team Email (HTML)** | operation_team_notifications.py | Shop Stock | ✅ Fixed + Added |
+
+**Result:** "Shop Stock" displays consistently everywhere! ✅
+
+---
+
+#### **🎨 USER EXPERIENCE:**
+
+**When user checks "For Shop Stock":**
+```
+Step 3: Select Project and Quantity
+
+[✓] This is for Shop Stock (no project needed)
+
+✓ Destination: Shop Stock
+
+📅 Date Needed: [date picker]  ← Still required
+
+Quantity needed: [1]
+
+[🛒 Add to Cart]
+```
+
+**When user doesn't check (normal project):**
+```
+Step 3: Select Project and Quantity
+
+[ ] This is for Shop Stock (no project needed)
+
+Select Project Number: [dropdown]
+✓ Project: 25-1234 - Office Renovation
+
+📅 Date Needed: [date picker]  ← Still required
+
+Quantity needed: [1]
+
+[🛒 Add to Cart]
+```
+
+---
+
+#### **📧 EMAIL EXAMPLES:**
+
+**User Confirmation Email:**
+```
+YOUR ITEMS:
+-----------
+1. ACRYLITE Non-glare P99 (SKU: ACR-123)
+   Quantity: 5 pieces
+   Project: Shop Stock          ← Clean display
+   Needed by: 2025-11-15
+```
+
+**Operation Team Email:**
+```
+USER REQUESTS:
+--------------
+• REQ-2025-001 (John Smith) - 3 items
+  📋 Project: Shop Stock        ← Now included!
+  📝 Notes: "Urgent order"
+  📅 Date Needed: 2025-11-15 (⚠️ 4 days!)
+```
+
+---
+
+#### **✅ TESTING CHECKLIST:**
+
+- [ ] Add BoxHero item with Shop Stock checkbox
+- [ ] Add BoxHero item with normal project
+- [ ] Add Raw Material with Shop Stock checkbox
+- [ ] Add Raw Material with normal project
+- [ ] Mix both in same cart
+- [ ] Submit cart and verify displays
+- [ ] Check cart review shows "Shop Stock"
+- [ ] Check "My Requests" shows "Shop Stock"
+- [ ] Check operator bundle table shows "Shop Stock"
+- [ ] Check user email shows "Shop Stock"
+- [ ] Check Operation Team email shows project info
+
+---
+
+#### **📊 IMPLEMENTATION SUMMARY:**
+
+**Files Modified:** 3
+- `app.py` - UI changes and display function (~50 lines)
+- `user_notifications.py` - Email formatting (~15 lines)
+- `operation_team_notifications.py` - Email formatting + query (~25 lines)
+
+**Total Lines Changed:** ~90 lines
+
+**Database Changes:** 0 (uses existing schema)
+
+**Breaking Changes:** 0 (fully backward compatible)
+
+**New Features:**
+1. ✅ Shop Stock checkbox option
+2. ✅ Consistent "Shop Stock" display across all UI
+3. ✅ Formatted "Shop Stock" in user emails
+4. ✅ Project info added to Operation Team emails
+5. ✅ Formatted "Shop Stock" in Operation Team emails
+
+---
+
+#### **🔍 TECHNICAL APPROACH:**
+
+**Why This Works:**
+
+1. **No Database Changes:**
+   - Uses existing `project_number` VARCHAR field
+   - "SHOP STOCK" is just another valid project number
+   - No migration, no schema changes
+
+2. **Single Source of Truth:**
+   - `format_project_display()` function handles all formatting
+   - Used consistently across app.py (6 locations)
+   - Duplicated in email files for independence
+
+3. **Backward Compatible:**
+   - Existing requests unchanged
+   - All existing queries work
+   - No impact on current functionality
+
+4. **Simple UX:**
+   - One checkbox, clear intent
+   - Either/or choice (shop OR project)
+   - Date needed still required (no change)
+
+5. **Consistent Display:**
+   - "SHOP STOCK" stored in database
+   - "Shop Stock" displayed everywhere
+   - Professional, clean (no emoji)
+
+---
+
+#### **✨ BENEFITS:**
+
+1. **Flexibility:** Users can now order for shop without fake project IDs
+2. **Clarity:** Clear distinction between project items and shop stock
+3. **Simplicity:** No database changes, minimal code impact
+4. **Consistency:** "Shop Stock" displays the same everywhere
+5. **Tracking:** Easy to query shop orders: `WHERE project_number = 'SHOP STOCK'`
+6. **Reporting:** Can filter/analyze shop vs project orders
+7. **Professional:** Clean display without immature emojis
+
+---
+
+**Implementation Time:** ~55 minutes (Discussion: 20 min, Implementation: 25 min, Email fixes: 10 min)
+
+---
+
 ### **November 11, 2025 (Session 8) - Operation Team Email Notifications** ✅
 
 #### **📋 Session Overview:**

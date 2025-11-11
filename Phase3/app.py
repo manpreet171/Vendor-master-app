@@ -300,8 +300,24 @@ def display_boxhero_tab(db):
             # Just show the item name - simple
             st.info(f"Selected: **{st.session_state.bh_selected_item.get('item_name', 'Unknown Item')}**")
             
-            # Project selection
-            project_number, project_name, parent_project_id, sub_project_number = display_project_selector(db, "bh")
+            # Shop Stock checkbox
+            is_for_shop = st.checkbox(
+                "This is for Shop Stock (no project needed)",
+                key="bh_shop_checkbox",
+                help="Check this if ordering for shop inventory, not a specific project"
+            )
+            
+            # Project selection - conditional based on shop checkbox
+            if is_for_shop:
+                # Shop selected - use special values
+                project_number = "SHOP STOCK"
+                project_name = "Shop Stock"
+                parent_project_id = None
+                sub_project_number = None
+                st.success("✓ Destination: Shop Stock")
+            else:
+                # Normal project selection (existing code)
+                project_number, project_name, parent_project_id, sub_project_number = display_project_selector(db, "bh")
             
             # Date needed input (mandatory)
             date_needed = st.date_input(
@@ -324,7 +340,7 @@ def display_boxhero_tab(db):
                 )
             
             with col2:
-                # Only enable Add to Cart if project and date are selected
+                # Only enable Add to Cart if (shop OR project) AND date are selected
                 if project_number and date_needed:
                     if st.button("🛒 Add to Cart", type="primary", key="bh_add_to_cart"):
                         result = add_to_cart(st.session_state.bh_selected_item, quantity, "BoxHero", project_number, project_name, parent_project_id, sub_project_number, date_needed, db)
@@ -335,7 +351,10 @@ def display_boxhero_tab(db):
                             st.rerun()
                 else:
                     st.button("🛒 Add to Cart", type="primary", disabled=True, key="bh_add_to_cart_disabled")
-                    st.caption("⬆️ Please select a project first")
+                    if not is_for_shop:
+                        st.caption("⬆️ Please select a project or check 'For Shop Stock'")
+                    else:
+                        st.caption("⬆️ Please select a date")
         
         # Reset button
         if st.session_state.bh_step > 1:
@@ -519,8 +538,24 @@ def display_raw_materials_tab(db):
             dim_txt = f" ({' x '.join(dims)})" if dims else ""
             st.info(f"Selected: **{sel.get('item_name', 'Unknown Material')}**{dim_txt}")
             
-            # Project selection
-            project_number, project_name, parent_project_id, sub_project_number = display_project_selector(db, "rm")
+            # Shop Stock checkbox
+            is_for_shop = st.checkbox(
+                "This is for Shop Stock (no project needed)",
+                key="rm_shop_checkbox",
+                help="Check this if ordering for shop inventory, not a specific project"
+            )
+            
+            # Project selection - conditional based on shop checkbox
+            if is_for_shop:
+                # Shop selected - use special values
+                project_number = "SHOP STOCK"
+                project_name = "Shop Stock"
+                parent_project_id = None
+                sub_project_number = None
+                st.success("✓ Destination: Shop Stock")
+            else:
+                # Normal project selection (existing code)
+                project_number, project_name, parent_project_id, sub_project_number = display_project_selector(db, "rm")
             
             # Date needed input (mandatory)
             date_needed = st.date_input(
@@ -543,7 +578,7 @@ def display_raw_materials_tab(db):
                 )
             
             with col2:
-                # Only enable Add to Cart if project and date are selected
+                # Only enable Add to Cart if (shop OR project) AND date are selected
                 if project_number and date_needed:
                     if st.button("🛒 Add to Cart", type="primary", key="rm_add_to_cart"):
                         result = add_to_cart(st.session_state.rm_selected_item, quantity, "Raw Materials", project_number, project_name, parent_project_id, sub_project_number, date_needed, db)
@@ -554,7 +589,10 @@ def display_raw_materials_tab(db):
                             st.rerun()
                 else:
                     st.button("🛒 Add to Cart", type="primary", disabled=True, key="rm_add_to_cart_disabled")
-                    st.caption("⬆️ Please select a project first")
+                    if not is_for_shop:
+                        st.caption("⬆️ Please select a project or check 'For Shop Stock'")
+                    else:
+                        st.caption("⬆️ Please select a date")
         
         # Reset button
         if st.session_state.rm_step > 1:
@@ -738,8 +776,14 @@ def format_project_display(project_number, sub_project_number=None):
     """
     Format project number for display.
     If sub_project_number exists, returns "parent (sub)".
+    Special handling for "SHOP STOCK" to display cleanly.
     Otherwise returns project_number as-is.
     """
+    # Special handling for Shop Stock
+    if project_number == "SHOP STOCK":
+        return "Shop Stock"
+    
+    # Regular projects
     if sub_project_number:
         return f"{project_number} ({sub_project_number})"
     return project_number
