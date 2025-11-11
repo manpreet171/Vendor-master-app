@@ -325,7 +325,7 @@ ITEMS:
 ----------------
 Please log in to the system to approve or reject this bundle.
 
-Dashboard: https://your-app-url.com
+Dashboard: https://item-requirement-app-sdgny.streamlit.app/
 
 ---
 This is an automated notification from the Procurement System.
