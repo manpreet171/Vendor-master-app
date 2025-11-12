@@ -16,6 +16,9 @@ from datetime import datetime
 # Email service (Brevo SMTP via env vars)
 from email_service import send_email_via_brevo
 
+# Operator notifications (dynamic email list from database)
+from operator_notifications import get_operator_emails
+
 # Ensure imports work when executed from repo root
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
@@ -286,11 +289,23 @@ def main() -> int:
             subject = f"Smart Bundling: {total_bundles} bundles | {coverage}% coverage"
             dims_map = _get_item_dimensions_map(db, result)
             body_text, html_body = _build_email_bodies(result, dims_map)
-            sent = send_email_via_brevo(subject, body_text, html_body=html_body)
+            
+            # Get operator emails from database (falls back to EMAIL_RECIPIENTS secret if empty)
+            operator_emails = get_operator_emails(db)
+            
+            # Send email (if no operators in DB, send_email_via_brevo will use EMAIL_RECIPIENTS secret)
+            sent = send_email_via_brevo(
+                subject, 
+                body_text, 
+                html_body=html_body,
+                recipients=operator_emails if operator_emails else None
+            )
+            
             if sent:
-                log("Operator summary email sent via Brevo SMTP")
+                recipient_count = len(operator_emails) if operator_emails else "configured"
+                log(f"Operator summary email sent to {recipient_count} recipient(s) via Brevo SMTP")
             else:
-                log("Email step skipped (missing SMTP envs) or failed silently")
+                log("Email step skipped (missing SMTP envs or no recipients)")
         except Exception as e:
             log(f"Email step error: {e}")
 

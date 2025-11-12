@@ -6,6 +6,489 @@
 
 ## Development Progress Log
 
+### **November 12, 2025 (Session 11) - Operator Email Notifications (Dynamic + Bundle Decisions)** ✅
+
+#### **📋 Session Overview:**
+
+**Status:** ✅ **COMPLETED**
+
+**Time:** 12:38 PM - 1:53 PM IST (75 minutes)
+
+**Features:** 
+1. Dynamic operator email list for bundling cron (from database, not hardcoded)
+2. Operator notification when bundle approved by Operation Team
+3. Operator notification when bundle rejected by Operation Team
+
+**Approach:** Separate notification module, minimal changes to existing code, graceful fallbacks
+
+---
+
+#### **🎯 THE REQUIREMENTS:**
+
+**Problem 1: Hardcoded Operator Emails in Cron**
+- Tuesday/Thursday bundling cron sends summary email to operators
+- Recipients hardcoded in GitHub Actions secret `EMAIL_RECIPIENTS`
+- Can't dynamically add/remove operators
+- Inconsistent with User & Operation Team email patterns (which use database)
+
+**Problem 2: No Operator Notification on Bundle Decisions**
+- Operation Team approves/rejects bundles
+- Operators get NO notification
+- Operators don't know if their work was approved or needs fixing
+- Especially critical for rejections (action required)
+
+**Solution:**
+1. Query active operators from database for cron emails
+2. Send email to operator when bundle approved
+3. Send email to operator when bundle rejected (with reason)
+
+---
+
+#### **📧 OPERATOR EMAIL TYPES:**
+
+**Email Type 1: Bundling Summary (Tuesday/Thursday Cron)**
+- **Trigger:** Time-based (GitHub Actions cron)
+- **Schedule:** Tuesday & Thursday 6:30 PM UTC
+- **Recipients:** ALL active operators
+- **Content:** Summary of bundles created by cron
+- **Purpose:** "New bundles available for review"
+
+**Email Type 2: Bundle Approved**
+- **Trigger:** Operation Team approves bundle
+- **Schedule:** Real-time (when approval happens)
+- **Recipients:** Specific operator who reviewed the bundle
+- **Content:** Bundle details, approval timestamp
+- **Purpose:** "Your bundle was approved"
+
+**Email Type 3: Bundle Rejected**
+- **Trigger:** Operation Team rejects bundle
+- **Schedule:** Real-time (when rejection happens)
+- **Recipients:** Specific operator who reviewed the bundle
+- **Content:** Bundle details, rejection reason, action required
+- **Purpose:** "Your bundle was rejected - please fix"
+
+---
+
+#### **💻 CODE IMPLEMENTATION:**
+
+**1. NEW FILE: `operator_notifications.py` (356 lines)**
+
+**Purpose:** Central module for all operator email notifications
+
+**Functions Added:**
+
+```python
+# Bundling Summary Emails (Cron)
+def get_operator_emails(db):
+    """Get emails of all active operators from database"""
+    # Query: SELECT email FROM requirements_users 
+    #        WHERE role='Operator' AND is_active=1
+    # Returns: ['rex@sdgny.com', 'joivel@sdgny.com', 'miguel@sdgny.com']
+
+# Bundle Decision Notifications
+def send_bundle_approved_notification(db, bundle_id):
+    """Send email to operator when bundle approved"""
+    # 1. Get bundle details (reviewed_by, vendor, items)
+    # 2. Get operator email from reviewed_by name
+    # 3. Build email content (plain text + HTML)
+    # 4. Send via Brevo SMTP
+
+def send_bundle_rejected_notification(db, bundle_id):
+    """Send email to operator when bundle rejected"""
+    # 1. Get bundle details (reviewed_by, rejection_reason)
+    # 2. Get operator email from reviewed_by name
+    # 3. Build email content with rejection reason
+    # 4. Send via Brevo SMTP
+
+# Helper Functions
+def _get_bundle_details_for_operator(db, bundle_id)
+def _get_operator_email_by_name(db, full_name)
+def _format_datetime(datetime_value)
+```
+
+**Key Features:**
+- ✅ Queries database for active operators
+- ✅ Falls back to EMAIL_RECIPIENTS secret if database query fails
+- ✅ Handles edge cases (no reviewer, inactive operator, email not found)
+- ✅ Comprehensive logging (info, warning, error)
+- ✅ Graceful error handling (returns False, doesn't crash)
+- ✅ Both plain text and HTML email versions
+
+---
+
+**2. MODIFIED FILE: `smart_bundling_cron.py` (4 lines changed)**
+
+**Changes:**
+
+```python
+# Line 20: Added import
+from operator_notifications import get_operator_emails
+
+# Lines 294-302: Updated email sending
+operator_emails = get_operator_emails(db)  # Query database
+
+sent = send_email_via_brevo(
+    subject, 
+    body_text, 
+    html_body=html_body,
+    recipients=operator_emails if operator_emails else None  # Dynamic list
+)
+
+if sent:
+    recipient_count = len(operator_emails) if operator_emails else "configured"
+    log(f"Operator summary email sent to {recipient_count} recipient(s)")
+```
+
+**What Changed:**
+- ❌ **Before:** Used hardcoded EMAIL_RECIPIENTS secret
+- ✅ **After:** Queries database for active operators
+- ✅ **Fallback:** If database query fails/empty → Uses EMAIL_RECIPIENTS secret
+
+---
+
+**3. MODIFIED FILE: `db_connector.py` (12 lines added)**
+
+**Function 1: `approve_bundle_by_operation()` (lines 1800-1806)**
+
+```python
+self.conn.commit()
+
+# Send notification to operator
+try:
+    from operator_notifications import send_bundle_approved_notification
+    send_bundle_approved_notification(self, bundle_id)
+except Exception as notify_error:
+    print(f"Warning: Failed to send operator notification: {str(notify_error)}")
+
+return {'success': True}
+```
+
+**Function 2: `reject_bundle_by_operation()` (lines 1847-1853)**
+
+```python
+self.conn.commit()
+
+# Send notification to operator
+try:
+    from operator_notifications import send_bundle_rejected_notification
+    send_bundle_rejected_notification(self, bundle_id)
+except Exception as notify_error:
+    print(f"Warning: Failed to send operator notification: {str(notify_error)}")
+
+return {'success': True}
+```
+
+**Key Points:**
+- ✅ Notification called AFTER commit (database saved first)
+- ✅ Lazy import (no circular dependencies)
+- ✅ Exception caught (email failure doesn't break approval/rejection)
+- ✅ Warning logged if notification fails
+
+---
+
+#### **🔄 COMPLETE WORKFLOWS:**
+
+**Workflow 1: Bundling Cron Email (Tuesday/Thursday)**
+
+```
+GitHub Actions Cron (6:30 PM UTC)
+    ↓
+smart_bundling_cron.py runs
+    ↓
+Bundling engine creates bundles
+    ↓
+get_operator_emails(db)
+    ↓
+Query: SELECT email FROM requirements_users 
+       WHERE role='Operator' AND is_active=1
+    ↓
+Returns: ['rex@sdgny.com', 'joivel@sdgny.com', 'miguel@sdgny.com']
+    ↓
+send_email_via_brevo(recipients=operator_emails)
+    ↓
+If empty → Falls back to EMAIL_RECIPIENTS secret
+    ↓
+Email sent to all active operators
+    ↓
+Log: "Operator summary email sent to 3 recipient(s)"
+```
+
+---
+
+**Workflow 2: Bundle Approved Notification**
+
+```
+Operation Team Dashboard
+    ↓
+Muhammad clicks "Approve Bundle #5"
+    ↓
+db.approve_bundle_by_operation(5, 'Muhammad')
+    ↓
+UPDATE requirements_bundles SET status='Approved'
+    ↓
+log_bundle_action(5, 'Approved', 'Muhammad')
+    ↓
+conn.commit() ✅ (Database saved)
+    ↓
+send_bundle_approved_notification(db, 5)
+    ├─ Get bundle details (reviewed_by='Rex Ramos')
+    ├─ Query operator email: 'rezza@sdgny.com'
+    ├─ Build email content
+    └─ Send email
+    ↓
+Rex receives: "✅ Bundle Approved: BUNDLE-20251112-001"
+    ↓
+return {'success': True}
+```
+
+---
+
+**Workflow 3: Bundle Rejected Notification**
+
+```
+Operation Team Dashboard
+    ↓
+Sarah clicks "Reject Bundle #7" with reason "Wrong vendor"
+    ↓
+db.reject_bundle_by_operation(7, 'Wrong vendor', 'Sarah Lee')
+    ↓
+UPDATE requirements_bundles SET status='Active', rejection_reason='Wrong vendor'
+    ↓
+log_bundle_action(7, 'Rejected', 'Sarah Lee', 'Wrong vendor')
+    ↓
+conn.commit() ✅ (Database saved)
+    ↓
+send_bundle_rejected_notification(db, 7)
+    ├─ Get bundle details (reviewed_by='Joivel Fangonil', rejection_reason)
+    ├─ Query operator email: 'joivel@sdgny.com'
+    ├─ Build email content (includes rejection reason)
+    └─ Send email
+    ↓
+Joivel receives: "❌ Bundle Rejected: BUNDLE-20251112-007"
+    ↓
+return {'success': True}
+```
+
+---
+
+#### **📧 EMAIL CONTENT EXAMPLES:**
+
+**Approval Email:**
+```
+Subject: ✅ Bundle Approved: BUNDLE-20251112-001
+
+Hello Rex Ramos,
+
+Good news! Your bundle has been approved by the Operation Team.
+
+BUNDLE DETAILS:
+---------------
+Bundle ID: BUNDLE-20251112-001
+Vendor: Grimco
+Items: 8 item(s), 45 pieces
+Reviewed by: Rex Ramos (you)
+Approved at: 2025-11-12 at 02:30 PM
+
+NEXT STEPS:
+-----------
+The bundle is now ready for vendor communication and order placement.
+
+[View Dashboard Button]
+```
+
+**Rejection Email:**
+```
+Subject: ❌ Bundle Rejected: BUNDLE-20251112-007
+
+Hello Joivel Fangonil,
+
+Your bundle has been rejected by the Operation Team and needs your attention.
+
+BUNDLE DETAILS:
+---------------
+Bundle ID: BUNDLE-20251112-007
+Vendor: S & F Supplies
+Items: 6 item(s), 23 pieces
+Reviewed by: Joivel Fangonil (you)
+Rejected at: 2025-11-12 at 03:15 PM
+
+REJECTION REASON:
+-----------------
+Wrong vendor - these items should go to Amazon
+
+ACTION REQUIRED:
+----------------
+Please review the bundle, make necessary corrections, and mark it as Reviewed again.
+
+[View Dashboard Button]
+```
+
+---
+
+#### **🛡️ EDGE CASES HANDLED:**
+
+**1. Old Bundles (No Specific Reviewer)**
+```
+reviewed_by = NULL or "Operator"
+    ↓
+Check: if not reviewed_by or reviewed_by == 'Operator'
+    ↓
+Log: "Bundle has no specific reviewer; skipping notification"
+    ↓
+return False (no email sent, no error)
+```
+
+**2. Operator Deactivated**
+```
+Rex reviewed bundle on Monday
+Rex deactivated (is_active=0) on Tuesday
+Operation Team approves on Wednesday
+    ↓
+Query: WHERE full_name='Rex Ramos' AND is_active=1
+    ↓
+Result: Empty (Rex is inactive)
+    ↓
+Log: "No active operator found with name: Rex Ramos"
+    ↓
+return False (no email sent, approval still succeeds)
+```
+
+**3. Operator Email Not Found**
+```
+reviewed_by = "John Doe" (not in database)
+    ↓
+Query returns empty
+    ↓
+Log: "No email found for operator 'John Doe'"
+    ↓
+return False (no email sent, no error)
+```
+
+**4. Database Query Fails (Cron)**
+```
+get_operator_emails(db) throws exception
+    ↓
+Catch exception, log error
+    ↓
+return [] (empty list)
+    ↓
+send_email_via_brevo(recipients=None)
+    ↓
+Falls back to EMAIL_RECIPIENTS secret
+    ↓
+Email still sent (graceful degradation)
+```
+
+**5. Email Send Fails**
+```
+send_email_via_brevo() returns False
+    ↓
+Log: "Failed to send notification"
+    ↓
+Approval/rejection still succeeds
+    ↓
+Database already committed
+```
+
+---
+
+#### **📊 TOTAL IMPLEMENTATION:**
+
+**Files Modified: 3**
+- `operator_notifications.py` - NEW file, 356 lines (notification functions)
+- `smart_bundling_cron.py` - 4 lines changed (dynamic email list)
+- `db_connector.py` - 12 lines added (call notifications)
+
+**Total Lines Changed:** ~372 lines
+
+**Database Changes:** 0 (uses existing columns)
+
+**Breaking Changes:** 0
+
+**Backward Compatible:** ✅ Yes
+- EMAIL_RECIPIENTS secret kept as fallback
+- Old bundles gracefully skipped (no specific reviewer)
+- Email failure doesn't break workflows
+
+---
+
+#### **✅ BENEFITS:**
+
+**Dynamic Operator List:**
+- ✅ Add/remove operators via database (no code changes)
+- ✅ Consistent with User & Operation Team email patterns
+- ✅ Scalable (works for 1 or 100 operators)
+- ✅ Fallback to EMAIL_RECIPIENTS secret (safe)
+
+**Bundle Decision Notifications:**
+- ✅ Operators know when work approved (positive feedback)
+- ✅ Operators know when work rejected (action required)
+- ✅ Rejection reason included (clear guidance)
+- ✅ Completes notification loop (full accountability)
+
+**Code Quality:**
+- ✅ Clean separation of concerns (separate module)
+- ✅ Minimal changes to existing code (4 lines in cron, 12 in db)
+- ✅ Comprehensive error handling (graceful degradation)
+- ✅ Extensive logging (transparency)
+- ✅ Consistent patterns (matches existing notifications)
+
+---
+
+#### **🧪 TESTING CHECKLIST:**
+
+**Bundling Cron Email:**
+- [ ] Cron runs → Queries database for operators
+- [ ] Email sent to all 3 active operators (Rex, Joivel, Miguel)
+- [ ] Log shows: "Found 3 active operator(s): Joivel Fangonil, Miguel Ramos, Rex Ramos"
+- [ ] If database query fails → Falls back to EMAIL_RECIPIENTS secret
+- [ ] If operator deactivated → Not included in email list
+
+**Bundle Approved Notification:**
+- [ ] Operation Team approves bundle → Email sent to reviewer
+- [ ] Email subject: "✅ Bundle Approved: {bundle_name}"
+- [ ] Email contains bundle details and approval timestamp
+- [ ] Old bundles (reviewed_by='Operator') → No email sent (graceful)
+- [ ] If operator inactive → No email sent (graceful)
+- [ ] If email fails → Approval still succeeds
+
+**Bundle Rejected Notification:**
+- [ ] Operation Team rejects bundle → Email sent to reviewer
+- [ ] Email subject: "❌ Bundle Rejected: {bundle_name}"
+- [ ] Email contains rejection reason
+- [ ] Email contains "Action Required" section
+- [ ] Old bundles (reviewed_by='Operator') → No email sent (graceful)
+- [ ] If operator inactive → No email sent (graceful)
+- [ ] If email fails → Rejection still succeeds
+
+---
+
+#### **📈 SESSION METRICS:**
+
+| Metric | Value |
+|--------|-------|
+| **Session Duration** | 75 minutes (12:38 PM - 1:53 PM IST) |
+| **Features Implemented** | 3 (dynamic list + 2 notification types) |
+| **Files Created** | 1 (`operator_notifications.py`) |
+| **Files Modified** | 2 (`smart_bundling_cron.py`, `db_connector.py`) |
+| **Lines Added** | ~372 lines |
+| **Database Changes** | 0 |
+| **Breaking Changes** | 0 |
+| **Backward Compatible** | ✅ Yes |
+
+**Email Types Implemented:**
+- ✅ Bundling Summary (Cron) - Dynamic recipient list
+- ✅ Bundle Approved - Real-time notification
+- ✅ Bundle Rejected - Real-time notification with reason
+
+**Fallback Systems:**
+- ✅ EMAIL_RECIPIENTS secret (if database query fails)
+- ✅ Skip notification (if no specific reviewer)
+- ✅ Skip notification (if operator inactive)
+- ✅ Log warnings (if email send fails)
+
+---
+
 ### **November 12, 2025 (Session 10) - Operation Team Email Fix & Reviewer Name Tracking** ✅
 
 #### **📋 Session Overview:**

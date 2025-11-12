@@ -1796,6 +1796,14 @@ class DatabaseConnector:
             self.log_bundle_action(bundle_id, 'Approved', username)
             
             self.conn.commit()
+            
+            # Send notification to operator
+            try:
+                from operator_notifications import send_bundle_approved_notification
+                send_bundle_approved_notification(self, bundle_id)
+            except Exception as notify_error:
+                print(f"Warning: Failed to send operator notification: {str(notify_error)}")
+            
             return {'success': True}
         except Exception as e:
             if self.conn:
@@ -1835,6 +1843,14 @@ class DatabaseConnector:
             self.log_bundle_action(bundle_id, 'Rejected', username, rejection_reason)
             
             self.conn.commit()
+            
+            # Send notification to operator
+            try:
+                from operator_notifications import send_bundle_rejected_notification
+                send_bundle_rejected_notification(self, bundle_id)
+            except Exception as notify_error:
+                print(f"Warning: Failed to send operator notification: {str(notify_error)}")
+            
             return {'success': True}
         except Exception as e:
             if self.conn:
