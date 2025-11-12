@@ -2537,7 +2537,8 @@ def display_review_checklist(db, bundle, bundle_items, duplicates, duplicates_re
     with col1:
         if all_checked:
             if st.button("✅ Confirm & Mark as Reviewed", key=f"confirm_review_{bundle_id}", type="primary"):
-                if db.mark_bundle_reviewed(bundle_id):
+                user_id = st.session_state.get('user_id')
+                if db.mark_bundle_reviewed(bundle_id, user_id):
                     del st.session_state[f'reviewing_bundle_{bundle_id}']
                     st.success(f"✅ Bundle marked as Reviewed!")
                     st.rerun()

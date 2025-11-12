@@ -1661,19 +1661,28 @@ class DatabaseConnector:
                 self.conn.rollback()
             return False
     
-    def mark_bundle_reviewed(self, bundle_id):
+    def mark_bundle_reviewed(self, bundle_id, user_id=None):
         """Mark bundle as reviewed (Active → Reviewed) - Individual review only"""
         try:
+            # Get reviewer name
+            reviewer_name = 'Operator'  # Default fallback
+            if user_id:
+                user_query = "SELECT full_name FROM requirements_users WHERE user_id = ?"
+                user_result = self.execute_query(user_query, (user_id,))
+                if user_result and user_result[0].get('full_name'):
+                    reviewer_name = user_result[0]['full_name']
+            
             update_q = """
             UPDATE requirements_bundles
             SET status = 'Reviewed',
-                reviewed_at = GETDATE()
+                reviewed_at = GETDATE(),
+                reviewed_by = ?
             WHERE bundle_id = ? AND status = 'Active'
             """
-            self.execute_insert(update_q, (bundle_id,))
+            self.execute_insert(update_q, (reviewer_name, bundle_id))
             
-            # Log to history
-            self.log_bundle_action(bundle_id, 'Reviewed', 'Operator')
+            # Log to history with actual reviewer name
+            self.log_bundle_action(bundle_id, 'Reviewed', reviewer_name)
             
             self.conn.commit()
             
@@ -1745,6 +1754,7 @@ class DatabaseConnector:
             b.recommended_vendor_id,
             b.created_at,
             b.reviewed_at,
+            b.reviewed_by,
             b.rejection_reason,
             b.rejected_at,
             v.vendor_name,
@@ -1867,6 +1877,7 @@ class DatabaseConnector:
             b.recommended_vendor_id,
             b.created_at,
             b.reviewed_at,
+            b.reviewed_by,
             b.approved_at,
             b.rejected_at,
             b.rejection_reason,

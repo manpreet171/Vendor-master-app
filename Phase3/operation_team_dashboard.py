@@ -79,12 +79,15 @@ def display_bundle_card(db, bundle):
     if reviewed_date and hasattr(reviewed_date, 'strftime'):
         reviewed_date = reviewed_date.strftime('%Y-%m-%d %H:%M')
     
+    # Get reviewer name
+    reviewed_by = bundle.get('reviewed_by', 'Unknown')
+    
     # Bundle header - simple and clean
     col1, col2 = st.columns([3, 1])
     
     with col1:
         st.subheader(f"📦 {bundle['bundle_name']}")
-        st.caption(f"Vendor: {bundle.get('vendor_name', 'N/A')} | Reviewed: {reviewed_date or 'N/A'}")
+        st.caption(f"Vendor: {bundle.get('vendor_name', 'N/A')} | Reviewed by: {reviewed_by} on {reviewed_date or 'N/A'}")
     
     with col2:
         st.metric("Status", "🟢 Reviewed")

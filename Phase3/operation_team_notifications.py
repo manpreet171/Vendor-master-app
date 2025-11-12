@@ -173,7 +173,7 @@ def _get_bundle_items(db, bundle_id):
         bi.total_quantity,
         bi.size_details
     FROM requirements_bundle_items bi
-    JOIN items i ON bi.item_id = i.item_id
+    JOIN Items i ON bi.item_id = i.item_id
     WHERE bi.bundle_id = ?
     ORDER BY i.item_name
     """
@@ -290,13 +290,15 @@ ITEMS:
         body_text += f"• {item['item_name']}{size_str} - {item['total_quantity']} pcs\n"
     
     body_text += f"\nTotal: {len(items)} item(s), {bundle_data['total_quantity']} pieces\n"
+    body_text += "\nℹ️ These are the items in THIS bundle for this vendor.\n"
     
     # User requests section
     body_text += "\nUSER REQUESTS:\n--------------\n"
+    body_text += "(Note: If a request has more items than shown above, the remaining items are in other bundles for different vendors)\n\n"
     
     for req in requests:
         user_name = req.get('full_name') or req.get('username', 'Unknown User')
-        body_text += f"• {req['req_number']} ({user_name}) - {req['item_count']} item(s)\n"
+        body_text += f"• {req['req_number']} ({user_name}) - {req['item_count']} item(s) total in request\n"
         
         if req.get('project_number'):
             formatted_project = format_project_display(req['project_number'], req.get('sub_project_number'))
@@ -370,12 +372,20 @@ This is an automated notification from the Procurement System.
         size_str = f" ({size})" if size else ""
         html_body += f"<li>{item['item_name']}{size_str} - <strong>{item['total_quantity']} pcs</strong></li>"
     
-    html_body += "</ul><h3>User Requests</h3>"
+    html_body += "</ul>"
+    html_body += "<p style='background-color: #e3f2fd; padding: 10px; border-radius: 5px; margin: 10px 0;'>"
+    html_body += "ℹ️ <strong>Note:</strong> The items listed above are in THIS bundle for this vendor."
+    html_body += "</p>"
+    
+    html_body += "<h3>User Requests</h3>"
+    html_body += "<p style='color: #666; font-size: 0.9em; margin-bottom: 15px;'>"
+    html_body += "<em>If a request has more items than shown in the bundle above, the remaining items are in other bundles for different vendors.</em>"
+    html_body += "</p>"
     
     for req in requests:
         user_name = req.get('full_name') or req.get('username', 'Unknown User')
         html_body += f"<div style='margin-bottom: 15px; padding: 10px; background-color: #f9f9f9; border-left: 3px solid #2196F3;'>"
-        html_body += f"<strong>{req['req_number']}</strong> ({user_name}) - {req['item_count']} item(s)<br>"
+        html_body += f"<strong>{req['req_number']}</strong> ({user_name}) - {req['item_count']} item(s) total in request<br>"
         
         if req.get('project_number'):
             formatted_project = format_project_display(req['project_number'], req.get('sub_project_number'))
@@ -418,7 +428,7 @@ This is an automated notification from the Procurement System.
         <div style="background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0;">
             <h3 style="margin-top: 0;">Action Required</h3>
             <p>Please log in to the system to approve or reject this bundle.</p>
-            <p><a href="https://your-app-url.com" style="background-color: #2196F3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Go to Dashboard</a></p>
+            <p><a href="https://item-requirement-app-sdgny.streamlit.app/" style="background-color: #2196F3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Go to Dashboard</a></p>
         </div>
         
         <p style="color: #999; font-size: 12px; margin-top: 30px;">This is an automated notification from the Procurement System.</p>
