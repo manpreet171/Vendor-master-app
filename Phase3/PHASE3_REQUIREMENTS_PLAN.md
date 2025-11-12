@@ -190,13 +190,13 @@ Complete Timeline:
 
 #### **📊 TOTAL IMPLEMENTATION:**
 
-**Files Modified: 3**
-- `operation_team_notifications.py` - Fixed table name case + added clarifying text (~10 lines)
+**Files Modified: 4**
+- `operation_team_notifications.py` - Fixed table name case + added clarifying text + added reviewer name to email (~15 lines)
 - `db_connector.py` - Added reviewer name tracking (~15 lines)
 - `app.py` - Pass user_id to mark_bundle_reviewed (~1 line)
-- `operation_team_dashboard.py` - Display reviewer name (~2 lines)
+- `operation_team_dashboard.py` - Display reviewer name in UI + history timeline (~5 lines)
 
-**Total Lines Changed:** ~28 lines
+**Total Lines Changed:** ~36 lines
 
 **Database Changes:**
 - 1 column added: `reviewed_by NVARCHAR(100) NULL` (added by user)
@@ -227,6 +227,8 @@ Complete Timeline:
 - ✅ Better audit trail
 - ✅ Easier to follow up with operators
 - ✅ Consistent with existing design (matches `completed_by` column)
+- ✅ Reviewer name shown in dashboard (bundle list + history timeline)
+- ✅ Reviewer name shown in Operation Team emails (plain text + HTML)
 
 ---
 
@@ -237,12 +239,14 @@ Complete Timeline:
 - [ ] Email shows "6 items, 6 pieces" with actual item names
 - [ ] Clarifying text appears after items list
 - [ ] Request shows "19 item(s) total in request"
+- [ ] Email shows "Reviewed by: {Name}" in bundle details
 
 **Reviewer Name Tracking:**
 - [ ] Operator reviews bundle → Name stored in database
-- [ ] Operation Team sees "Reviewed by: {Name} on {Date}"
+- [ ] Operation Team dashboard shows "Reviewed by: {Name} on {Date}"
 - [ ] History timeline shows "Reviewed by {Name}: {Time}"
-- [ ] Old bundles show "Unknown" gracefully
+- [ ] Operation Team email shows "Reviewed by: {Name}"
+- [ ] Old bundles show "Operator" gracefully (historical data limitation)
 
 **Edge Cases:**
 - [ ] If user_id is None → Falls back to "Operator"
@@ -255,14 +259,20 @@ Complete Timeline:
 
 | Metric | Value |
 |--------|-------|
-| **Session Duration** | 91 minutes |
+| **Session Duration** | 116 minutes (11:07 AM - 1:07 PM IST) |
 | **Issues Fixed** | 1 critical bug |
 | **Features Added** | 2 enhancements |
-| **Files Modified** | 3 files |
-| **Lines Changed** | ~28 lines |
+| **Files Modified** | 4 files |
+| **Lines Changed** | ~36 lines |
 | **Database Columns Added** | 1 |
 | **Breaking Changes** | 0 |
 | **Backward Compatible** | ✅ Yes |
+
+**Display Locations for Reviewer Name:**
+- ✅ Operation Team Dashboard - Bundle List
+- ✅ Operation Team Dashboard - History Timeline
+- ✅ Operation Team Email - Plain Text
+- ✅ Operation Team Email - HTML
 
 ---
 

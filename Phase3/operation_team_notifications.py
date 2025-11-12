@@ -147,6 +147,7 @@ def _get_bundle_details(db, bundle_id):
         b.total_quantity,
         b.created_at,
         b.reviewed_at,
+        b.reviewed_by,
         b.rejection_reason,
         b.rejected_at,
         b.merge_count,
@@ -255,6 +256,7 @@ def _build_bundle_reviewed_email(bundle_data, items, requests):
     vendor_email = bundle_data.get('vendor_email', 'N/A')
     vendor_phone = bundle_data.get('vendor_phone', 'N/A')
     reviewed_at = _format_datetime(bundle_data.get('reviewed_at'))
+    reviewed_by = bundle_data.get('reviewed_by', 'Operator')
     
     # Subject
     subject = f"🟢 Bundle Reviewed - Awaiting Approval: {bundle_name}"
@@ -278,7 +280,8 @@ Bundle ID: {bundle_name}
 Vendor: {vendor_name}
 Email: {vendor_email}
 Phone: {vendor_phone}
-Reviewed: {reviewed_at}
+Reviewed by: {reviewed_by}
+Reviewed at: {reviewed_at}
 
 ITEMS:
 ------
@@ -360,7 +363,8 @@ This is an automated notification from the Procurement System.
             <strong>Vendor:</strong> {vendor_name}<br>
             <strong>Email:</strong> {vendor_email}<br>
             <strong>Phone:</strong> {vendor_phone}<br>
-            <strong>Reviewed:</strong> {reviewed_at}</p>
+            <strong>Reviewed by:</strong> {reviewed_by}<br>
+            <strong>Reviewed at:</strong> {reviewed_at}</p>
         </div>
         
         <h3>Items ({len(items)} items, {bundle_data['total_quantity']} pieces)</h3>
