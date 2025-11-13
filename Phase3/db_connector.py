@@ -1786,6 +1786,7 @@ class DatabaseConnector:
             SET status = 'Approved',
                 rejection_reason = NULL,
                 rejected_at = NULL,
+                rejected_by = NULL,
                 approved_at = GETDATE()
             WHERE bundle_id = ?
               AND status = 'Reviewed'
@@ -1832,12 +1833,13 @@ class DatabaseConnector:
             SET status = 'Active',
                 rejection_reason = ?,
                 rejected_at = GETDATE(),
+                rejected_by = ?,
                 reviewed_at = NULL,
                 approved_at = NULL
             WHERE bundle_id = ?
               AND status = 'Reviewed'
             """
-            self.execute_insert(update_q, (rejection_reason, bundle_id))
+            self.execute_insert(update_q, (rejection_reason, username, bundle_id))
             
             # Log to history with rejection reason and actual username
             self.log_bundle_action(bundle_id, 'Rejected', username, rejection_reason)

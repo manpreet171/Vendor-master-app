@@ -112,7 +112,7 @@ def require_login():
                                 st.session_state.logged_in = True
                                 st.session_state.user_role = user_data['user_role']
                                 st.session_state.user_id = user_data['user_id']
-                                st.session_state.username = user_data['username']
+                                st.session_state.username = user_data.get('full_name') or user_data['username']
                                 st.success(f"Logged in successfully as {user_data['user_role']}")
                                 st.rerun()
                             else:

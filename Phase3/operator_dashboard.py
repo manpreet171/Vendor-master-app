@@ -76,10 +76,12 @@ def display_bundle_overview(db):
             with st.expander(f"📦 {bundle['bundle_name']} - {get_status_badge(bundle['status'])}", expanded=False):
                 # Show rejection warning if bundle was rejected by Operation Team
                 if bundle['status'] == 'Active' and bundle.get('rejection_reason'):
-                    st.error("⚠️ **REJECTED BY OPERATION TEAM**")
+                    rejected_by = bundle.get('rejected_by', 'Operation Team')
+                    st.error(f"⚠️ **REJECTED BY {rejected_by.upper()}**")
                     st.markdown(f"""
                     <div style='background-color: #ffebee; padding: 15px; border-radius: 5px; border-left: 5px solid #f44336;'>
-                        <p style='margin: 0; color: #c62828;'><strong>Rejected on:</strong> {bundle.get('rejected_at', 'N/A')}</p>
+                        <p style='margin: 0; color: #c62828;'><strong>Rejected by:</strong> {rejected_by}</p>
+                        <p style='margin: 5px 0 0 0; color: #c62828;'><strong>Rejected on:</strong> {bundle.get('rejected_at', 'N/A')}</p>
                         <p style='margin: 5px 0 0 0; color: #c62828;'><strong>Reason:</strong> {bundle.get('rejection_reason', 'No reason provided')}</p>
                     </div>
                     """, unsafe_allow_html=True)
@@ -408,7 +410,7 @@ def get_all_bundles(db):
     """Get all bundles from database"""
     query = """
     SELECT bundle_id, bundle_name, status, total_requests, total_items, 
-           created_date, vendor_info, rejection_reason, rejected_at
+           created_date, vendor_info, rejection_reason, rejected_at, rejected_by
     FROM requirements_bundles
     ORDER BY created_date DESC
     """
