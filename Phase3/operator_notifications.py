@@ -35,7 +35,7 @@ def get_operator_emails(db):
         full_name,
         username
     FROM requirements_users
-    WHERE role = 'Operator'
+    WHERE user_role = 'Operator'
       AND is_active = 1
       AND email IS NOT NULL
       AND email != ''
@@ -101,7 +101,7 @@ def _get_operator_email_by_name(db, full_name):
     SELECT email, full_name
     FROM requirements_users
     WHERE full_name = ?
-      AND role = 'Operator'
+      AND user_role = 'Operator'
       AND is_active = 1
       AND email IS NOT NULL
       AND email != ''
