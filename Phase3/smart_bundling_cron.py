@@ -290,20 +290,33 @@ def main() -> int:
             dims_map = _get_item_dimensions_map(db, result)
             body_text, html_body = _build_email_bodies(result, dims_map)
             
-            # Get operator emails from database (falls back to EMAIL_RECIPIENTS secret if empty)
+            # Get operator emails from database
             operator_emails = get_operator_emails(db)
             
-            # Send email (if no operators in DB, send_email_via_brevo will use EMAIL_RECIPIENTS secret)
+            # Combine operator emails with fallback EMAIL_RECIPIENTS (admin always gets email)
+            all_recipients = operator_emails.copy() if operator_emails else []
+            
+            # Add EMAIL_RECIPIENTS (admin/fallback) to the list
+            fallback_emails = os.getenv('EMAIL_RECIPIENTS', '')
+            if fallback_emails:
+                fallback_list = [e.strip() for e in fallback_emails.split(',') if e.strip()]
+                # Add fallback emails that aren't already in operator list
+                for email in fallback_list:
+                    if email not in all_recipients:
+                        all_recipients.append(email)
+            
+            # Send email to all recipients (operators + admin)
             sent = send_email_via_brevo(
                 subject, 
                 body_text, 
                 html_body=html_body,
-                recipients=operator_emails if operator_emails else None
+                recipients=all_recipients if all_recipients else None
             )
             
             if sent:
-                recipient_count = len(operator_emails) if operator_emails else "configured"
-                log(f"Operator summary email sent to {recipient_count} recipient(s) via Brevo SMTP")
+                operator_count = len(operator_emails) if operator_emails else 0
+                total_count = len(all_recipients) if all_recipients else "configured"
+                log(f"Operator summary email sent to {total_count} recipient(s) ({operator_count} operators + admin) via Brevo SMTP")
             else:
                 log("Email step skipped (missing SMTP envs or no recipients)")
         except Exception as e:

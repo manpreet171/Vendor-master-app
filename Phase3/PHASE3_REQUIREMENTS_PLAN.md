@@ -6,21 +6,27 @@
 
 ## Development Progress Log
 
-### **November 14, 2025 (Session 13) - Fix Operator Email Notifications (Column Name Bug)** ✅
+### **November 14, 2025 (Session 13) - Fix Operator Email Notifications (2 Bugs Fixed)** ✅
 
 #### **📋 Session Overview:**
 
 **Status:** ✅ **COMPLETED**
 
-**Time:** 7:38 PM - 7:41 PM IST (3 minutes)
+**Time:** 7:38 PM - 7:52 PM IST (14 minutes)
 
-**Issue:** Operators not receiving bundling summary emails from Tuesday/Thursday cron
+**Issues Fixed:** 
+1. Operators not receiving bundling summary emails (column name bug)
+2. Admin not receiving emails after fix (missing fallback combination)
 
-**Root Cause:** SQL column name mismatch (`role` vs `user_role`)
+**Root Causes:** 
+1. SQL column name mismatch (`role` vs `user_role`)
+2. Operator emails replaced fallback instead of combining with it
 
-**Fix:** Changed 2 SQL queries to use correct column name
+**Fixes:** 
+1. Changed 2 SQL queries to use correct column name
+2. Modified cron to combine operator emails with admin fallback
 
-**Approach:** Bug fix - simple typo correction
+**Approach:** Bug fixes - typo correction + logic enhancement
 
 ---
 
@@ -123,7 +129,89 @@ WHERE full_name = ?
 
 ---
 
-#### **🔄 COMPLETE WORKFLOW (AFTER FIX):**
+#### **🐛 BUG #2: Admin Not Receiving Emails After Fix**
+
+**User Report (After Fix #1):**
+> "I ran manual trigger in action and it worked, operators got that. But this time I didn't get the email?"
+
+**What Happened:**
+- Fix #1 worked: Operators now receive emails ✅
+- New problem: Admin stopped receiving emails ❌
+
+**Root Cause:**
+```python
+# smart_bundling_cron.py line 301 (BEFORE FIX #2)
+operator_emails = get_operator_emails(db)  # Returns 3 operators
+recipients = operator_emails if operator_emails else None
+
+# Result:
+# - If operator_emails is empty → recipients=None → Uses EMAIL_RECIPIENTS (admin gets email)
+# - If operator_emails has data → recipients=[operators only] → Admin excluded!
+```
+
+**The Problem:**
+- Before Fix #1: `operator_emails = []` → Admin got email (fallback worked) ✅
+- After Fix #1: `operator_emails = [3 operators]` → Only operators got email ❌
+- **Operator emails REPLACED fallback instead of COMBINING with it**
+
+---
+
+#### **✅ FIX #2: Combine Operator Emails with Admin Fallback**
+
+**File:** `smart_bundling_cron.py`
+**Lines Changed:** 293-319 (27 lines modified)
+
+**Change: Combine Lists Instead of Replace**
+
+```python
+# BEFORE FIX #2:
+operator_emails = get_operator_emails(db)
+sent = send_email_via_brevo(
+    subject, 
+    body_text, 
+    html_body=html_body,
+    recipients=operator_emails if operator_emails else None  ← REPLACES fallback
+)
+
+# AFTER FIX #2:
+# Get operator emails from database
+operator_emails = get_operator_emails(db)
+
+# Combine operator emails with fallback EMAIL_RECIPIENTS (admin always gets email)
+all_recipients = operator_emails.copy() if operator_emails else []
+
+# Add EMAIL_RECIPIENTS (admin/fallback) to the list
+fallback_emails = os.getenv('EMAIL_RECIPIENTS', '')
+if fallback_emails:
+    fallback_list = [e.strip() for e in fallback_emails.split(',') if e.strip()]
+    # Add fallback emails that aren't already in operator list
+    for email in fallback_list:
+        if email not in all_recipients:  ← Avoid duplicates
+            all_recipients.append(email)
+
+# Send email to all recipients (operators + admin)
+sent = send_email_via_brevo(
+    subject, 
+    body_text, 
+    html_body=html_body,
+    recipients=all_recipients if all_recipients else None  ← COMBINES both lists
+)
+
+# Better logging
+operator_count = len(operator_emails) if operator_emails else 0
+total_count = len(all_recipients) if all_recipients else "configured"
+log(f"Operator summary email sent to {total_count} recipient(s) ({operator_count} operators + admin) via Brevo SMTP")
+```
+
+**Impact:** 
+- ✅ Operators receive emails (from database)
+- ✅ Admin receives email (from EMAIL_RECIPIENTS secret)
+- ✅ No duplicates (checks before adding)
+- ✅ Clear logging shows exact count
+
+---
+
+#### **🔄 COMPLETE WORKFLOW (AFTER BOTH FIXES):**
 
 ```
 Tuesday/Thursday Cron Runs
@@ -144,40 +232,60 @@ Query returns 3 operators:
 Extracts emails:
     ['rezza@sdgny.com', 'joivel@sdgny.com', 'miguel@sdgny.com']
     ↓
-smart_bundling_cron.py line 297:
+smart_bundling_cron.py line 297-306:
+    all_recipients = operator_emails.copy()  ✅ FIX #2
+    fallback_emails = os.getenv('EMAIL_RECIPIENTS')  # 'admin@sdgny.com'
+    all_recipients.append('admin@sdgny.com')  # Add admin to list
+    ↓
+Combined recipient list:
+    ['rezza@sdgny.com', 'joivel@sdgny.com', 'miguel@sdgny.com', 'admin@sdgny.com']
+    ↓
+smart_bundling_cron.py line 309:
     send_email_via_brevo(
         subject="Smart Bundling: X bundles | Y% coverage",
         body_text=...,
         html_body=...,
-        recipients=['rezza@sdgny.com', 'joivel@sdgny.com', 'miguel@sdgny.com']
+        recipients=['rezza@sdgny.com', 'joivel@sdgny.com', 'miguel@sdgny.com', 'admin@sdgny.com']
     )
     ↓
-Email sent to ALL 3 operators! ✅
+Email sent to ALL 4 recipients! ✅
     ↓
 Console log:
     "Found 3 active operator(s): Rex Ramos, Joivel Fangonil, Miguel Ramos"
     "Operator emails: rezza@sdgny.com, joivel@sdgny.com, miguel@sdgny.com"
-    "Operator summary email sent to 3 recipient(s) via Brevo SMTP"
+    "Operator summary email sent to 4 recipient(s) (3 operators + admin) via Brevo SMTP"
 ```
 
 ---
 
 #### **📊 IMPACT ANALYSIS:**
 
-**Before Fix:**
+**Before Any Fix (Original Bug):**
 ```
-Query: WHERE role = 'Operator'
+Query: WHERE role = 'Operator'  ← WRONG COLUMN
 Result: 0 operators found
 Email recipients: Only admin (from EMAIL_RECIPIENTS secret)
 Operators notified: ❌ NO
+Admin notified: ✅ YES
 ```
 
-**After Fix:**
+**After Fix #1 Only (Column Name Fixed):**
 ```
-Query: WHERE user_role = 'Operator'
+Query: WHERE user_role = 'Operator'  ← CORRECT COLUMN
 Result: 3 operators found (Rex, Joivel, Miguel)
-Email recipients: Admin + 3 operators
+Email recipients: Only 3 operators (admin excluded)
 Operators notified: ✅ YES
+Admin notified: ❌ NO (NEW BUG!)
+```
+
+**After Both Fixes (Complete Solution):**
+```
+Query: WHERE user_role = 'Operator'  ← CORRECT COLUMN
+Result: 3 operators found (Rex, Joivel, Miguel)
+Combined list: 3 operators + admin (from EMAIL_RECIPIENTS)
+Email recipients: Admin + 3 operators (4 total)
+Operators notified: ✅ YES
+Admin notified: ✅ YES
 ```
 
 ---
