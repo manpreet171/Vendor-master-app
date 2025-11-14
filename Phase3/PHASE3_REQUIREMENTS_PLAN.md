@@ -298,31 +298,40 @@ cd "d:\SDGNY\Vendor master app\Phase3"
 python smart_bundling_cron.py
 ```
 
-**Expected Console Output:**
+**Expected Console Output (After Both Fixes):**
 ```
-[2025-11-14 19:41:00] Starting smart bundling cron...
-[2025-11-14 19:41:01] Found 3 active operator(s): Rex Ramos, Joivel Fangonil, Miguel Ramos
-[2025-11-14 19:41:01] Operator emails: rezza@sdgny.com, joivel@sdgny.com, miguel@sdgny.com
-[2025-11-14 19:41:02] Bundling complete: X new bundles, Y updated
-[2025-11-14 19:41:03] Operator summary email sent to 3 recipient(s) via Brevo SMTP
-[2025-11-14 19:41:03] Cron completed successfully
+[2025-11-14 19:50:00] Starting smart bundling cron...
+[2025-11-14 19:50:01] Found 3 active operator(s): Rex Ramos, Joivel Fangonil, Miguel Ramos
+[2025-11-14 19:50:01] Operator emails: rezza@sdgny.com, joivel@sdgny.com, miguel@sdgny.com
+[2025-11-14 19:50:02] Bundling complete: X new bundles, Y updated
+[2025-11-14 19:50:03] Operator summary email sent to 4 recipient(s) (3 operators + admin) via Brevo SMTP
+[2025-11-14 19:50:03] Cron completed successfully
 ```
 
-**Email Recipients:**
-- ✅ rezza@sdgny.com (Rex Ramos)
-- ✅ joivel@sdgny.com (Joivel Fangonil)
-- ✅ miguel@sdgny.com (Miguel Ramos)
-- ✅ Admin email (from EMAIL_RECIPIENTS secret - fallback still works)
+**Email Recipients (After Both Fixes):**
+- ✅ rezza@sdgny.com (Rex Ramos - Operator)
+- ✅ joivel@sdgny.com (Joivel Fangonil - Operator)
+- ✅ miguel@sdgny.com (Miguel Ramos - Operator)
+- ✅ admin@sdgny.com (Admin - from EMAIL_RECIPIENTS secret)
+
+**Total: 4 recipients (3 operators + 1 admin)**
 
 ---
 
 #### **📈 TOTAL IMPLEMENTATION:**
 
-**Files Modified:** 1 (`operator_notifications.py`)
+**Files Modified:** 2
+1. `operator_notifications.py` (Fix #1 - Column name)
+2. `smart_bundling_cron.py` (Fix #2 - Combine lists)
 
-**Lines Changed:** 2 lines
-- Line 38: `role` → `user_role` (get_operator_emails function)
-- Line 104: `role` → `user_role` (_get_operator_email_by_name function)
+**Lines Changed:** 
+- **Fix #1:** 2 lines in `operator_notifications.py`
+  - Line 38: `role` → `user_role` (get_operator_emails function)
+  - Line 104: `role` → `user_role` (_get_operator_email_by_name function)
+- **Fix #2:** 27 lines in `smart_bundling_cron.py`
+  - Lines 293-319: Combine operator emails with admin fallback
+
+**Total Lines Changed:** 29 lines
 
 **Database Changes:** 0
 
@@ -335,28 +344,35 @@ python smart_bundling_cron.py
 #### **✅ BENEFITS:**
 
 **Immediate:**
-- ✅ Operators now receive bundling summary emails
+- ✅ Operators now receive bundling summary emails (Fix #1)
+- ✅ Admin continues to receive emails (Fix #2)
 - ✅ Tuesday/Thursday notifications work as designed
 - ✅ Consistent with Operation Team email pattern
+- ✅ Redundancy: Both operators and admin get notified
 
 **Long-term:**
 - ✅ Complete notification loop (Session 11 feature now fully functional)
 - ✅ Operators stay informed about new bundles
+- ✅ Admin maintains oversight (monitoring/backup)
 - ✅ Better workflow visibility and accountability
+- ✅ No single point of failure
 
 ---
 
 #### **🔍 WHY THIS HAPPENED:**
 
-**Inconsistency in Codebase:**
+**Bug #1 - Column Name Typo:**
 - `operation_team_notifications.py` uses `user_role` ✅ (correct)
 - `operator_notifications.py` used `role` ❌ (typo)
 - Database column is `user_role` (confirmed in all other queries)
+- **Likely Cause:** Copy-paste error or assumption about column name
+- **Why Not Caught:** Admin still received email (fallback worked), operators didn't report until now
 
-**Likely Cause:**
-- Copy-paste error or assumption about column name
-- Not caught in testing because admin still received email (fallback worked)
-- Operators didn't report until now
+**Bug #2 - Missing Fallback Combination:**
+- Original logic: `recipients = operator_emails if operator_emails else None`
+- **Problem:** Replaces fallback instead of combining with it
+- **Likely Cause:** Assumed fallback would be handled by email service, but it only uses fallback when recipients=None
+- **Why Not Caught:** Fix #1 was tested immediately, revealing the issue right away
 
 ---
 
@@ -379,17 +395,23 @@ python smart_bundling_cron.py
 
 | Metric | Value |
 |--------|-------|
-| **Session Duration** | 3 minutes (7:38 PM - 7:41 PM IST) |
-| **Issue Type** | Bug fix (typo) |
-| **Files Modified** | 1 (`operator_notifications.py`) |
-| **Lines Changed** | 2 (both column name fixes) |
+| **Session Duration** | 14 minutes (7:38 PM - 7:52 PM IST) |
+| **Issues Fixed** | 2 bugs (column name + fallback combination) |
+| **Files Modified** | 2 (`operator_notifications.py`, `smart_bundling_cron.py`) |
+| **Lines Changed** | 29 (2 in notifications + 27 in cron) |
 | **Database Changes** | 0 |
 | **Breaking Changes** | 0 |
-| **Testing Method** | Manual cron execution |
+| **Testing Method** | Manual GitHub Actions trigger |
 
-**Bug Severity:** High (operators not receiving emails)
-**Fix Complexity:** Low (simple typo correction)
-**Fix Time:** 3 minutes (investigation + fix)
+**Bug #1 Severity:** High (operators not receiving emails)
+**Bug #1 Complexity:** Low (simple typo correction)
+**Bug #1 Fix Time:** 3 minutes (investigation + fix)
+
+**Bug #2 Severity:** Medium (admin not receiving emails after fix #1)
+**Bug #2 Complexity:** Low (combine lists logic)
+**Bug #2 Fix Time:** 11 minutes (investigation + implementation + testing)
+
+**Total Session:** 14 minutes, 2 bugs fixed, complete solution delivered
 
 ---
 
